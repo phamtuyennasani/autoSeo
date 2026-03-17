@@ -1,0 +1,13 @@
+{
+  "watch": ["./**/*.js", ".env"],
+  "ext": "js,json",
+  "ignore": [
+    "database.sqlite",
+    "database.sqlite-journal",
+    "database.sqlite-wal",
+    "database.sqlite-shm",
+    "database.json",
+    "database.json.bak",
+    "node_modules"
+  ]
+}
