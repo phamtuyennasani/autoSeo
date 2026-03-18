@@ -20,45 +20,41 @@ export function AuthProvider({ children }) {
   // Auto-restore từ localStorage
   useEffect(() => {
     const savedToken = localStorage.getItem('autoseo_token');
-    const savedUser  = localStorage.getItem('autoseo_user');
 
-    // Kiểm tra server có bật AUTH không (thử gọi /me không cần token)
     const init = async () => {
       try {
-        // Test nhanh: gọi /api/auth/me để biết server đang ở mode nào
-        const headers = savedToken ? { Authorization: `Bearer ${savedToken}` } : {};
-        const res = await apiClient.get('/api/auth/me', { headers });
-        // Nếu không cần token (bypass mode) → AUTH_ENABLED=false
-        setAuthEnabled(false);
-        setUser(res.data);
-        setToken(null);
-      } catch (err) {
-        if (err.response?.status === 401 && !savedToken) {
-          // Server bật AUTH và chưa đăng nhập
-          setAuthEnabled(true);
-          setUser(null);
+        // Bước 1: hỏi server AUTH có bật không (endpoint public, không cần token)
+        const statusRes = await apiClient.get('/api/auth/status');
+        const enabled = statusRes.data.authEnabled;
+        setAuthEnabled(enabled);
+
+        if (!enabled) {
+          // Bypass mode — lấy thông tin admin từ /me (không cần token)
+          const meRes = await apiClient.get('/api/auth/me');
+          setUser(meRes.data);
           setToken(null);
-        } else if (savedToken) {
-          // Có token, thử restore
+          return;
+        }
+
+        // AUTH bật — thử restore token đã lưu
+        if (savedToken) {
           try {
-            const res = await apiClient.get('/api/auth/me', {
+            const meRes = await apiClient.get('/api/auth/me', {
               headers: { Authorization: `Bearer ${savedToken}` },
             });
-            setUser(res.data);
+            setUser(meRes.data);
             setToken(savedToken);
-            setAuthEnabled(true);
           } catch {
-            // Token hết hạn → clear
+            // Token hết hạn hoặc không hợp lệ → clear
             localStorage.removeItem('autoseo_token');
             localStorage.removeItem('autoseo_user');
-            setAuthEnabled(true);
             setUser(null);
             setToken(null);
           }
-        } else {
-          setAuthEnabled(false);
-          setUser(null);
         }
+      } catch {
+        // Không kết nối được server
+        setAuthEnabled(false);
       } finally {
         setLoading(false);
       }

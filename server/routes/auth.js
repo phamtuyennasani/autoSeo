@@ -84,6 +84,11 @@ router.get('/me', authenticate, async (req, res) => {
   }
 });
 
+// GET /status — Trả về trạng thái AUTH_ENABLED (không cần token)
+router.get('/status', (req, res) => {
+  res.json({ authEnabled: process.env.AUTH_ENABLED === 'true' });
+});
+
 // POST /logout — Client sẽ xóa token, server chỉ trả 200
 router.post('/logout', (req, res) => {
   res.json({ success: true, message: 'Đã đăng xuất.' });

@@ -161,7 +161,7 @@ async function saveArticleFromBatch(jobKeyword, jobCompanyId, result, createdBy 
       const usageId = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}-batch`;
       await db.execute({
         sql: 'INSERT INTO token_usage (id, type, input_tokens, output_tokens, total_tokens, keyword, createdAt, createdBy) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-        args: [usageId, 'article-batch', result.usage.input_tokens, result.usage.output_tokens, result.usage.total_tokens, jobKeyword, new Date().toISOString(), result.createdBy || null],
+        args: [usageId, 'article-batch', result.usage.input_tokens, result.usage.output_tokens, result.usage.total_tokens, jobKeyword, new Date().toISOString(), createdBy],
       });
     } catch (e) {
       console.error('[saveArticleFromBatch] Lỗi lưu token:', e.message);

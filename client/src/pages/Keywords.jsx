@@ -25,9 +25,11 @@ const Keywords = () => {
   const [companies, setCompanies] = useState([]);
   const [loading, setLoading] = useState(true);
   const { refreshStats } = useToken();
-  const { user: currentUser } = useAuth();
+  const { user: currentUser, authEnabled } = useAuth();
   const navigate = useNavigate();
   const isAdmin = currentUser?.role === 'admin' || !currentUser;
+  // Chỉ hiển thị UI phân quyền user khi AUTH bật (tránh hiện filter/cột thừa khi dùng đơn lẻ)
+  const showMultiUser = authEnabled && isAdmin;
 
   // Filter theo user (chỉ admin)
   const [filterUserId, setFilterUserId] = useState(''); // '' = tất cả
@@ -69,21 +71,21 @@ const Keywords = () => {
   const [writeQueueJob, setWriteQueueJob] = useState(null); // { jobId, status, total, done, succeeded, failed, currentTitle, results }
   const sseRef = useRef(null); // giữ EventSource để có thể đóng khi cần
 
-  // Lấy danh sách users cho dropdown (admin only)
+  // Lấy danh sách users cho dropdown (admin only, khi AUTH bật)
   useEffect(() => {
-    if (isAdmin) {
+    if (showMultiUser) {
       apiClient.get('/api/users').then(r => setUserList(r.data)).catch(() => {});
     }
-  }, [isAdmin]);
+  }, [showMultiUser]);
 
   useEffect(() => { fetchData(); }, []);
 
   const fetchData = async (userId = filterUserId) => {
     try {
       const params = {};
-      if (isAdmin && userId) params.userId = userId;
+      if (showMultiUser && userId) params.userId = userId;
       // Companies: nếu filter user thì lấy công ty của user đó
-      const comParams = (isAdmin && userId) ? { userId } : {};
+      const comParams = (showMultiUser && userId) ? { userId } : {};
       const [kwRes, comRes] = await Promise.all([
         apiClient.get(API_KEYWORD, { params }),
         apiClient.get(API_COMPANY, { params: comParams })
@@ -738,8 +740,8 @@ const Keywords = () => {
             )}
           </div>
 
-          {/* Lọc theo user — chỉ admin, đặt TRƯỚC công ty */}
-          {isAdmin && userList.length > 0 && (
+          {/* Lọc theo user — chỉ admin và khi AUTH bật */}
+          {showMultiUser && userList.length > 0 && (
             <div style={{ position: 'relative', flex: '1 1 160px', minWidth: 140 }}>
               <UsersIcon size={13} style={{
                 position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)',
@@ -886,19 +888,19 @@ const Keywords = () => {
           </div>
         ) : (
           <div className="table-container">
-            <div className="table-header" style={{ gridTemplateColumns: isAdmin ? '3fr 2fr 1.5fr 1fr 100px 120px' : '3fr 2fr 1.5fr 1fr 120px' }}>
+            <div className="table-header" style={{ gridTemplateColumns: showMultiUser ? '3fr 2fr 1.5fr 1fr 100px 120px' : '3fr 2fr 1.5fr 1fr 120px' }}>
               <div>Từ Khóa</div>
               <div>Website</div>
               <div>Thống Kê</div>
               <div>Ngày Tạo</div>
-              {isAdmin && <div>Người Tạo</div>}
+              {showMultiUser && <div>Người Tạo</div>}
               <div></div>
             </div>
             {filteredKeywords.map(item => {
               const company = getCompany(item.companyId);
-              const creator = userList.find(u => u.id === item.createdBy);
+              const creator = showMultiUser ? userList.find(u => u.id === item.createdBy) : null;
               return (
-                <div key={item.id} className="table-row" style={{ gridTemplateColumns: isAdmin ? '3fr 2fr 1.5fr 1fr 100px 120px' : '3fr 2fr 1.5fr 1fr 120px' }}>
+                <div key={item.id} className="table-row" style={{ gridTemplateColumns: showMultiUser ? '3fr 2fr 1.5fr 1fr 100px 120px' : '3fr 2fr 1.5fr 1fr 120px' }}>
                 <div>
                   <div style={{ fontWeight: '600', fontSize: '14px', color: 'var(--text-primary)', marginBottom: '3px' }}>{item.keyword}</div>
                   <div className="badge badge-purple" style={{ fontSize: '10.5px', padding: '2px 7px' }}>SEO Keyword</div>
@@ -918,7 +920,7 @@ const Keywords = () => {
                   <div className="badge badge-green" style={{ width: 'fit-content' }}><FileText size={10} /> {item.articleCount || 0} bài</div>
                 </div>
                 <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{formatDate(item.createdAt)}</div>
-                {isAdmin && (
+                {showMultiUser && (
                   <div>
                     {creator ? (
                       <span style={{

@@ -68,8 +68,8 @@ const Layout = () => {
 
         <div style={{ marginTop: 'auto' }}>
           <div className="sidebar-section">
-            {/* Menu Users — chỉ admin */}
-            {isAdmin && (
+            {/* Menu Users — chỉ admin và khi AUTH bật */}
+            {authEnabled && isAdmin && (
               <NavLink to="/users" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
                 <Users size={17} className="nav-icon" /> Quản lý Users
               </NavLink>

@@ -14,13 +14,32 @@ router.post('/', async (req, res) => {
 
   // ── Kiểm tra giới hạn bài viết/ngày trước khi submit batch ──────────────
   try {
-    const articleLimit = await getSetting('daily_article_limit');
-    if (articleLimit > 0) {
-      const today = new Date().toISOString().slice(0, 10);
-      const usageResult = await db.execute({
-        sql: `SELECT COUNT(*) AS cnt FROM token_usage WHERE (type = 'article' OR type = 'article-batch') AND createdAt LIKE ?`,
-        args: [`${today}%`],
+    const today = new Date().toISOString().slice(0, 10);
+    const isAdmin = user.role === 'admin';
+
+    // Đọc per-user limit nếu AUTH bật và không phải admin
+    let userArticleLimit = 0;
+    if (!isAdmin && process.env.AUTH_ENABLED === 'true') {
+      const userResult = await db.execute({
+        sql: 'SELECT daily_article_limit FROM users WHERE id = ?',
+        args: [user.id],
       });
+      userArticleLimit = Number(userResult.rows[0]?.daily_article_limit || 0);
+    }
+
+    const globalArticleLimit = await getSetting('daily_article_limit');
+    const articleLimit = userArticleLimit > 0 ? userArticleLimit : globalArticleLimit;
+
+    if (articleLimit > 0) {
+      // Filter theo createdBy nếu dùng per-user limit
+      let countSql = `SELECT COUNT(*) AS cnt FROM token_usage WHERE (type = 'article' OR type = 'article-batch') AND createdAt LIKE ?`;
+      const countArgs = [`${today}%`];
+      if (userArticleLimit > 0 && !isAdmin) {
+        countSql += ' AND createdBy = ?';
+        countArgs.push(user.id);
+      }
+
+      const usageResult = await db.execute({ sql: countSql, args: countArgs });
       const used = Number(usageResult.rows[0]?.cnt || 0);
       const remaining = articleLimit - used;
 
@@ -137,7 +156,7 @@ router.post('/:id/check', async (req, res) => {
 
     for (const result of checkResult.results) {
       try {
-        const outcome = await saveArticleFromBatch(job.keyword, job.companyId, result);
+        const outcome = await saveArticleFromBatch(job.keyword, job.companyId, result, job.createdBy);
         if (outcome.saved || outcome.skipped) {
           succeededCount++;
           savedArticles.push({ id: outcome.id, title: result.title, seo_title: outcome.seo_title });
