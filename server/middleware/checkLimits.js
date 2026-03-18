@@ -3,19 +3,21 @@
  * Trả về 429 nếu vượt giới hạn. Giá trị 0 = không giới hạn.
  */
 
-const db = require('../data/store');
+const { db } = require('../data/store');
 const { getSetting } = require('../routes/settings');
 
-function checkDailyLimits(req, res, next) {
+async function checkDailyLimits(req, res, next) {
   try {
     const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
 
     // ── Kiểm tra giới hạn số bài viết/ngày ──────────────────────────────────
-    const articleLimit = getSetting('daily_article_limit');
+    const articleLimit = await getSetting('daily_article_limit');
     if (articleLimit > 0) {
-      const articleCount = db.prepare(
-        `SELECT COUNT(*) AS cnt FROM articles WHERE createdAt LIKE ?`
-      ).get(`${today}%`)?.cnt || 0;
+      const result = await db.execute({
+        sql: 'SELECT COUNT(*) AS cnt FROM articles WHERE createdAt LIKE ?',
+        args: [`${today}%`],
+      });
+      const articleCount = Number(result.rows[0]?.cnt || 0);
 
       if (articleCount >= articleLimit) {
         return res.status(429).json({
@@ -28,11 +30,13 @@ function checkDailyLimits(req, res, next) {
     }
 
     // ── Kiểm tra giới hạn token/ngày ────────────────────────────────────────
-    const tokenLimit = getSetting('daily_token_limit');
+    const tokenLimit = await getSetting('daily_token_limit');
     if (tokenLimit > 0) {
-      const tokenUsed = db.prepare(
-        `SELECT COALESCE(SUM(total_tokens), 0) AS total FROM token_usage WHERE createdAt LIKE ?`
-      ).get(`${today}%`)?.total || 0;
+      const result = await db.execute({
+        sql: 'SELECT COALESCE(SUM(total_tokens), 0) AS total FROM token_usage WHERE createdAt LIKE ?',
+        args: [`${today}%`],
+      });
+      const tokenUsed = Number(result.rows[0]?.total || 0);
 
       if (tokenUsed >= tokenLimit) {
         return res.status(429).json({

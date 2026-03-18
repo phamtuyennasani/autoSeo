@@ -1,36 +1,37 @@
 const express = require('express');
 const router = express.Router();
-const db = require('../data/store');
+const { db } = require('../data/store');
 
 // Lấy tổng thống kê token
-router.get('/tokens', (req, res) => {
+router.get('/tokens', async (req, res) => {
   try {
-    const totals = db.prepare(`
-      SELECT 
-        SUM(input_tokens)  AS total_input,
-        SUM(output_tokens) AS total_output,
-        SUM(total_tokens)  AS total_all,
-        COUNT(*)           AS total_calls
+    const totals = await db.execute(`
+      SELECT
+        COALESCE(SUM(input_tokens),  0) AS total_input,
+        COALESCE(SUM(output_tokens), 0) AS total_output,
+        COALESCE(SUM(total_tokens),  0) AS total_all,
+        COUNT(*) AS total_calls
       FROM token_usage
-    `).get();
+    `);
 
-    const byType = db.prepare(`
-      SELECT 
+    const byType = await db.execute(`
+      SELECT
         type,
-        SUM(input_tokens)  AS input_tokens,
-        SUM(output_tokens) AS output_tokens,
-        SUM(total_tokens)  AS total_tokens,
-        COUNT(*)           AS calls
+        COALESCE(SUM(input_tokens),  0) AS input_tokens,
+        COALESCE(SUM(output_tokens), 0) AS output_tokens,
+        COALESCE(SUM(total_tokens),  0) AS total_tokens,
+        COUNT(*) AS calls
       FROM token_usage
       GROUP BY type
-    `).all();
+    `);
 
+    const t = totals.rows[0] || {};
     res.json({
-      total_input:  totals.total_input  || 0,
-      total_output: totals.total_output || 0,
-      total_tokens: totals.total_all    || 0,
-      total_calls:  totals.total_calls  || 0,
-      by_type: byType,
+      total_input:  Number(t.total_input  || 0),
+      total_output: Number(t.total_output || 0),
+      total_tokens: Number(t.total_all    || 0),
+      total_calls:  Number(t.total_calls  || 0),
+      by_type: byType.rows,
     });
   } catch (err) {
     console.error(err);
@@ -38,10 +39,10 @@ router.get('/tokens', (req, res) => {
   }
 });
 
-// Reset thống kê (tuỳ chọn)
-router.delete('/tokens', (req, res) => {
+// Reset thống kê
+router.delete('/tokens', async (req, res) => {
   try {
-    db.prepare('DELETE FROM token_usage').run();
+    await db.execute('DELETE FROM token_usage');
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: 'Lỗi khi reset thống kê' });
