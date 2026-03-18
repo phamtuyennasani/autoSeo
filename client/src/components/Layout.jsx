@@ -1,14 +1,17 @@
 import React from 'react';
-import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { Search, Building2, Zap, Settings, HelpCircle, Sun, Moon, Cpu, TrendingUp, Layers } from 'lucide-react';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Search, Building2, Zap, Settings, HelpCircle, Sun, Moon, Cpu, TrendingUp, Layers, Users, LogOut } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { useToken } from '../context/TokenContext';
+import { useAuth } from '../context/AuthContext';
 
 const pageTitles = {
   '/keywords':   'SEO Keywords',
   '/companies':  'Website & Công Ty',
   '/batch-jobs': 'Batch Jobs',
   '/settings':   'Cài Đặt',
+  '/help':       'Trợ Giúp',
+  '/users':      'Quản Lý Users',
 };
 
 // Format số token lớn cho dễ đọc: 1234567 → 1.23M, 12345 → 12.3K
@@ -21,9 +24,20 @@ const formatTokens = (n) => {
 
 const Layout = () => {
   const location = useLocation();
+  const navigate = useNavigate();
   const { theme, toggleTheme } = useTheme();
   const { tokenStats } = useToken();
+  const { user, logout, authEnabled } = useAuth();
   const currentTitle = pageTitles[location.pathname] || 'Dashboard';
+
+  const handleLogout = async () => {
+    await logout();
+    navigate('/login');
+  };
+
+  const isAdmin = user?.role === 'admin';
+  const displayName = user?.username || 'Admin';
+  const avatarChar = displayName.charAt(0).toUpperCase();
 
   return (
     <div className="app-container">
@@ -54,19 +68,49 @@ const Layout = () => {
 
         <div style={{ marginTop: 'auto' }}>
           <div className="sidebar-section">
-          <NavLink to="/settings" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+            {/* Menu Users — chỉ admin */}
+            {isAdmin && (
+              <NavLink to="/users" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+                <Users size={17} className="nav-icon" /> Quản lý Users
+              </NavLink>
+            )}
+            <NavLink to="/settings" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
               <Settings size={17} className="nav-icon" /> Cài đặt
             </NavLink>
-            <a href="#" className="nav-item" style={{ textDecoration: 'none' }}>
+            <NavLink to="/help" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
               <HelpCircle size={17} className="nav-icon" /> Trợ giúp
-            </a>
+            </NavLink>
           </div>
+
           <div className="sidebar-footer">
-            <div className="sidebar-footer-avatar">A</div>
+            <div className="sidebar-footer-avatar">{avatarChar}</div>
             <div className="sidebar-footer-info">
-              <div className="sidebar-footer-name">Admin</div>
-              <div className="sidebar-footer-role">SEO Manager</div>
+              <div className="sidebar-footer-name">{displayName}</div>
+              <div className="sidebar-footer-role">{isAdmin ? 'Admin' : 'User'}</div>
             </div>
+            {/* Nút Logout — chỉ hiện khi AUTH bật */}
+            {authEnabled && (
+              <button
+                onClick={handleLogout}
+                title="Đăng xuất"
+                style={{
+                  marginLeft: 'auto',
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: 'var(--text-secondary)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  padding: '4px',
+                  borderRadius: '6px',
+                  transition: 'color 0.15s',
+                }}
+                onMouseEnter={e => e.currentTarget.style.color = '#ef4444'}
+                onMouseLeave={e => e.currentTarget.style.color = 'var(--text-secondary)'}
+              >
+                <LogOut size={16} />
+              </button>
+            )}
           </div>
         </div>
       </aside>

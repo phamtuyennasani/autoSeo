@@ -3,12 +3,44 @@ const router = express.Router();
 const { db } = require('../data/store');
 const { submitBatchJob, processBatchJob } = require('../services/gemini-batch');
 const { saveArticleFromBatch } = require('./articles');
+const { getSetting } = require('./settings');
 
 // ─── POST / — Submit batch job mới lên Gemini ────────────────────────────────
 router.post('/', async (req, res) => {
+  const user = req.user || { id: 'admin', role: 'admin' };
   const { keyword, titles, companyId } = req.body;
   if (!keyword || !Array.isArray(titles) || titles.length === 0 || !companyId)
     return res.status(400).json({ error: 'Thiếu thông tin bắt buộc' });
+
+  // ── Kiểm tra giới hạn bài viết/ngày trước khi submit batch ──────────────
+  try {
+    const articleLimit = await getSetting('daily_article_limit');
+    if (articleLimit > 0) {
+      const today = new Date().toISOString().slice(0, 10);
+      const usageResult = await db.execute({
+        sql: `SELECT COUNT(*) AS cnt FROM token_usage WHERE (type = 'article' OR type = 'article-batch') AND createdAt LIKE ?`,
+        args: [`${today}%`],
+      });
+      const used = Number(usageResult.rows[0]?.cnt || 0);
+      const remaining = articleLimit - used;
+
+      if (remaining <= 0) {
+        return res.status(429).json({
+          error: `Đã đạt giới hạn ${articleLimit} bài viết hôm nay. Vui lòng thử lại vào ngày mai.`,
+          limit: articleLimit, used, remaining: 0, type: 'article_limit',
+        });
+      }
+
+      if (titles.length > remaining) {
+        return res.status(429).json({
+          error: `Chỉ còn ${remaining} bài trong hạn mức hôm nay, không thể tạo batch ${titles.length} bài. Hãy giảm số tiêu đề hoặc tăng giới hạn trong Cài đặt.`,
+          limit: articleLimit, used, remaining, type: 'article_limit',
+        });
+      }
+    }
+  } catch (limitErr) {
+    console.error('[batch-jobs] Lỗi kiểm tra giới hạn:', limitErr.message);
+  }
 
   const compResult = await db.execute({ sql: 'SELECT * FROM companies WHERE id = ?', args: [companyId] });
   const company = compResult.rows[0];
@@ -20,11 +52,11 @@ router.post('/', async (req, res) => {
     const createdAt = new Date().toISOString();
 
     await db.execute({
-      sql: `INSERT INTO batch_jobs (id, gemini_job_name, keyword, companyId, titles, status, gemini_state, total, createdAt) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?)`,
-      args: [id, geminiJobName, keyword, companyId, JSON.stringify(titles), state, total, createdAt],
+      sql: `INSERT INTO batch_jobs (id, gemini_job_name, keyword, companyId, titles, status, gemini_state, total, createdAt, createdBy) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)`,
+      args: [id, geminiJobName, keyword, companyId, JSON.stringify(titles), state, total, createdAt, user.id],
     });
 
-    res.json({ id, geminiJobName, keyword, total, state, status: 'pending', createdAt });
+    res.json({ id, geminiJobName, keyword, total, state, status: 'pending', createdAt, createdBy: user.id });
   } catch (err) {
     console.error('[batch-jobs] Submit lỗi:', err.message);
     res.status(500).json({ error: err.message });
@@ -34,19 +66,32 @@ router.post('/', async (req, res) => {
 // ─── GET / — Danh sách batch jobs (filter theo ?keyword) ─────────────────────
 router.get('/', async (req, res) => {
   try {
+    const user = req.user || { id: 'admin', role: 'admin' };
+    const isAdmin = user.role === 'admin';
     const { keyword } = req.query;
-    let result;
-    if (keyword) {
-      result = await db.execute({
-        sql: `SELECT bj.*, c.name as companyName FROM batch_jobs bj LEFT JOIN companies c ON bj.companyId = c.id WHERE bj.keyword = ? ORDER BY bj.createdAt DESC`,
-        args: [keyword],
-      });
-    } else {
-      result = await db.execute(
-        `SELECT bj.*, c.name as companyName FROM batch_jobs bj LEFT JOIN companies c ON bj.companyId = c.id ORDER BY bj.createdAt DESC`
-      );
-    }
-    res.json(result.rows.map(j => ({ ...j, titles: JSON.parse(j.titles || '[]') })));
+
+    let sql = `SELECT bj.*, c.name as companyName FROM batch_jobs bj LEFT JOIN companies c ON bj.companyId = c.id`;
+    const args = [];
+    const conditions = [];
+
+    if (keyword) { conditions.push('bj.keyword = ?'); args.push(keyword); }
+    if (!isAdmin) { conditions.push('bj.createdBy = ?'); args.push(user.id); }
+
+    if (conditions.length > 0) sql += ' WHERE ' + conditions.join(' AND ');
+    sql += ' ORDER BY bj.createdAt DESC';
+
+    const result = await db.execute({ sql, args });
+
+    const settingResult = await db.execute({
+      sql: `SELECT value FROM settings WHERE key = 'last_batch_check'`,
+      args: [],
+    });
+    const lastCheck = settingResult.rows[0]?.value || null;
+
+    res.json({
+      jobs: result.rows.map(j => ({ ...j, titles: JSON.parse(j.titles || '[]') })),
+      lastCheck,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -121,8 +166,17 @@ router.post('/:id/check', async (req, res) => {
 // ─── DELETE /:id ──────────────────────────────────────────────────────────────
 router.delete('/:id', async (req, res) => {
   try {
-    const result = await db.execute({ sql: 'DELETE FROM batch_jobs WHERE id = ?', args: [req.params.id] });
-    if (result.rowsAffected === 0) return res.status(404).json({ error: 'Không tìm thấy' });
+    const user = req.user || { id: 'admin', role: 'admin' };
+    const { id } = req.params;
+
+    const check = await db.execute({ sql: 'SELECT createdBy FROM batch_jobs WHERE id = ?', args: [id] });
+    if (!check.rows[0]) return res.status(404).json({ error: 'Không tìm thấy' });
+
+    if (user.role !== 'admin' && check.rows[0].createdBy !== user.id) {
+      return res.status(403).json({ error: 'Bạn không có quyền xóa batch job này.' });
+    }
+
+    await db.execute({ sql: 'DELETE FROM batch_jobs WHERE id = ?', args: [id] });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

@@ -727,6 +727,11 @@ select.input-field {
   padding-right: 36px;
 }
 
+select.input-field option {
+  background: var(--bg-modal);
+  color: var(--text-primary);
+}
+
 /* ===========================
    MODAL
 =========================== */

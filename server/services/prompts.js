@@ -94,12 +94,24 @@ ${company.info || ''}
  * @returns {string}
  */
 function buildTitlesPrompt(keyword, searchContext, count = 10) {
-  return `Bạn là một chuyên gia SEO Copywriter. Tôi có từ khóa: "${keyword}".
-Và đây là kết quả tìm kiếm Google hiện tại cho từ khóa này:
+  if (searchContext) {
+    return `Bạn là một chuyên gia SEO Copywriter. Tôi có từ khóa: "${keyword}".
+Đây là kết quả tìm kiếm Google hiện tại cho từ khóa này:
 ${searchContext}
 
-Hãy dựa vào ngữ cảnh này, sáng tạo ra ${count} tiêu đề bài viết chuẩn SEO, thu hút, CTR cao, đúng ý định tìm kiếm của người dùng cho từ khóa "${keyword}".
-Hãy trả về ĐÚNG MỘT MẢNG JSON hợp lệ chứa ${count} chuỗi tiêu đề. KHÔNG giải thích thêm, KHÔNG markdown \`\`\`json. Định dạng: ["Tiêu đề 1", "Tiêu đề 2", ...]`;
+Dựa vào ngữ cảnh tìm kiếm trên, hãy sáng tạo ${count} tiêu đề bài viết chuẩn SEO, thu hút, CTR cao, đúng ý định tìm kiếm của người dùng cho từ khóa "${keyword}".
+Trả về ĐÚNG MỘT MẢNG JSON hợp lệ chứa ${count} chuỗi tiêu đề. KHÔNG giải thích thêm, KHÔNG markdown. Định dạng: ["Tiêu đề 1", "Tiêu đề 2", ...]`;
+  }
+
+  return `Bạn là một chuyên gia SEO Copywriter. Tôi có từ khóa: "${keyword}".
+
+Dựa vào kiến thức SEO chuyên sâu và hiểu biết về thị trường Việt Nam, hãy sáng tạo ${count} tiêu đề bài viết chuẩn SEO cho từ khóa này. Yêu cầu:
+- Đúng ý định tìm kiếm (search intent) của người dùng khi tìm "${keyword}"
+- Đa dạng góc độ: thông tin, so sánh, hướng dẫn, review, kinh nghiệm...
+- Thu hút, CTR cao, tự nhiên, không spam từ khóa
+- Độ dài tiêu đề 50-70 ký tự
+
+Trả về ĐÚNG MỘT MẢNG JSON hợp lệ chứa ${count} chuỗi tiêu đề. KHÔNG giải thích thêm, KHÔNG markdown. Định dạng: ["Tiêu đề 1", "Tiêu đề 2", ...]`;
 }
 
 module.exports = {

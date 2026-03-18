@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import axios from 'axios';
+import apiClient from '../config/api';
 import {
   Layers, RefreshCw, Trash2, CheckCircle2, Clock, XCircle,
   ChevronDown, ChevronUp, Loader2, Send, AlertTriangle, FileText, Zap
 } from 'lucide-react';
 import { useToken } from '../context/TokenContext';
 
-import API from '../config/api';
+import { API } from '../config/api';
 const API_ENDPOINT = API.batchJobs;
 
 const STATUS_CONFIG = {
@@ -24,29 +24,24 @@ const GEMINI_STATE_LABEL = {
   JOB_STATE_EXPIRED:   'Hết hạn',
 };
 
-// Đếm ngược đến lần check tự động tiếp theo
-function useNextCheckCountdown(intervalMs = 60 * 60 * 1000) {
-  const [timeLeft, setTimeLeft] = useState(null);
+// Đếm ngược đến lần check tự động tiếp theo (dựa trên ISO string từ DB)
+function useNextCheckCountdown(lastCheckIso, intervalMs = 60 * 60 * 1000) {
+  const [timeLeft, setTimeLeft] = useState('');
 
   useEffect(() => {
-    // Lấy thời điểm check gần nhất từ sessionStorage
-    const lastKey = 'lastBatchCheck';
-    const now = Date.now();
-    const last = parseInt(sessionStorage.getItem(lastKey) || String(now));
-    sessionStorage.setItem(lastKey, String(now));
-
+    if (!lastCheckIso) return;
+    const base = new Date(lastCheckIso).getTime();
     const tick = () => {
-      const elapsed = Date.now() - now;
+      const elapsed = Date.now() - base;
       const remaining = Math.max(0, intervalMs - elapsed);
       const min = Math.floor(remaining / 60000);
       const sec = Math.floor((remaining % 60000) / 1000);
       setTimeLeft(`${min}:${String(sec).padStart(2, '0')}`);
     };
-
     tick();
     const timer = setInterval(tick, 1000);
     return () => clearInterval(timer);
-  }, [intervalMs]);
+  }, [lastCheckIso, intervalMs]);
 
   return timeLeft;
 }
@@ -59,13 +54,16 @@ export default function BatchJobs() {
   const [deletingId, setDeletingId] = useState(null);
   const [checkResult, setCheckResult] = useState({});
   const [triggering, setTriggering] = useState(false);
+  const [lastCheckIso, setLastCheckIso] = useState(null);
   const { refreshStats } = useToken();
-  const nextCheck = useNextCheckCountdown();
+
+  const nextCheck = useNextCheckCountdown(lastCheckIso);
 
   const fetchJobs = useCallback(async () => {
     try {
-      const res = await axios.get(API_ENDPOINT);
-      setJobs(res.data);
+      const res = await apiClient.get(API_ENDPOINT);
+      setJobs(res.data.jobs);
+      if (res.data.lastCheck) setLastCheckIso(res.data.lastCheck);
     } catch (err) {
       console.error(err);
     } finally {
@@ -84,8 +82,8 @@ export default function BatchJobs() {
   const handleCheckAll = async () => {
     setTriggering(true);
     try {
-      await axios.post(`${API_ENDPOINT}/check-all`);
-      // Đợi 3 giây rồi refresh list để thấy kết quả
+      await apiClient.post(`${API_ENDPOINT}/check-all`);
+      // Đợi 3 giây rồi refresh list — fetchJobs sẽ cập nhật lastCheckIso từ DB
       setTimeout(() => {
         fetchJobs();
         refreshStats();
@@ -101,7 +99,7 @@ export default function BatchJobs() {
     setCheckingId(job.id);
     setCheckResult(prev => ({ ...prev, [job.id]: null }));
     try {
-      const res = await axios.post(`${API_ENDPOINT}/${job.id}/check`);
+      const res = await apiClient.post(`${API_ENDPOINT}/${job.id}/check`);
       setCheckResult(prev => ({ ...prev, [job.id]: res.data }));
       if (res.data.status === 'done') {
         refreshStats();
@@ -121,7 +119,7 @@ export default function BatchJobs() {
     if (!window.confirm('Xóa batch job này? Sau đó có thể gửi lại yêu cầu viết từ trang Từ Khóa.')) return;
     setDeletingId(id);
     try {
-      await axios.delete(`${API_ENDPOINT}/${id}`);
+      await apiClient.delete(`${API_ENDPOINT}/${id}`);
       setJobs(prev => prev.filter(j => j.id !== id));
     } catch (err) {
       alert('Lỗi xóa job: ' + (err.response?.data?.error || err.message));
@@ -187,15 +185,17 @@ export default function BatchJobs() {
           ))}
         </div>
 
-        {/* Auto-check info */}
-        <div className="info-box info-box-blue" style={{ marginBottom: 20 }}>
-          <Clock size={14} style={{ flexShrink: 0 }} />
-          <span>
-            Server tự động kiểm tra tất cả job mỗi <strong>60 phút</strong>.
-            Lần check tiếp theo còn khoảng <strong>{nextCheck}</strong>.
-            Hoặc nhấn <strong>Kiểm tra Tất Cả Ngay</strong> để check ngay lập tức.
-          </span>
-        </div>
+        {/* Auto-check info — chỉ hiện khi có job đang pending */}
+        {pendingCount > 0 && (
+          <div className="info-box info-box-blue" style={{ marginBottom: 20 }}>
+            <Clock size={14} style={{ flexShrink: 0 }} />
+            <span>
+              Server tự động kiểm tra tất cả job mỗi <strong>60 phút</strong>.
+              Lần check tiếp theo còn khoảng <strong>{nextCheck}</strong>.
+              Hoặc nhấn <strong>Kiểm tra Tất Cả Ngay</strong> để check ngay lập tức.
+            </span>
+          </div>
+        )}
 
         <div className="info-box info-box-blue" style={{ marginBottom: 20 }}>
           <Send size={14} style={{ flexShrink: 0, marginTop: 1 }} />

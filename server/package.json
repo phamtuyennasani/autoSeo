@@ -16,10 +16,12 @@
     "@google/generative-ai": "^0.21.0",
     "@libsql/client": "^0.17.0",
     "axios": "^1.13.6",
+    "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
     "jsonrepair": "^3.13.3",
+    "jsonwebtoken": "^9.0.3",
     "marked": "^17.0.4"
   },
   "devDependencies": {

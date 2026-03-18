@@ -2,28 +2,36 @@ const express = require('express');
 const router = express.Router();
 const { db } = require('../data/store');
 
-// Lấy tổng thống kê token
+// Lấy thống kê token — chỉ của user hiện tại
 router.get('/tokens', async (req, res) => {
   try {
-    const totals = await db.execute(`
-      SELECT
-        COALESCE(SUM(input_tokens),  0) AS total_input,
-        COALESCE(SUM(output_tokens), 0) AS total_output,
-        COALESCE(SUM(total_tokens),  0) AS total_all,
-        COUNT(*) AS total_calls
-      FROM token_usage
-    `);
+    const user    = req.user || { id: 'admin', role: 'admin' };
+    const userId  = user.id;
 
-    const byType = await db.execute(`
-      SELECT
-        type,
-        COALESCE(SUM(input_tokens),  0) AS input_tokens,
-        COALESCE(SUM(output_tokens), 0) AS output_tokens,
-        COALESCE(SUM(total_tokens),  0) AS total_tokens,
-        COUNT(*) AS calls
-      FROM token_usage
-      GROUP BY type
-    `);
+    // Admin vẫn chỉ thấy số của chính mình (thống kê tổng sẽ có trang riêng)
+    const totals = await db.execute({
+      sql: `SELECT
+              COALESCE(SUM(input_tokens),  0) AS total_input,
+              COALESCE(SUM(output_tokens), 0) AS total_output,
+              COALESCE(SUM(total_tokens),  0) AS total_all,
+              COUNT(*) AS total_calls
+            FROM token_usage
+            WHERE createdBy = ? OR createdBy IS NULL AND ? = 'admin'`,
+      args: [userId, user.role],
+    });
+
+    const byType = await db.execute({
+      sql: `SELECT
+              type,
+              COALESCE(SUM(input_tokens),  0) AS input_tokens,
+              COALESCE(SUM(output_tokens), 0) AS output_tokens,
+              COALESCE(SUM(total_tokens),  0) AS total_tokens,
+              COUNT(*) AS calls
+            FROM token_usage
+            WHERE createdBy = ? OR createdBy IS NULL AND ? = 'admin'
+            GROUP BY type`,
+      args: [userId, user.role],
+    });
 
     const t = totals.rows[0] || {};
     res.json({
@@ -39,10 +47,14 @@ router.get('/tokens', async (req, res) => {
   }
 });
 
-// Reset thống kê
+// Reset thống kê (chỉ của user hiện tại)
 router.delete('/tokens', async (req, res) => {
   try {
-    await db.execute('DELETE FROM token_usage');
+    const user = req.user || { id: 'admin', role: 'admin' };
+    await db.execute({
+      sql:  'DELETE FROM token_usage WHERE createdBy = ?',
+      args: [user.id],
+    });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: 'Lỗi khi reset thống kê' });

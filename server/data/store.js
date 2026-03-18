@@ -96,16 +96,38 @@ async function initDb() {
       label TEXT,
       updatedAt TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      username TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'user',
+      is_active INTEGER NOT NULL DEFAULT 1,
+      daily_token_limit INTEGER NOT NULL DEFAULT 0,
+      daily_article_limit INTEGER NOT NULL DEFAULT 0,
+      createdAt TEXT NOT NULL,
+      lastLoginAt TEXT
+    );
   `);
 
   // ── Migration: Thêm cột nếu thiếu ──
   const migrations = [
     // keywords
-    { table: 'keywords',  col: 'companyId',      ddl: 'ALTER TABLE keywords ADD COLUMN companyId TEXT' },
+    { table: 'keywords',   col: 'companyId',      ddl: 'ALTER TABLE keywords ADD COLUMN companyId TEXT' },
+    { table: 'keywords',   col: 'createdBy',       ddl: 'ALTER TABLE keywords ADD COLUMN createdBy TEXT' },
     // articles
-    { table: 'articles',  col: 'seo_title',       ddl: 'ALTER TABLE articles ADD COLUMN seo_title TEXT' },
-    { table: 'articles',  col: 'seo_description', ddl: 'ALTER TABLE articles ADD COLUMN seo_description TEXT' },
-    { table: 'articles',  col: 'image_prompts',   ddl: 'ALTER TABLE articles ADD COLUMN image_prompts TEXT' },
+    { table: 'articles',   col: 'seo_title',       ddl: 'ALTER TABLE articles ADD COLUMN seo_title TEXT' },
+    { table: 'articles',   col: 'seo_description', ddl: 'ALTER TABLE articles ADD COLUMN seo_description TEXT' },
+    { table: 'articles',   col: 'image_prompts',   ddl: 'ALTER TABLE articles ADD COLUMN image_prompts TEXT' },
+    { table: 'articles',   col: 'createdBy',       ddl: 'ALTER TABLE articles ADD COLUMN createdBy TEXT' },
+    // companies
+    { table: 'companies',  col: 'contract_code',   ddl: 'ALTER TABLE companies ADD COLUMN contract_code TEXT' },
+    { table: 'companies',  col: 'industry',        ddl: 'ALTER TABLE companies ADD COLUMN industry TEXT' },
+    { table: 'companies',  col: 'createdBy',       ddl: 'ALTER TABLE companies ADD COLUMN createdBy TEXT' },
+    // batch_jobs
+    { table: 'batch_jobs', col: 'createdBy',       ddl: 'ALTER TABLE batch_jobs ADD COLUMN createdBy TEXT' },
+    // token_usage
+    { table: 'token_usage', col: 'createdBy',      ddl: 'ALTER TABLE token_usage ADD COLUMN createdBy TEXT' },
   ];
 
   for (const m of migrations) {
@@ -121,16 +143,42 @@ async function initDb() {
     }
   }
 
+  // ── Seed admin mặc định ──
+  try {
+    const bcrypt = require('bcryptjs');
+    const adminHash = await bcrypt.hash('admin123', 10);
+    await db.execute({
+      sql: `INSERT OR IGNORE INTO users (id, username, password_hash, role, is_active, createdAt)
+            VALUES ('admin', 'admin', ?, 'admin', 1, ?)`,
+      args: [adminHash, new Date().toISOString()],
+    });
+  } catch (e) {
+    console.warn('[store] Seed admin:', e.message);
+  }
+
   // ── Seed settings mặc định ──
   const seedSettings = [
-    { key: 'daily_token_limit',   value: '0', label: 'Giới hạn token/ngày (0 = không giới hạn)' },
-    { key: 'daily_article_limit', value: '0', label: 'Giới hạn số bài viết/ngày (0 = không giới hạn)' },
+    { key: 'daily_token_limit',   value: '0',                              label: 'Giới hạn token/ngày (0 = không giới hạn)' },
+    { key: 'daily_article_limit', value: '0',                              label: 'Giới hạn số bài viết/ngày (0 = không giới hạn)' },
+    { key: 'last_batch_check',    value: '',                               label: 'Thời điểm check batch job gần nhất' },
+    { key: 'gemini_api_key',      value: process.env.GEMINI_API_KEY  || '', label: 'Gemini API Key' },
+    { key: 'gemini_model',        value: process.env.GEMINI_MODEL    || 'gemini-2.5-flash', label: 'Gemini Model' },
+    { key: 'serpapi_api_key',     value: process.env.SERPAPI_API_KEY || '', label: 'SerpAPI Key' },
   ];
   for (const s of seedSettings) {
     await db.execute({
       sql: 'INSERT OR IGNORE INTO settings (key, value, label, updatedAt) VALUES (?, ?, ?, ?)',
       args: [s.key, s.value, s.label, new Date().toISOString()],
     });
+  }
+
+  // Sync API config từ DB → process.env (DB là nguồn sự thật sau lần đầu cấu hình)
+  const apiCfg = await db.execute(
+    `SELECT key, value FROM settings WHERE key IN ('gemini_api_key', 'gemini_model', 'serpapi_api_key')`
+  );
+  const envMap = { gemini_api_key: 'GEMINI_API_KEY', gemini_model: 'GEMINI_MODEL', serpapi_api_key: 'SERPAPI_API_KEY' };
+  for (const row of apiCfg.rows) {
+    if (row.value) process.env[envMap[row.key]] = row.value;
   }
 
   console.log('[store] DB initialized ✅');

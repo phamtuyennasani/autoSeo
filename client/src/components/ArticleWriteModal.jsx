@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import apiClient from '../config/api';
 import { X, Loader2, FileText, CheckCircle2, Sparkles, Copy, Check, Building2 } from 'lucide-react';
 import { useToken } from '../context/TokenContext';
 
-import API from '../config/api';
+import { API } from '../config/api';
 
 const API_COMPANY = API.companies;
 const API_ARTICLE = API.articles;

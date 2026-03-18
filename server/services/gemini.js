@@ -4,21 +4,25 @@ const { marked } = require('marked');
 const { ARTICLE_SYSTEM_INSTRUCTION, buildArticlePrompt, buildTitlesPrompt } = require('./prompts');
 require('dotenv').config();
 
-const genAI = process.env.GEMINI_API_KEY
-  ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
-  : null;
+// Client và model được tạo động mỗi lần gọi để phản ánh config mới nhất từ DB
+function getGenAI() {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) return null;
+  return new GoogleGenerativeAI(key);
+}
 
-// Model mặc định - có thể đổi qua biến môi trường GEMINI_MODEL
-// Các model khả dụng: gemini-2.5-flash, gemini-2.5-pro, gemini-1.5-flash, gemini-1.5-pro
-const MODEL_NAME = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+function getModelName() {
+  return process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+}
 
 async function generateTitles(keyword, searchContext, count = 10) {
-  if (!genAI) throw new Error('GEMINI_API_KEY is not configured.');
+  const genAI = getGenAI();
+  if (!genAI) throw new Error('GEMINI_API_KEY chưa được cấu hình. Vào Cài đặt → Cấu hình API để nhập key.');
 
   const prompt = buildTitlesPrompt(keyword, searchContext, count);
 
   const model = genAI.getGenerativeModel({
-    model: MODEL_NAME,
+    model: getModelName(),
     systemInstruction: 'You are an SEO expert. Return only valid JSON arrays without any explanation or markdown.',
   });
 
@@ -47,12 +51,13 @@ async function generateTitles(keyword, searchContext, count = 10) {
 }
 
 async function generateArticle(keyword, title, companyInfo) {
-  if (!genAI) throw new Error('GEMINI_API_KEY is not configured.');
+  const genAI = getGenAI();
+  if (!genAI) throw new Error('GEMINI_API_KEY chưa được cấu hình. Vào Cài đặt → Cấu hình API để nhập key.');
 
   const prompt = buildArticlePrompt(keyword, title, companyInfo);
 
   const model = genAI.getGenerativeModel({
-    model: MODEL_NAME,
+    model: getModelName(),
     systemInstruction: ARTICLE_SYSTEM_INSTRUCTION,
   });
 

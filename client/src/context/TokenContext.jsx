@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import axios from 'axios';
+import apiClient from '../config/api';
 
-import API from '../config/api';
+import { API } from '../config/api';
 const API_STATS = `${API.stats}/tokens`;
 
 const TokenContext = createContext(null);
@@ -16,7 +16,7 @@ export const TokenProvider = ({ children }) => {
 
   const fetchStats = useCallback(async () => {
     try {
-      const res = await axios.get(API_STATS);
+      const res = await apiClient.get(API_STATS);
       setTokenStats(res.data);
     } catch (err) {
       // Server có thể chưa chạy, bỏ qua lỗi

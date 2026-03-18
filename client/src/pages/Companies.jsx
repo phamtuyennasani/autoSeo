@@ -1,9 +1,28 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import apiClient from '../config/api';
 import { Plus, Trash2, Building2, Globe, Pencil, X, Save } from 'lucide-react';
 
-import API from '../config/api';
+import { API } from '../config/api';
 const API_URL = API.companies;
+
+const INDUSTRIES = [
+  'Bất động sản',
+  'Công nghệ thông tin',
+  'Thương mại điện tử',
+  'Giáo dục & Đào tạo',
+  'Y tế & Sức khỏe',
+  'Tài chính & Ngân hàng',
+  'Xây dựng & Nội thất',
+  'Du lịch & Khách sạn',
+  'Thực phẩm & Đồ uống',
+  'Thời trang & Làm đẹp',
+  'Vận tải & Logistics',
+  'Nông nghiệp',
+  'Năng lượng',
+  'Truyền thông & Marketing',
+  'Pháp lý',
+  'Khác',
+];
 
 const Companies = () => {
   const [companies, setCompanies] = useState([]);
@@ -11,19 +30,19 @@ const Companies = () => {
 
   // Add modal
   const [isAddOpen, setIsAddOpen] = useState(false);
-  const [addForm, setAddForm] = useState({ name: '', url: '', info: '' });
+  const [addForm, setAddForm] = useState({ name: '', url: '', info: '', contract_code: '', industry: '' });
   const [submitting, setSubmitting] = useState(false);
 
   // Edit modal
   const [editingCompany, setEditingCompany] = useState(null);
-  const [editForm, setEditForm] = useState({ name: '', url: '', info: '' });
+  const [editForm, setEditForm] = useState({ name: '', url: '', info: '', contract_code: '', industry: '' });
   const [saving, setSaving] = useState(false);
 
   useEffect(() => { fetchCompanies(); }, []);
 
   const fetchCompanies = async () => {
     try {
-      const res = await axios.get(API_URL);
+      const res = await apiClient.get(API_URL);
       setCompanies(res.data);
     } catch (error) {
       console.error(error);
@@ -37,8 +56,8 @@ const Companies = () => {
     e.preventDefault();
     setSubmitting(true);
     try {
-      await axios.post(API_URL, addForm);
-      setAddForm({ name: '', url: '', info: '' });
+      await apiClient.post(API_URL, addForm);
+      setAddForm({ name: '', url: '', info: '', contract_code: '', industry: '' });
       setIsAddOpen(false);
       fetchCompanies();
     } catch (error) {
@@ -51,7 +70,7 @@ const Companies = () => {
   // EDIT - open
   const openEdit = (company) => {
     setEditingCompany(company);
-    setEditForm({ name: company.name, url: company.url, info: company.info || '' });
+    setEditForm({ name: company.name, url: company.url, info: company.info || '', contract_code: company.contract_code || '', industry: company.industry || '' });
   };
 
   // EDIT - save
@@ -59,7 +78,7 @@ const Companies = () => {
     e.preventDefault();
     setSaving(true);
     try {
-      await axios.put(`${API_URL}/${editingCompany.id}`, editForm);
+      await apiClient.put(`${API_URL}/${editingCompany.id}`, editForm);
       setEditingCompany(null);
       fetchCompanies();
     } catch (error) {
@@ -73,7 +92,7 @@ const Companies = () => {
   const handleDelete = async (id, name) => {
     if (!window.confirm(`Xóa công ty "${name}"? Hành động không thể hoàn tác.`)) return;
     try {
-      await axios.delete(`${API_URL}/${id}`);
+      await apiClient.delete(`${API_URL}/${id}`);
       fetchCompanies();
     } catch (error) {
       alert('Xóa thất bại!');
@@ -210,6 +229,23 @@ const Companies = () => {
                     onChange={e => setAddForm({ ...addForm, url: e.target.value })}
                     required placeholder="https://example.com" disabled={submitting} />
                 </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div className="input-group">
+                    <label className="input-label">Mã Hợp Đồng</label>
+                    <input type="text" className="input-field" value={addForm.contract_code}
+                      onChange={e => setAddForm({ ...addForm, contract_code: e.target.value })}
+                      placeholder="VD: HD-2024-001" disabled={submitting} />
+                  </div>
+                  <div className="input-group">
+                    <label className="input-label">Lĩnh Vực</label>
+                    <select className="input-field" value={addForm.industry}
+                      onChange={e => setAddForm({ ...addForm, industry: e.target.value })}
+                      disabled={submitting}>
+                      <option value="">-- Chọn lĩnh vực --</option>
+                      {INDUSTRIES.map(ind => <option key={ind} value={ind}>{ind}</option>)}
+                    </select>
+                  </div>
+                </div>
                 <div className="input-group">
                   <label className="input-label">Mô tả (AI dùng để cá nhân hóa bài viết)</label>
                   <textarea className="input-field" value={addForm.info}
@@ -252,6 +288,23 @@ const Companies = () => {
                   <input type="url" className="input-field" value={editForm.url}
                     onChange={e => setEditForm({ ...editForm, url: e.target.value })}
                     required disabled={saving} />
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div className="input-group">
+                    <label className="input-label">Mã Hợp Đồng</label>
+                    <input type="text" className="input-field" value={editForm.contract_code}
+                      onChange={e => setEditForm({ ...editForm, contract_code: e.target.value })}
+                      placeholder="VD: HD-2024-001" disabled={saving} />
+                  </div>
+                  <div className="input-group">
+                    <label className="input-label">Lĩnh Vực</label>
+                    <select className="input-field" value={editForm.industry}
+                      onChange={e => setEditForm({ ...editForm, industry: e.target.value })}
+                      disabled={saving}>
+                      <option value="">-- Chọn lĩnh vực --</option>
+                      {INDUSTRIES.map(ind => <option key={ind} value={ind}>{ind}</option>)}
+                    </select>
+                  </div>
                 </div>
                 <div className="input-group">
                   <label className="input-label">Mô tả (AI dùng để cá nhân hóa bài viết)</label>

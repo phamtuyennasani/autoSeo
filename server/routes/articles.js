@@ -4,14 +4,14 @@ const { db } = require('../data/store');
 const { generateArticle } = require('../services/gemini');
 
 // ─── Helper: gọi AI + lưu token + lưu DB ─────────────────────────────────────
-async function generateAndSave(keyword, title, companyId, company) {
+async function generateAndSave(keyword, title, companyId, company, createdBy = null) {
   const result = await generateArticle(keyword, title, company);
 
   if (result.usage) {
     const usageId = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}-article`;
     await db.execute({
-      sql: 'INSERT INTO token_usage (id, type, input_tokens, output_tokens, total_tokens, keyword, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      args: [usageId, 'article', result.usage.input_tokens, result.usage.output_tokens, result.usage.total_tokens, keyword, new Date().toISOString()],
+      sql: 'INSERT INTO token_usage (id, type, input_tokens, output_tokens, total_tokens, keyword, createdAt, createdBy) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      args: [usageId, 'article', result.usage.input_tokens, result.usage.output_tokens, result.usage.total_tokens, keyword, new Date().toISOString(), createdBy],
     });
   }
 
@@ -20,28 +20,37 @@ async function generateAndSave(keyword, title, companyId, company) {
   const createdAt = new Date().toISOString();
 
   await db.execute({
-    sql: 'INSERT INTO articles (id, keyword, title, companyId, content, seo_title, seo_description, image_prompts, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    args: [id, keyword, title, companyId, content, seo_title, seo_description, JSON.stringify(image_prompts), createdAt],
+    sql: 'INSERT INTO articles (id, keyword, title, companyId, content, seo_title, seo_description, image_prompts, createdAt, createdBy) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    args: [id, keyword, title, companyId, content, seo_title, seo_description, JSON.stringify(image_prompts), createdAt, createdBy],
   });
 
-  return { id, keyword, title, companyId, content, seo_title, seo_description, image_prompts, createdAt };
+  return { id, keyword, title, companyId, content, seo_title, seo_description, image_prompts, createdAt, createdBy };
 }
 
 // ─── GET danh sách bài viết ───────────────────────────────────────────────────
 router.get('/', async (req, res) => {
   try {
+    const user = req.user || { id: 'admin', role: 'admin' };
+    const isAdmin = user.role === 'admin';
     const { keyword } = req.query;
-    let result;
+
+    let sql = `SELECT a.*, c.name as companyName FROM articles a LEFT JOIN companies c ON a.companyId = c.id`;
+    const args = [];
+    const conditions = [];
+
     if (keyword) {
-      result = await db.execute({
-        sql: `SELECT a.*, c.name as companyName FROM articles a LEFT JOIN companies c ON a.companyId = c.id WHERE a.keyword = ? ORDER BY a.createdAt DESC`,
-        args: [keyword],
-      });
-    } else {
-      result = await db.execute(
-        `SELECT a.*, c.name as companyName FROM articles a LEFT JOIN companies c ON a.companyId = c.id ORDER BY a.createdAt DESC`
-      );
+      conditions.push('a.keyword = ?');
+      args.push(keyword);
     }
+    if (!isAdmin) {
+      conditions.push('a.createdBy = ?');
+      args.push(user.id);
+    }
+
+    if (conditions.length > 0) sql += ' WHERE ' + conditions.join(' AND ');
+    sql += ' ORDER BY a.createdAt DESC';
+
+    const result = await db.execute({ sql, args });
     res.json(result.rows);
   } catch (err) {
     console.error(err);
@@ -52,9 +61,17 @@ router.get('/', async (req, res) => {
 // ─── DELETE bài viết ──────────────────────────────────────────────────────────
 router.delete('/:id', async (req, res) => {
   try {
+    const user = req.user || { id: 'admin', role: 'admin' };
     const { id } = req.params;
-    const result = await db.execute({ sql: 'DELETE FROM articles WHERE id = ?', args: [id] });
-    if (result.rowsAffected === 0) return res.status(404).json({ error: 'Không tìm thấy' });
+
+    const check = await db.execute({ sql: 'SELECT createdBy FROM articles WHERE id = ?', args: [id] });
+    if (!check.rows[0]) return res.status(404).json({ error: 'Không tìm thấy' });
+
+    if (user.role !== 'admin' && check.rows[0].createdBy !== user.id) {
+      return res.status(403).json({ error: 'Bạn không có quyền xóa bài viết này.' });
+    }
+
+    await db.execute({ sql: 'DELETE FROM articles WHERE id = ?', args: [id] });
     res.json({ success: true });
   } catch (err) {
     console.error(err);
@@ -65,6 +82,7 @@ router.delete('/:id', async (req, res) => {
 // ─── POST / — Sinh 1 bài viết đơn lẻ ────────────────────────────────────────
 router.post('/', async (req, res) => {
   try {
+    const user = req.user || { id: 'admin', role: 'admin' };
     const { keyword, title, companyId } = req.body;
     if (!keyword || !title || !companyId)
       return res.status(400).json({ error: 'Thiếu thông tin bắt buộc' });
@@ -73,7 +91,7 @@ router.post('/', async (req, res) => {
     const company = compResult.rows[0];
     if (!company) return res.status(404).json({ error: 'Không tìm thấy thông tin công ty' });
 
-    const article = await generateAndSave(keyword, title, companyId, company);
+    const article = await generateAndSave(keyword, title, companyId, company, user.id);
     res.json(article);
   } catch (error) {
     console.error('[single] Lỗi:', error.message);
@@ -83,6 +101,7 @@ router.post('/', async (req, res) => {
 
 // ─── POST /batch — Viết tuần tự nhiều bài, stream SSE ────────────────────────
 router.post('/batch', async (req, res) => {
+  const user = req.user || { id: 'admin', role: 'admin' };
   const { keyword, titles, companyId } = req.body;
   if (!keyword || !Array.isArray(titles) || titles.length === 0 || !companyId)
     return res.status(400).json({ error: 'Thiếu thông tin bắt buộc' });
@@ -109,7 +128,7 @@ router.post('/batch', async (req, res) => {
   for (let i = 0; i < titles.length; i++) {
     const title = titles[i];
     try {
-      const article = await generateAndSave(keyword, title, companyId, company);
+      const article = await generateAndSave(keyword, title, companyId, company, user.id);
       succeededCount++;
       send({ type: 'progress', done: i + 1, total: titles.length, title, article });
     } catch (err) {
@@ -124,7 +143,7 @@ router.post('/batch', async (req, res) => {
 });
 
 // ─── Helper dùng chung: lưu 1 bài từ kết quả Batch API ───────────────────────
-async function saveArticleFromBatch(jobKeyword, jobCompanyId, result) {
+async function saveArticleFromBatch(jobKeyword, jobCompanyId, result, createdBy = null) {
   if (result.error) return { saved: false, message: `AI error: ${result.error}` };
 
   // Duplicate check
@@ -141,8 +160,8 @@ async function saveArticleFromBatch(jobKeyword, jobCompanyId, result) {
     try {
       const usageId = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}-batch`;
       await db.execute({
-        sql: 'INSERT INTO token_usage (id, type, input_tokens, output_tokens, total_tokens, keyword, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        args: [usageId, 'article-batch', result.usage.input_tokens, result.usage.output_tokens, result.usage.total_tokens, jobKeyword, new Date().toISOString()],
+        sql: 'INSERT INTO token_usage (id, type, input_tokens, output_tokens, total_tokens, keyword, createdAt, createdBy) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        args: [usageId, 'article-batch', result.usage.input_tokens, result.usage.output_tokens, result.usage.total_tokens, jobKeyword, new Date().toISOString(), result.createdBy || null],
       });
     } catch (e) {
       console.error('[saveArticleFromBatch] Lỗi lưu token:', e.message);
@@ -154,8 +173,8 @@ async function saveArticleFromBatch(jobKeyword, jobCompanyId, result) {
   const createdAt = new Date().toISOString();
 
   await db.execute({
-    sql: 'INSERT INTO articles (id, keyword, title, companyId, content, seo_title, seo_description, image_prompts, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    args: [id, jobKeyword, result.title, jobCompanyId, content, seo_title, seo_description, JSON.stringify(image_prompts), createdAt],
+    sql: 'INSERT INTO articles (id, keyword, title, companyId, content, seo_title, seo_description, image_prompts, createdAt, createdBy) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    args: [id, jobKeyword, result.title, jobCompanyId, content, seo_title, seo_description, JSON.stringify(image_prompts), createdAt, createdBy],
   });
 
   return { saved: true, id, title: result.title, seo_title, createdAt };
@@ -163,3 +182,4 @@ async function saveArticleFromBatch(jobKeyword, jobCompanyId, result) {
 
 module.exports = router;
 module.exports.saveArticleFromBatch = saveArticleFromBatch;
+module.exports.generateAndSave = generateAndSave;

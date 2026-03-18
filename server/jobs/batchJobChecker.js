@@ -38,8 +38,20 @@ async function importJobResults(job, results) {
   return { succeeded, failed };
 }
 
+// ─── Lưu thời điểm check vào DB ──────────────────────────────────────────────
+async function updateLastCheckTime() {
+  const now = new Date().toISOString();
+  await db.execute({
+    sql: `INSERT INTO settings (key, value, label, updatedAt) VALUES ('last_batch_check', ?, 'Thời điểm check batch job gần nhất', ?)
+          ON CONFLICT(key) DO UPDATE SET value = excluded.value, updatedAt = excluded.updatedAt`,
+    args: [now, now],
+  });
+}
+
 // ─── Check tất cả job pending ────────────────────────────────────────────────
 async function checkPendingJobs() {
+  await updateLastCheckTime();
+
   const pendingResult = await db.execute(
     `SELECT * FROM batch_jobs WHERE status = 'pending' ORDER BY createdAt ASC`
   );
