@@ -328,6 +328,56 @@ body {
 }
 
 /* ===========================
+   TOPBAR TOKEN STATS
+=========================== */
+.topbar-token-stats {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  font-size: 12px;
+}
+
+.topbar-token-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 11px;
+  color: var(--text-secondary);
+  cursor: default;
+  transition: background var(--transition);
+  white-space: nowrap;
+}
+
+.topbar-token-item:hover {
+  background: var(--bg-panel-hover);
+  color: var(--text-primary);
+}
+
+.topbar-token-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.topbar-token-value {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.topbar-token-divider {
+  width: 1px;
+  height: 20px;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
+/* ===========================
    PAGE CONTENT
 =========================== */
 .page-content {

@@ -1,16 +1,28 @@
 import React from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { Search, Building2, Zap, Settings, HelpCircle, Sun, Moon } from 'lucide-react';
+import { Search, Building2, Zap, Settings, HelpCircle, Sun, Moon, Cpu, TrendingUp, Layers } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
+import { useToken } from '../context/TokenContext';
 
 const pageTitles = {
-  '/keywords': 'SEO Keywords',
-  '/companies': 'Website & Công Ty',
+  '/keywords':   'SEO Keywords',
+  '/companies':  'Website & Công Ty',
+  '/batch-jobs': 'Batch Jobs',
+  '/settings':   'Cài Đặt',
+};
+
+// Format số token lớn cho dễ đọc: 1234567 → 1.23M, 12345 → 12.3K
+const formatTokens = (n) => {
+  if (!n) return '0';
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(2) + 'M';
+  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
+  return n.toString();
 };
 
 const Layout = () => {
   const location = useLocation();
   const { theme, toggleTheme } = useTheme();
+  const { tokenStats } = useToken();
   const currentTitle = pageTitles[location.pathname] || 'Dashboard';
 
   return (
@@ -35,13 +47,16 @@ const Layout = () => {
           <NavLink to="/companies" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
             <Building2 size={17} className="nav-icon" /> Website / Công Ty
           </NavLink>
+          <NavLink to="/batch-jobs" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+            <Layers size={17} className="nav-icon" /> Batch Jobs
+          </NavLink>
         </div>
 
         <div style={{ marginTop: 'auto' }}>
           <div className="sidebar-section">
-            <a href="#" className="nav-item" style={{ textDecoration: 'none' }}>
+          <NavLink to="/settings" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
               <Settings size={17} className="nav-icon" /> Cài đặt
-            </a>
+            </NavLink>
             <a href="#" className="nav-item" style={{ textDecoration: 'none' }}>
               <HelpCircle size={17} className="nav-icon" /> Trợ giúp
             </a>
@@ -65,7 +80,23 @@ const Layout = () => {
             <span className="topbar-breadcrumb-sep">/</span>
             <span>{currentTitle}</span>
           </div>
+
           <div className="topbar-right">
+            {/* TOKEN STATS */}
+            <div className="topbar-token-stats">
+              <div className="topbar-token-item" title={`Input: ${tokenStats.total_input?.toLocaleString() || 0} | Output: ${tokenStats.total_output?.toLocaleString() || 0}`}>
+                <Cpu size={13} style={{ opacity: 0.7 }} />
+                <span className="topbar-token-label">Tokens</span>
+                <span className="topbar-token-value">{formatTokens(tokenStats.total_tokens)}</span>
+              </div>
+              <div className="topbar-token-divider" />
+              <div className="topbar-token-item" title="Tổng số lần gọi API">
+                <TrendingUp size={13} style={{ opacity: 0.7 }} />
+                <span className="topbar-token-label">Lần gọi</span>
+                <span className="topbar-token-value">{tokenStats.total_calls || 0}</span>
+              </div>
+            </div>
+
             <div className="topbar-badge">Server Online</div>
 
             {/* THEME TOGGLE */}

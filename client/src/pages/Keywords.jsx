@@ -1,21 +1,26 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { marked } from 'marked';
+import { useNavigate } from 'react-router-dom';
 import {
   Search, PenTool, Sparkles, X, Loader2, Trash2, Eye, Calendar,
   ChevronLeft, Plus, Building2, BarChart2, FileText, Hash, RefreshCw,
-  CheckCircle2, PlayCircle, Clock
+  CheckCircle2, PlayCircle, Clock, Layers
 } from 'lucide-react';
 import ArticleWriteModal from '../components/ArticleWriteModal';
+import { useToken } from '../context/TokenContext';
 
-const API_KEYWORD = 'http://localhost:3001/api/keywords';
-const API_COMPANY = 'http://localhost:3001/api/companies';
-const API_ARTICLE = 'http://localhost:3001/api/articles';
+const API_KEYWORD   = 'http://localhost:3001/api/keywords';
+const API_COMPANY   = 'http://localhost:3001/api/companies';
+const API_ARTICLE   = 'http://localhost:3001/api/articles';
+const API_BATCH_JOBS = 'http://localhost:3001/api/batch-jobs';
 
 const Keywords = () => {
   const [keywords, setKeywords] = useState([]);
   const [companies, setCompanies] = useState([]);
   const [loading, setLoading] = useState(true);
+  const { refreshStats } = useToken();
+  const navigate = useNavigate();
 
   // Detail view
   const [selectedKeyword, setSelectedKeyword] = useState(null);
@@ -25,11 +30,15 @@ const Keywords = () => {
   // Write All state
   const [isWritingAll, setIsWritingAll] = useState(false);
   const [writeAllProgress, setWriteAllProgress] = useState({ current: 0, total: 0 });
+  const [batchStatus, setBatchStatus] = useState('');
+  const [hasPendingBatch, setHasPendingBatch] = useState(false);  // có job đang pending trong DB không?
+  const [pendingBatchJob, setPendingBatchJob] = useState(null);   // job object nếu có
 
   // Add keyword modal
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [keywordInput, setKeywordInput] = useState('');
   const [selectedCompanyId, setSelectedCompanyId] = useState('');
+  const [titleCount, setTitleCount] = useState(10);
   const [isGenerating, setIsGenerating] = useState(false);
 
   // Article modal (single)
@@ -73,6 +82,22 @@ const Keywords = () => {
     setSelectedKeyword(item);
     setArticlesOfKeyword([]);
     fetchArticlesForKeyword(item.keyword);
+    fetchPendingBatchJob(item.keyword); // kiểm tra DB xem có job đang chờ không
+  };
+
+  // Fetch batch job đang pending cho keyword hiện tại (status = pending)
+  const fetchPendingBatchJob = async (keyword) => {
+    try {
+      const res = await axios.get(API_BATCH_JOBS, { params: { keyword } });
+      // Lấy job mới nhất có status = pending
+      const pendingJob = res.data.find(j => j.status === 'pending') || null;
+      setPendingBatchJob(pendingJob);
+      setHasPendingBatch(!!pendingJob);
+    } catch (err) {
+      console.error('Lỗi fetch batch job:', err.message);
+      setHasPendingBatch(false);
+      setPendingBatchJob(null);
+    }
   };
 
   const handleAddKeyword = async (e) => {
@@ -80,13 +105,15 @@ const Keywords = () => {
     if (!keywordInput.trim() || !selectedCompanyId) return;
     setIsGenerating(true);
     try {
-      await axios.post(API_KEYWORD, { keyword: keywordInput, companyId: selectedCompanyId });
+      await axios.post(API_KEYWORD, { keyword: keywordInput, companyId: selectedCompanyId, titleCount });
       setKeywordInput('');
+      setTitleCount(10);
       setIsAddModalOpen(false);
+      refreshStats(); // cập nhật token stats trên topbar
       fetchData();
     } catch (error) {
       console.error(error);
-      alert('Có lỗi xảy ra. Vui lòng kiểm tra lại API Key Groq/SerpAPI.');
+      alert('Có lỗi xảy ra. Vui lòng kiểm tra lại cấu hình API hoặc thử lại sau.');
     } finally {
       setIsGenerating(false);
     }
@@ -124,7 +151,7 @@ const Keywords = () => {
     setIsWriteModalOpen(true);
   };
 
-  // Viết TẤT CẢ tuần tự (chỉ các title chưa có bài)
+  // Gửi Gemini Batch Job → trả về ngay, user xem kết quả ở trang Batch Jobs
   const handleWriteAll = async () => {
     if (!selectedKeyword || isWritingAll) return;
     const unwrittenTitles = (selectedKeyword.titles || []).filter(
@@ -136,29 +163,27 @@ const Keywords = () => {
     }
 
     setIsWritingAll(true);
-    setWriteAllProgress({ current: 0, total: unwrittenTitles.length });
-
-    for (let i = 0; i < unwrittenTitles.length; i++) {
-      const title = unwrittenTitles[i];
-      setWriteAllProgress({ current: i + 1, total: unwrittenTitles.length });
-      try {
-        await axios.post(API_ARTICLE, {
-          keyword: selectedKeyword.keyword,
-          title,
-          companyId: selectedKeyword.companyId
-        });
-        // Refresh danh sách bài sau mỗi bài viết xong
-        const res = await axios.get(API_ARTICLE, { params: { keyword: selectedKeyword.keyword } });
-        setArticlesOfKeyword(res.data);
-      } catch (err) {
-        console.error(`Lỗi viết bài: ${title}`, err.message);
-        // Tiếp tục dù lỗi
-      }
+    setBatchStatus('Đang gửi job lên Gemini Batch API...');
+    try {
+      const res = await axios.post(API_BATCH_JOBS, {
+        keyword: selectedKeyword.keyword,
+        titles: unwrittenTitles,
+        companyId: selectedKeyword.companyId,
+      });
+      // Cập nhật state từ kết quả trả về
+      setPendingBatchJob(res.data);
+      setHasPendingBatch(true);
+      alert(`✅ Batch job đã được gửi!\n\nGemini sẽ xử lý ${res.data.total} bài viết.\nHãy kiểm tra trang Batch Jobs để theo dõi kết quả.`);
+      navigate('/batch-jobs');
+    } catch (err) {
+      console.error('Lỗi gửi batch job:', err.message);
+      alert('Có lỗi: ' + (err.response?.data?.error || err.message));
+    } finally {
+      setIsWritingAll(false);
+      setBatchStatus('');
     }
-
-    setIsWritingAll(false);
-    fetchData(); // cập nhật articleCount
   };
+
 
   const getArticleForTitle = (title) => articlesOfKeyword.find(a => a.title === title);
   const getCompany = (cId) => companies.find(c => c.id === cId);
@@ -255,22 +280,37 @@ const Keywords = () => {
               </div>
             </div>
 
-            {/* NÚT VIẾT TẤT CẢ */}
-            {unwrittenCount > 0 && !isWritingAll && (
+            {/* NÚT VIẾT TẤT CẢ (BATCH) */}
+            {unwrittenCount > 0 && !hasPendingBatch && !isWritingAll && (
               <button onClick={handleWriteAll} className="btn btn-primary" style={{ gap: '6px' }}>
-                <PlayCircle size={16} /> Viết Tất Cả ({unwrittenCount} bài)
+                <Layers size={16} /> Viết Tất Cả — Batch ({unwrittenCount} bài)
               </button>
             )}
+            {hasPendingBatch && unwrittenCount > 0 && (
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '7px 12px', background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.25)', borderRadius: 'var(--radius-md)', fontSize: '13px', fontWeight: '600', color: 'var(--success)' }}>
+                <CheckCircle2 size={14} />
+                <span>
+                  Đã tạo Batch Job{pendingBatchJob?.gemini_state ? ` (${pendingBatchJob.gemini_state.replace('JOB_STATE_', '')})` : ''}
+                </span>
+                <button
+                  onClick={() => navigate('/batch-jobs')}
+                  style={{ marginLeft: 4, fontSize: 11, fontWeight: 600, color: 'var(--accent)', background: 'var(--accent-subtle)', border: 'none', borderRadius: 10, padding: '2px 8px', cursor: 'pointer' }}
+                >
+                  Xem job →
+                </button>
+              </div>
+            )}
             {isWritingAll && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 16px', background: 'var(--accent-subtle)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: 'var(--radius-md)', fontSize: '14px', fontWeight: '500', color: 'var(--accent)' }}>
-                <Loader2 className="animate-spin" size={15} />
-                Đang viết {writeAllProgress.current}/{writeAllProgress.total}...
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 14px', background: 'var(--accent-subtle)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: 'var(--radius-md)', fontSize: '13px', fontWeight: '600', color: 'var(--accent)' }}>
+                <Loader2 className="animate-spin" size={14} />
+                {batchStatus || 'Đang gửi Batch Job...'}
               </div>
             )}
           </div>
         </div>
 
         {/* TITLE LIST */}
+
         <div className="panel" style={{ padding: '24px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '20px' }}>
             <Sparkles size={18} color="var(--accent)" />
@@ -302,7 +342,9 @@ const Keywords = () => {
                   {/* Status Icon */}
                   {article
                     ? <CheckCircle2 size={16} color="var(--success)" style={{ flexShrink: 0 }} />
-                    : <Clock size={16} color="var(--text-muted)" style={{ flexShrink: 0 }} />
+                    : hasPendingBatch
+                      ? <Layers size={16} color="var(--accent)" style={{ flexShrink: 0 }} />
+                      : <Clock size={16} color="var(--text-muted)" style={{ flexShrink: 0 }} />
                   }
 
                   {/* Title */}
@@ -340,6 +382,11 @@ const Keywords = () => {
                           <RefreshCw size={13} /> Viết lại
                         </button>
                       </>
+                    ) : hasPendingBatch ? (
+                      // Đã gửi batch → hiện badge, không cho viết lẻ nữa
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '11px', fontWeight: '600', color: 'var(--accent)', background: 'var(--accent-subtle)', padding: '3px 9px', borderRadius: 20 }}>
+                        <Layers size={11} /> Đã gửi Batch
+                      </span>
                     ) : (
                       <button
                         onClick={() => { setWriteModalTitle(title); setIsWriteModalOpen(true); }}
@@ -386,7 +433,7 @@ const Keywords = () => {
         <div className="page-title-row">
           <div>
             <h1 className="page-title">Quản Lý Từ Khóa SEO</h1>
-            <p className="page-subtitle">Phân tích từ khóa với SerpAPI & Groq AI, tự động sinh tiêu đề tối ưu SEO</p>
+            <p className="page-subtitle">Phân tích từ khóa và tự động sinh tiêu đề chuẩn SEO tối ưu</p>
           </div>
           <button onClick={() => setIsAddModalOpen(true)} className="btn btn-primary">
             <Plus size={16} /> Thêm Từ Khóa
@@ -535,9 +582,31 @@ const Keywords = () => {
                     required disabled={isGenerating} autoFocus
                   />
                 </div>
+                <div className="input-group">
+                  <label className="input-label">
+                    Số tiêu đề cần tạo
+                    <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 400, color: 'var(--text-muted)' }}>(1 – 30)</span>
+                  </label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <input
+                      type="range" min={1} max={30} step={1}
+                      value={titleCount}
+                      onChange={e => setTitleCount(Number(e.target.value))}
+                      disabled={isGenerating}
+                      style={{ flex: 1, accentColor: 'var(--accent)' }}
+                    />
+                    <input
+                      type="number" min={1} max={30}
+                      value={titleCount}
+                      onChange={e => setTitleCount(Math.max(1, Math.min(30, Number(e.target.value) || 10)))}
+                      disabled={isGenerating}
+                      style={{ width: 56, textAlign: 'center', padding: '4px 8px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'var(--text-primary)', fontSize: 14, fontWeight: 700 }}
+                    />
+                  </div>
+                </div>
                 <div className="info-box info-box-blue" style={{ marginBottom: '16px' }}>
                   <Sparkles size={14} style={{ flexShrink: 0, marginTop: '1px' }} />
-                  <span>Hệ thống dùng <strong>SerpAPI</strong> phân tích, sau đó <strong>Groq AI</strong> sinh 10 tiêu đề tối ưu SEO.</span>
+                  <span>Hệ thống sẽ tự động phân tích và sinh <strong>{titleCount} tiêu đề</strong> tối ưu SEO cho từ khóa này.</span>
                 </div>
                 <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
                   <button type="button" className="btn btn-outline" onClick={() => setIsAddModalOpen(false)} disabled={isGenerating}>Hủy</button>

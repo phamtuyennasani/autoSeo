@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { X, Loader2, FileText, CheckCircle2, Sparkles, Copy, Check, Building2 } from 'lucide-react';
+import { useToken } from '../context/TokenContext';
 
 const API_COMPANY = 'http://localhost:3001/api/companies';
 const API_ARTICLE = 'http://localhost:3001/api/articles';
@@ -12,6 +13,7 @@ const ArticleWriteModal = ({ keyword, title, companyId, onClose, onSuccess }) =>
   const [generatedArticle, setGeneratedArticle] = useState(null);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState(null);
+  const { refreshStats } = useToken();
 
   useEffect(() => {
     if (companyId) {
@@ -28,10 +30,11 @@ const ArticleWriteModal = ({ keyword, title, companyId, onClose, onSuccess }) =>
     try {
       const res = await axios.post(API_ARTICLE, { keyword, title, companyId });
       setGeneratedArticle(res.data);
+      refreshStats(); // Cập nhật token stats trên topbar
       if (onSuccess) onSuccess(res.data); // Notify parent to refresh article list
     } catch (err) {
       console.error(err);
-      setError(err.response?.data?.details || 'Lỗi khi viết bài. Kiểm tra lại API Key Groq hoặc thử lại sau.');
+      setError(err.response?.data?.details || 'Lỗi khi viết bài. Vui lòng kiểm tra lại cấu hình API hoặc thử lại sau.');
     } finally {
       setIsGenerating(false);
     }
@@ -101,7 +104,7 @@ const ArticleWriteModal = ({ keyword, title, companyId, onClose, onSuccess }) =>
                 disabled={isGenerating}
               >
                 {isGenerating
-                  ? <><Loader2 className="animate-spin" size={17} /> Groq AI đang viết bài... Vui lòng chờ</>
+                  ? <><Loader2 className="animate-spin" size={17} /> Đang viết bài... Vui lòng chờ</>
                   : <><FileText size={17} /> Bắt Đầu Viết Bài</>
                 }
               </button>

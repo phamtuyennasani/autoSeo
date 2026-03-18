@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../data/store');
 const { getSearchContext } = require('../services/serp');
-const { generateTitles } = require('../services/groq');
+const { generateTitles } = require('../services/gemini');
 
 // Lấy danh sách từ khóa kèm thống kê (số tiêu đề, số bài đã viết)
 router.get('/', (req, res) => {
@@ -35,16 +35,26 @@ router.get('/', (req, res) => {
 // Thêm từ khóa mới + Auto generate titles
 router.post('/', async (req, res) => {
   try {
-    const { keyword, companyId } = req.body;
+    const { keyword, companyId, titleCount } = req.body;
     if (!keyword || !companyId) return res.status(400).json({ error: 'Keyword và Company ID là bắt buộc' });
 
-    console.log(`Bắt đầu xử lý keyword: ${keyword}`);
+    // Validate titleCount: 1–30, mặc định 10
+    const count = Math.max(1, Math.min(30, parseInt(titleCount) || 10));
+
+    console.log(`Bắt đầu xử lý keyword: ${keyword}, số tiêu đề: ${count}`);
     const searchContext = await getSearchContext(keyword);
     
     let titles = [];
     try {
-        console.log(`Đang dùng AI tạo titles...`);
-        titles = await generateTitles(keyword, searchContext);
+        console.log(`Đang dùng AI tạo ${count} titles...`);
+        const result = await generateTitles(keyword, searchContext, count);
+        titles = result.titles;
+        // Lưu token usage
+        if (result.usage) {
+          const usageId = `${Date.now()}-titles`;
+          db.prepare(`INSERT INTO token_usage (id, type, input_tokens, output_tokens, total_tokens, keyword, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+            .run(usageId, 'titles', result.usage.input_tokens, result.usage.output_tokens, result.usage.total_tokens, keyword, new Date().toISOString());
+        }
     } catch (e) {
         console.error("Lỗi tạo titles từ AI", e.message);
         titles = ["Lỗi khi tạo tiêu đề tự động."];
