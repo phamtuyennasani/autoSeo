@@ -143,6 +143,15 @@ export default function Help() {
           </Step>
           <Step n="4" title="SerpAPI Key (tùy chọn)">
             Nếu có SerpAPI key (<strong>serpapi.com</strong>), hệ thống sẽ lấy dữ liệu kết quả tìm kiếm Google thực tế để AI sinh tiêu đề chính xác hơn. Nếu không có, AI vẫn tự sinh tiêu đề dựa trên kiến thức chuyên sâu.
+            <div style={{ marginTop: 10, padding: '10px 14px', borderRadius: 'var(--radius-md)', background: 'var(--bg-panel)', border: '1px solid var(--border)' }}>
+              <div style={{ fontWeight: 600, fontSize: 12, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Nhập nhiều key để tránh hết lượt</div>
+              <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.7 }}>
+                Hỗ trợ nhập <strong>nhiều key cách nhau bởi dấu phẩy</strong>. Mỗi lần gọi, hệ thống tự chọn ngẫu nhiên 1 key để phân tải đều — nếu key đó lỗi sẽ tự thử key khác:
+              </div>
+              <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 'var(--radius-sm)', background: 'var(--bg-content)', border: '1px solid var(--border)', fontFamily: 'monospace', fontSize: 12, color: 'var(--accent)', wordBreak: 'break-all' }}>
+                key_abc123,key_def456,key_ghi789
+              </div>
+            </div>
           </Step>
           <Note type="green">Cấu hình được lưu vào database, có hiệu lực ngay — không cần restart server. Key được ẩn dạng password trên giao diện.</Note>
         </Section>
@@ -281,6 +290,10 @@ export default function Help() {
                 a: 'Có. SerpAPI là tùy chọn. Không có SerpAPI, AI vẫn tự sinh tiêu đề dựa trên kiến thức SEO chuyên sâu và hiểu biết về thị trường Việt Nam. Chất lượng tiêu đề vẫn tốt, chỉ thiếu dữ liệu thực tế từ Google Search.'
               },
               {
+                q: 'Làm sao tránh SerpAPI bị hết lượt khi dùng nhiều?',
+                a: 'Nhập nhiều key cách nhau bởi dấu phẩy trong ô SerpAPI Key (ví dụ: key1,key2,key3). Mỗi lần gọi hệ thống sẽ chọn ngẫu nhiên 1 key để phân tải đều. Nếu key được chọn trả về lỗi, hệ thống tự thử các key còn lại trước khi bỏ qua. Cách này giúp tận dụng hết quota của nhiều tài khoản SerpAPI mà không cần cấu hình thêm gì.'
+              },
+              {
                 q: 'Bài viết có chuẩn SEO không?',
                 a: 'AI được chỉ dẫn cụ thể: từ khóa chính xuất hiện trong ít nhất 2 tiêu đề H2, mật độ từ khóa 1–1.5%, có CTA cuối bài, chèn link về website công ty, thêm thông tin liên hệ, độ dài ~1000 từ. SEO Title 50–60 ký tự, Meta Description 150–160 ký tự.'
               },
@@ -301,7 +314,7 @@ export default function Help() {
                 a: 'Mỗi bài viết AI tạo kèm các prompt tiếng Anh để tạo ảnh minh họa — 1 ảnh đại diện (Feature Image) + 1 ảnh cho mỗi H2. Bạn copy prompt này vào các công cụ tạo ảnh AI như Midjourney, DALL-E, hoặc Stable Diffusion.'
               },
             ].map(({ q, a }, i) => (
-              <div key={i} style={{ borderBottom: i < 5 ? '1px solid var(--border)' : 'none', paddingBottom: i < 5 ? 14 : 0 }}>
+              <div key={i} style={{ borderBottom: i < 6 ? '1px solid var(--border)' : 'none', paddingBottom: i < 6 ? 14 : 0 }}>
                 <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6, color: 'var(--text-primary)', display: 'flex', gap: 8 }}>
                   <span style={{ color: 'var(--accent)', flexShrink: 0 }}>Q.</span> {q}
                 </div>
