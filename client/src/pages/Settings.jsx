@@ -6,7 +6,9 @@ import {
   Shield, TrendingUp, Calendar
 } from 'lucide-react';
 
-const API = 'http://localhost:3001/api/settings';
+import API from '../config/api';
+
+const ENDPOINT = API.settings;
 
 const fmt = (n) => {
   if (!n) return '0';
@@ -194,22 +196,22 @@ function LimitInput({ id, label, description, icon, color, value, onChange, pres
 
 // ── Main Component ─────────────────────────────────────────────────────────────
 export default function SettingsPage() {
-  const [data,         setData]         = useState(null);
-  const [loading,      setLoading]      = useState(true);
-  const [saving,       setSaving]       = useState(false);
-  const [saved,        setSaved]        = useState(false);
-  const [error,        setError]        = useState('');
-  const [tokenLimit,   setTokenLimit]   = useState('0');
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState('');
+  const [tokenLimit, setTokenLimit] = useState('0');
   const [articleLimit, setArticleLimit] = useState('0');
 
   const fetchSettings = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const res = await axios.get(API);
+      const res = await axios.get(ENDPOINT);
       setData(res.data);
       const s = res.data.settings;
-      setTokenLimit(  s.find(r => r.key === 'daily_token_limit')?.value   ?? '0');
+      setTokenLimit(s.find(r => r.key === 'daily_token_limit')?.value ?? '0');
       setArticleLimit(s.find(r => r.key === 'daily_article_limit')?.value ?? '0');
     } catch (err) {
       setError('Không thể tải cài đặt: ' + err.message);
@@ -223,8 +225,8 @@ export default function SettingsPage() {
   const handleSave = async () => {
     setSaving(true); setSaved(false); setError('');
     try {
-      await axios.put(API, {
-        daily_token_limit:   parseInt(tokenLimit, 10)   || 0,
+      await axios.put(ENDPOINT, {
+        daily_token_limit: parseInt(tokenLimit, 10) || 0,
         daily_article_limit: parseInt(articleLimit, 10) || 0,
       });
       setSaved(true);
@@ -237,9 +239,9 @@ export default function SettingsPage() {
     }
   };
 
-  const tLimit        = parseInt(tokenLimit, 10)   || 0;
-  const aLimit        = parseInt(articleLimit, 10) || 0;
-  const tokensToday   = data?.today.tokens   || 0;
+  const tLimit = parseInt(tokenLimit, 10) || 0;
+  const aLimit = parseInt(articleLimit, 10) || 0;
+  const tokensToday = data?.today.tokens || 0;
   const articlesToday = data?.today.articles || 0;
 
   return (

@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 
-const API_STATS = 'http://localhost:3001/api/stats/tokens';
+import API from '../config/api';
+const API_STATS = `${API.stats}/tokens`;
 
 const TokenContext = createContext(null);
 

@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Plus, Trash2, Building2, Globe, Pencil, X, Save } from 'lucide-react';
 
-const API_URL = 'http://localhost:3001/api/companies';
+import API from '../config/api';
+const API_URL = API.companies;
 
 const Companies = () => {
   const [companies, setCompanies] = useState([]);

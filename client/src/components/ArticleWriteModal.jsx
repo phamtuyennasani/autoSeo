@@ -3,8 +3,10 @@ import axios from 'axios';
 import { X, Loader2, FileText, CheckCircle2, Sparkles, Copy, Check, Building2 } from 'lucide-react';
 import { useToken } from '../context/TokenContext';
 
-const API_COMPANY = 'http://localhost:3001/api/companies';
-const API_ARTICLE = 'http://localhost:3001/api/articles';
+import API from '../config/api';
+
+const API_COMPANY = API.companies;
+const API_ARTICLE = API.articles;
 
 // companyId được truyền cố định từ Keyword -> không cần chọn lại
 const ArticleWriteModal = ({ keyword, title, companyId, onClose, onSuccess }) => {

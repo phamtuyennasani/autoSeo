@@ -10,10 +10,12 @@ import {
 import ArticleWriteModal from '../components/ArticleWriteModal';
 import { useToken } from '../context/TokenContext';
 
-const API_KEYWORD   = 'http://localhost:3001/api/keywords';
-const API_COMPANY   = 'http://localhost:3001/api/companies';
-const API_ARTICLE   = 'http://localhost:3001/api/articles';
-const API_BATCH_JOBS = 'http://localhost:3001/api/batch-jobs';
+import API from '../config/api';
+
+const API_KEYWORD   = API.keywords;
+const API_COMPANY   = API.companies;
+const API_ARTICLE   = API.articles;
+const API_BATCH_JOBS = API.batchJobs;
 
 const Keywords = () => {
   const [keywords, setKeywords] = useState([]);

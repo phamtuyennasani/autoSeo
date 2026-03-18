@@ -6,7 +6,8 @@ import {
 } from 'lucide-react';
 import { useToken } from '../context/TokenContext';
 
-const API = 'http://localhost:3001/api/batch-jobs';
+import API from '../config/api';
+const API_ENDPOINT = API.batchJobs;
 
 const STATUS_CONFIG = {
   pending: { label: 'Đang xử lý',  icon: <Clock size={13} />,        color: 'var(--warning)', bg: 'var(--warning-subtle)' },
@@ -63,7 +64,7 @@ export default function BatchJobs() {
 
   const fetchJobs = useCallback(async () => {
     try {
-      const res = await axios.get(API);
+      const res = await axios.get(API_ENDPOINT);
       setJobs(res.data);
     } catch (err) {
       console.error(err);
@@ -83,7 +84,7 @@ export default function BatchJobs() {
   const handleCheckAll = async () => {
     setTriggering(true);
     try {
-      await axios.post(`${API}/check-all`);
+      await axios.post(`${API_ENDPOINT}/check-all`);
       // Đợi 3 giây rồi refresh list để thấy kết quả
       setTimeout(() => {
         fetchJobs();
@@ -100,7 +101,7 @@ export default function BatchJobs() {
     setCheckingId(job.id);
     setCheckResult(prev => ({ ...prev, [job.id]: null }));
     try {
-      const res = await axios.post(`${API}/${job.id}/check`);
+      const res = await axios.post(`${API_ENDPOINT}/${job.id}/check`);
       setCheckResult(prev => ({ ...prev, [job.id]: res.data }));
       if (res.data.status === 'done') {
         refreshStats();
@@ -120,7 +121,7 @@ export default function BatchJobs() {
     if (!window.confirm('Xóa batch job này? Sau đó có thể gửi lại yêu cầu viết từ trang Từ Khóa.')) return;
     setDeletingId(id);
     try {
-      await axios.delete(`${API}/${id}`);
+      await axios.delete(`${API_ENDPOINT}/${id}`);
       setJobs(prev => prev.filter(j => j.id !== id));
     } catch (err) {
       alert('Lỗi xóa job: ' + (err.response?.data?.error || err.message));
