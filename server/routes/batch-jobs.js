@@ -4,6 +4,7 @@ const { db } = require('../data/store');
 const { submitBatchJob, processBatchJob } = require('../services/gemini-batch');
 const { saveArticleFromBatch } = require('./articles');
 const { getSetting } = require('./settings');
+const { getEffectiveApiConfig } = require('../services/apiConfig');
 
 // ─── POST / — Submit batch job mới lên Gemini ────────────────────────────────
 router.post('/', async (req, res) => {
@@ -12,8 +13,19 @@ router.post('/', async (req, res) => {
   if (!keyword || !Array.isArray(titles) || titles.length === 0 || !companyId)
     return res.status(400).json({ error: 'Thiếu thông tin bắt buộc' });
 
-  // ── Kiểm tra giới hạn bài viết/ngày trước khi submit batch ──────────────
+  // ── Kiểm tra API config trước ─────────────────────────────────────────────
+  let apiConfig;
   try {
+    apiConfig = await getEffectiveApiConfig(user.id);
+    if (apiConfig.blocked) {
+      return res.status(403).json({ error: apiConfig.message, type: 'no_api_key' });
+    }
+  } catch (err) {
+    console.error('[batch-jobs] Lỗi kiểm tra API config:', err.message);
+  }
+
+  // ── Kiểm tra giới hạn bài viết/ngày — chỉ áp dụng khi dùng key hệ thống ──
+  if (apiConfig?.usingSystemKey && user.role !== 'admin') try {
     const today = new Date().toISOString().slice(0, 10);
     const isAdmin = user.role === 'admin';
 
@@ -66,7 +78,8 @@ router.post('/', async (req, res) => {
   if (!company) return res.status(404).json({ error: 'Không tìm thấy thông tin công ty' });
 
   try {
-    const { geminiJobName, total, state } = await submitBatchJob(keyword, titles, company);
+    if (!apiConfig) apiConfig = await getEffectiveApiConfig(user.id);
+    const { geminiJobName, total, state } = await submitBatchJob(keyword, titles, company, apiConfig.apiKey);
     const id = `bj-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     const createdAt = new Date().toISOString();
 

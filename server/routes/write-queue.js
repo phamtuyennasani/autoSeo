@@ -4,39 +4,64 @@ const { db } = require('../data/store');
 const { generateAndSave } = require('./articles');
 const { getSetting } = require('./settings');
 const { getJob, startJob, emitter } = require('../services/writeQueue');
+const { getEffectiveApiConfig } = require('../services/apiConfig');
 
 // ─── POST / — Bắt đầu write-queue job ────────────────────────────────────────
 router.post('/', async (req, res) => {
+  const user = req.user || { id: 'admin', role: 'admin' };
   const { keyword, titles, companyId } = req.body;
   if (!keyword || !Array.isArray(titles) || titles.length === 0 || !companyId)
     return res.status(400).json({ error: 'Thiếu thông tin bắt buộc' });
 
-  // Kiểm tra giới hạn bài/ngày
-  try {
-    const articleLimit = await getSetting('daily_article_limit');
-    if (articleLimit > 0) {
+  const apiConfig = await getEffectiveApiConfig(user.id);
+  if (apiConfig.blocked) {
+    return res.status(403).json({ error: apiConfig.message, type: 'no_api_key' });
+  }
+
+  // Kiểm tra giới hạn bài/ngày — chỉ áp dụng khi dùng key hệ thống
+  if (apiConfig.usingSystemKey && user.role !== 'admin') {
+    try {
       const today = new Date().toISOString().slice(0, 10);
-      const usageResult = await db.execute({
-        sql: `SELECT COUNT(*) AS cnt FROM token_usage WHERE (type = 'article' OR type = 'article-batch') AND createdAt LIKE ?`,
-        args: [`${today}%`],
-      });
-      const used = Number(usageResult.rows[0]?.cnt || 0);
-      const remaining = articleLimit - used;
-      if (remaining <= 0) {
-        return res.status(429).json({
-          error: `Đã đạt giới hạn ${articleLimit} bài viết hôm nay.`,
-          limit: articleLimit, used, remaining: 0, type: 'article_limit',
+      const isAdmin = user.role === 'admin';
+
+      let userArticleLimit = 0;
+      if (process.env.AUTH_ENABLED === 'true') {
+        const userResult = await db.execute({
+          sql: 'SELECT daily_article_limit FROM users WHERE id = ?',
+          args: [user.id],
         });
+        userArticleLimit = Number(userResult.rows[0]?.daily_article_limit || 0);
       }
-      if (titles.length > remaining) {
-        return res.status(429).json({
-          error: `Chỉ còn ${remaining} bài trong hạn mức hôm nay, không thể viết ${titles.length} bài.`,
-          limit: articleLimit, used, remaining, type: 'article_limit',
-        });
+
+      const globalArticleLimit = await getSetting('daily_article_limit');
+      const articleLimit = userArticleLimit > 0 ? userArticleLimit : Number(globalArticleLimit || 0);
+
+      if (articleLimit > 0) {
+        let countSql = `SELECT COUNT(*) AS cnt FROM token_usage WHERE (type = 'article' OR type = 'article-batch') AND createdAt LIKE ?`;
+        const countArgs = [`${today}%`];
+        if (userArticleLimit > 0 && !isAdmin) {
+          countSql += ' AND createdBy = ?';
+          countArgs.push(user.id);
+        }
+        const usageResult = await db.execute({ sql: countSql, args: countArgs });
+        const used = Number(usageResult.rows[0]?.cnt || 0);
+        const remaining = articleLimit - used;
+        if (remaining <= 0) {
+          return res.status(429).json({
+            error: `Đã đạt giới hạn ${articleLimit} bài viết hôm nay.`,
+            limit: articleLimit, used, remaining: 0, type: 'article_limit',
+          });
+        }
+        if (titles.length > remaining) {
+          return res.status(429).json({
+            error: `Chỉ còn ${remaining} bài trong hạn mức hôm nay, không thể viết ${titles.length} bài.`,
+            limit: articleLimit, used, remaining, type: 'article_limit',
+          });
+        }
       }
+    } catch (err) {
+      console.error('[write-queue] Lỗi check giới hạn:', err.message);
     }
-  } catch (err) {
-    console.error('[write-queue] Lỗi check giới hạn:', err.message);
   }
 
   const compResult = await db.execute({ sql: 'SELECT * FROM companies WHERE id = ?', args: [companyId] });
@@ -44,7 +69,7 @@ router.post('/', async (req, res) => {
   if (!company) return res.status(404).json({ error: 'Không tìm thấy công ty' });
 
   const jobId = `wq-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-  await startJob(jobId, keyword, companyId, titles, company, generateAndSave);
+  await startJob(jobId, keyword, companyId, titles, company, generateAndSave, user.id, apiConfig);
 
   res.json({ jobId, total: titles.length, status: 'running' });
 });

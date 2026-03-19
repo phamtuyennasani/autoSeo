@@ -204,7 +204,44 @@ const GEMINI_MODELS = [
   'gemini-2.0-flash',
 ];
 
+function KeyField({ label, sub, color = 'var(--accent)', value, onChange, show, onToggleShow, placeholder }) {
+  return (
+    <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 18px', borderBottom: '1px solid var(--border)', background: 'var(--bg-panel)' }}>
+        <div style={{ width: 34, height: 34, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', background: `${color}18`, flexShrink: 0 }}>
+          <KeyRound size={16} color={color} />
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontWeight: 700, fontSize: 14 }}>{label}</div>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{sub}</div>
+        </div>
+        {value
+          ? <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: 'var(--success-subtle)', color: 'var(--success)' }}>Đã cấu hình</span>
+          : <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: 'var(--bg-panel)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>Chưa cấu hình</span>
+        }
+      </div>
+      <div style={{ padding: '14px 18px', position: 'relative' }}>
+        <input
+          type={show ? 'text' : 'password'}
+          className="input-field"
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          placeholder={placeholder}
+          style={{ paddingRight: 42 }}
+        />
+        <button onClick={onToggleShow} style={{ position: 'absolute', right: 28, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex' }}>
+          {show ? <EyeOff size={16} /> : <Eye size={16} />}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function ApiConfigTab() {
+  const { user, authEnabled } = useAuth();
+  const isAdmin = user?.role === 'admin';
+  const isUserScope = authEnabled && !isAdmin; // user thường khi AUTH bật
+
   const [form, setForm] = useState({ gemini_api_key: '', gemini_model: 'gemini-2.5-flash', serpapi_api_key: '' });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -243,37 +280,33 @@ function ApiConfigTab() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
       {error && <div className="info-box info-box-red"><AlertTriangle size={14} /><span>{error}</span></div>}
 
-      <div className="info-box info-box-blue">
-        <Info size={14} style={{ flexShrink: 0 }} />
-        <span>Cấu hình được lưu vào database, có hiệu lực ngay không cần khởi động lại server.</span>
-      </div>
+      {/* Banner phân biệt scope */}
+      {isUserScope ? (
+        <div className="info-box info-box-blue">
+          <Info size={14} style={{ flexShrink: 0 }} />
+          <span>
+            Đây là <strong>API key cá nhân</strong> của bạn. Khi cấu hình, hệ thống ưu tiên dùng key này và bạn sẽ <strong>không bị giới hạn</strong> token/bài.
+            Nếu để trống, bạn cần được admin cấp quyền dùng key hệ thống mới có thể viết bài.
+          </span>
+        </div>
+      ) : (
+        <div className="info-box info-box-blue">
+          <Info size={14} style={{ flexShrink: 0 }} />
+          <span>Đây là <strong>API key hệ thống</strong> — dùng chung cho tất cả user chưa cấu hình key riêng. Lưu vào database, có hiệu lực ngay.</span>
+        </div>
+      )}
 
       {/* Gemini API Key */}
-      <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 18px', borderBottom: '1px solid var(--border)', background: 'var(--bg-panel)' }}>
-          <div style={{ width: 34, height: 34, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(99,102,241,0.12)', flexShrink: 0 }}>
-            <KeyRound size={16} color="var(--accent)" />
-          </div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: 700, fontSize: 14 }}>Gemini API Key</div>
-            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Lấy tại <strong>aistudio.google.com</strong> → Get API Key</div>
-          </div>
-          {form.gemini_api_key && <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: 'var(--success-subtle)', color: 'var(--success)' }}>Đã cấu hình</span>}
-        </div>
-        <div style={{ padding: '14px 18px', position: 'relative' }}>
-          <input
-            type={showGemini ? 'text' : 'password'}
-            className="input-field"
-            value={form.gemini_api_key}
-            onChange={e => setForm({ ...form, gemini_api_key: e.target.value })}
-            placeholder="AIza..."
-            style={{ paddingRight: 42 }}
-          />
-          <button onClick={() => setShowGemini(v => !v)} style={{ position: 'absolute', right: 28, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex' }}>
-            {showGemini ? <EyeOff size={16} /> : <Eye size={16} />}
-          </button>
-        </div>
-      </div>
+      <KeyField
+        label="Gemini API Key"
+        sub={<>Lấy tại <strong>aistudio.google.com</strong> → Get API Key</>}
+        color="var(--accent)"
+        value={form.gemini_api_key}
+        onChange={v => setForm({ ...form, gemini_api_key: v })}
+        show={showGemini}
+        onToggleShow={() => setShowGemini(v => !v)}
+        placeholder="AIza..."
+      />
 
       {/* Gemini Model */}
       <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
@@ -283,46 +316,31 @@ function ApiConfigTab() {
           </div>
           <div style={{ flex: 1 }}>
             <div style={{ fontWeight: 700, fontSize: 14 }}>Gemini Model</div>
-            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Model dùng để sinh tiêu đề và viết bài. Flash = nhanh + rẻ, Pro = chất lượng cao hơn</div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+              {isUserScope ? 'Model riêng cho tài khoản của bạn. Để trống để dùng model hệ thống.' : 'Model mặc định toàn hệ thống. Flash = nhanh + rẻ, Pro = chất lượng cao hơn.'}
+            </div>
           </div>
-          <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: 'var(--accent-subtle)', color: 'var(--accent)' }}>{form.gemini_model}</span>
+          <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: 'var(--accent-subtle)', color: 'var(--accent)' }}>{form.gemini_model || 'mặc định hệ thống'}</span>
         </div>
         <div style={{ padding: '14px 18px' }}>
           <select className="input-field" value={form.gemini_model} onChange={e => setForm({ ...form, gemini_model: e.target.value })}>
+            {isUserScope && <option value="">— Dùng model hệ thống —</option>}
             {GEMINI_MODELS.map(m => <option key={m} value={m}>{m}</option>)}
           </select>
         </div>
       </div>
 
       {/* SerpAPI Key */}
-      <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 18px', borderBottom: '1px solid var(--border)', background: 'var(--bg-panel)' }}>
-          <div style={{ width: 34, height: 34, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(16,185,129,0.12)', flexShrink: 0 }}>
-            <KeyRound size={16} color="var(--success)" />
-          </div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: 700, fontSize: 14 }}>SerpAPI Key <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text-muted)' }}>(Tùy chọn)</span></div>
-            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Lấy tại <strong>serpapi.com</strong> — Nếu để trống, AI tự sinh tiêu đề dựa trên kiến thức</div>
-          </div>
-          {form.serpapi_api_key
-            ? <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: 'var(--success-subtle)', color: 'var(--success)' }}>Đã cấu hình</span>
-            : <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: 'var(--bg-panel)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>Không bắt buộc</span>
-          }
-        </div>
-        <div style={{ padding: '14px 18px', position: 'relative' }}>
-          <input
-            type={showSerp ? 'text' : 'password'}
-            className="input-field"
-            value={form.serpapi_api_key}
-            onChange={e => setForm({ ...form, serpapi_api_key: e.target.value })}
-            placeholder="Để trống nếu không dùng SerpAPI"
-            style={{ paddingRight: 42 }}
-          />
-          <button onClick={() => setShowSerp(v => !v)} style={{ position: 'absolute', right: 28, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex' }}>
-            {showSerp ? <EyeOff size={16} /> : <Eye size={16} />}
-          </button>
-        </div>
-      </div>
+      <KeyField
+        label={<>SerpAPI Key <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text-muted)' }}>(Tùy chọn)</span></>}
+        sub={<>Lấy tại <strong>serpapi.com</strong> — Để trống nếu không dùng. AI sẽ tự sinh tiêu đề từ kiến thức nội tại.</>}
+        color="var(--success)"
+        value={form.serpapi_api_key}
+        onChange={v => setForm({ ...form, serpapi_api_key: v })}
+        show={showSerp}
+        onToggleShow={() => setShowSerp(v => !v)}
+        placeholder="Để trống nếu không dùng SerpAPI"
+      />
 
       {/* Save */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '16px 20px', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', background: 'var(--bg-panel)' }}>
@@ -330,7 +348,9 @@ function ApiConfigTab() {
           {saving ? <><Loader2 className="animate-spin" size={15} /> Đang lưu...</> : <><Save size={15} /> Lưu cấu hình</>}
         </button>
         {saved && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 600, color: 'var(--success)' }}><CheckCircle2 size={15} /> Đã lưu thành công!</span>}
-        <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--text-muted)' }}>Có hiệu lực ngay, không cần restart server</span>
+        <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--text-muted)' }}>
+          {isUserScope ? 'Lưu vào tài khoản cá nhân, có hiệu lực ngay' : 'Lưu vào hệ thống, có hiệu lực ngay'}
+        </span>
       </div>
     </div>
   );

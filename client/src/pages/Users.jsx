@@ -7,7 +7,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   UserPlus, Trash2, Lock, Unlock, Edit2, X,
   RefreshCw, Shield, User, Crown, Loader2,
-  Eye, EyeOff, Zap, FileText, AlertCircle, Activity
+  Eye, EyeOff, Zap, FileText, AlertCircle, Activity,
+  KeyRound, Server
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import apiClient from '../config/api';
@@ -170,6 +171,7 @@ function UserModal({ mode, user, onClose, onSave }) {
     role:                user?.role                || 'user',
     daily_token_limit:   String(user?.daily_token_limit   ?? 0),
     daily_article_limit: String(user?.daily_article_limit ?? 0),
+    use_system_key:      user?.use_system_key      ?? false,
   });
   const [showPw,  setShowPw]  = useState(false);
   const [loading, setLoading] = useState(false);
@@ -349,11 +351,49 @@ function UserModal({ mode, user, onClose, onSave }) {
               </div>
             </div>
 
+            {/* Key hệ thống */}
+            <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: 'var(--bg-elevated)', borderBottom: '1px solid var(--border)' }}>
+                <div style={{ width: 30, height: 30, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(99,102,241,0.12)', flexShrink: 0 }}>
+                  <Server size={14} color="var(--accent)" />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 700, fontSize: 13 }}>Dùng key hệ thống</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>
+                    Cho phép user này dùng API key của hệ thống khi chưa cấu hình key cá nhân. Sẽ bị giới hạn token/bài.
+                  </div>
+                </div>
+              </div>
+              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+                <button
+                  type="button"
+                  onClick={() => set('use_system_key')(!form.use_system_key)}
+                  style={{
+                    width: 44, height: 24, borderRadius: 12,
+                    background: form.use_system_key ? 'var(--accent)' : 'var(--border)',
+                    border: 'none', cursor: 'pointer', position: 'relative',
+                    transition: 'background 0.2s', flexShrink: 0,
+                  }}
+                >
+                  <div style={{
+                    position: 'absolute', top: 2,
+                    left: form.use_system_key ? 22 : 2,
+                    width: 20, height: 20, borderRadius: '50%',
+                    background: '#fff', transition: 'left 0.2s',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+                  }} />
+                </button>
+                <span style={{ fontSize: 13, fontWeight: 600, color: form.use_system_key ? 'var(--accent)' : 'var(--text-secondary)' }}>
+                  {form.use_system_key ? 'Được phép dùng key hệ thống' : 'Không được dùng key hệ thống'}
+                </span>
+              </div>
+            </div>
+
             {/* DIVIDER */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
               <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                Giới hạn / ngày
+                Giới hạn / ngày {!form.use_system_key && <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>· chỉ áp dụng khi dùng key hệ thống</span>}
               </span>
               <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
             </div>
@@ -433,6 +473,7 @@ const Users = () => {
       ...form,
       daily_token_limit:   parseInt(form.daily_token_limit,   10) || 0,
       daily_article_limit: parseInt(form.daily_article_limit, 10) || 0,
+      use_system_key:      form.use_system_key,
     });
     await load();
   };
@@ -442,6 +483,7 @@ const Users = () => {
       role:                form.role,
       daily_token_limit:   parseInt(form.daily_token_limit,   10) || 0,
       daily_article_limit: parseInt(form.daily_article_limit, 10) || 0,
+      use_system_key:      form.use_system_key,
     };
     if (form.password) payload.password = form.password;
     await apiClient.put(`/api/users/${modal.user.id}`, payload);
@@ -475,8 +517,9 @@ const Users = () => {
     );
   }
 
-  const activeCount = users.filter(u => u.is_active).length;
-  const adminCount  = users.filter(u => u.role === 'admin').length;
+  const activeCount    = users.filter(u => u.is_active).length;
+  const adminCount     = users.filter(u => u.role === 'admin').length;
+  const sysKeyCount    = users.filter(u => !u.has_own_key && u.use_system_key).length;
 
   return (
     <div>
@@ -484,7 +527,7 @@ const Users = () => {
       <div className="page-header">
         <div>
           <h1 className="page-title">Quản lý Users</h1>
-          <p className="page-subtitle">{users.length} tài khoản · {activeCount} hoạt động · {adminCount} admin</p>
+          <p className="page-subtitle">{users.length} tài khoản · {activeCount} hoạt động · {adminCount} admin · {sysKeyCount} dùng key hệ thống</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button className="btn btn-outline" onClick={load} disabled={loading} title="Làm mới">
@@ -501,14 +544,14 @@ const Users = () => {
         {/* Header */}
         <div style={{
           display: 'grid',
-          gridTemplateColumns: '2fr 100px 110px 130px 130px 1fr 130px',
+          gridTemplateColumns: '2fr 90px 100px 110px 110px 120px 1fr 110px',
           padding: '10px 20px',
           borderBottom: '1px solid var(--border)',
           fontSize: 12, fontWeight: 700,
           color: 'var(--text-secondary)',
           textTransform: 'uppercase', letterSpacing: '0.05em',
         }}>
-          {['Username', 'Role', 'Trạng thái', 'Token/ngày', 'Bài/ngày', 'Đăng nhập cuối', 'Hành động'].map(h => (
+          {['Username', 'Role', 'Trạng thái', 'Key API', 'Token/ngày', 'Bài/ngày', 'Đăng nhập cuối', 'Hành động'].map(h => (
             <div key={h}>{h}</div>
           ))}
         </div>
@@ -518,7 +561,7 @@ const Users = () => {
           [1, 2, 3].map(i => (
             <div key={i} style={{
               display: 'grid',
-              gridTemplateColumns: '2fr 100px 110px 130px 130px 1fr 130px',
+              gridTemplateColumns: '2fr 90px 100px 110px 110px 120px 1fr 110px',
               padding: '16px 20px', borderBottom: '1px solid var(--border)',
               alignItems: 'center', gap: 12,
             }}>
@@ -526,7 +569,7 @@ const Users = () => {
                 <div className="skeleton" style={{ width: 32, height: 32, borderRadius: 8, flexShrink: 0 }} />
                 <div className="skeleton" style={{ height: 13, width: '60%', borderRadius: 4 }} />
               </div>
-              {[1,2,3,4,5,6].map(j => (
+              {[1,2,3,4,5,6,7].map(j => (
                 <div key={j} className="skeleton" style={{ height: 13, width: '70%', borderRadius: 4 }} />
               ))}
             </div>
@@ -555,7 +598,7 @@ const Users = () => {
                 key={u.id}
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: '2fr 100px 110px 130px 130px 1fr 130px',
+                  gridTemplateColumns: '2fr 90px 100px 110px 110px 120px 1fr 110px',
                   padding: '13px 20px',
                   borderBottom: '1px solid var(--border)',
                   alignItems: 'center',
@@ -589,6 +632,23 @@ const Users = () => {
 
                 {/* Status */}
                 <div><StatusBadge active={u.is_active} /></div>
+
+                {/* Key API */}
+                <div>
+                  {u.has_own_key ? (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 9px', borderRadius: 99, fontSize: 11, fontWeight: 600, background: 'rgba(16,185,129,0.08)', color: '#34d399', border: '1px solid rgba(16,185,129,0.2)' }}>
+                      <KeyRound size={9} /> Cá nhân
+                    </span>
+                  ) : u.use_system_key ? (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 9px', borderRadius: 99, fontSize: 11, fontWeight: 600, background: 'rgba(99,102,241,0.08)', color: '#818cf8', border: '1px solid rgba(99,102,241,0.2)' }}>
+                      <Server size={9} /> Hệ thống
+                    </span>
+                  ) : (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 9px', borderRadius: 99, fontSize: 11, fontWeight: 600, background: 'rgba(239,68,68,0.06)', color: '#f87171', border: '1px solid rgba(239,68,68,0.18)' }}>
+                      <Shield size={9} /> Bị chặn
+                    </span>
+                  )}
+                </div>
 
                 {/* Token limit */}
                 <div style={{ fontSize: 13, color: u.daily_token_limit > 0 ? 'var(--text-primary)' : 'var(--text-muted)', fontWeight: u.daily_token_limit > 0 ? 600 : 400 }}>

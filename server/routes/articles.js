@@ -2,16 +2,56 @@ const express = require('express');
 const router = express.Router();
 const { db } = require('../data/store');
 const { generateArticle } = require('../services/gemini');
+const { getEffectiveApiConfig } = require('../services/apiConfig');
+const { getSetting } = require('./settings');
+
+// ─── Helper: kiểm tra giới hạn bài/ngày (chỉ áp dụng khi dùng key hệ thống) ──
+async function checkArticleLimit(user) {
+  if (user.role === 'admin') return null;
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+
+    const userResult = await db.execute({
+      sql: 'SELECT daily_article_limit FROM users WHERE id = ?',
+      args: [user.id],
+    });
+    const userArticleLimit = Number(userResult.rows[0]?.daily_article_limit || 0);
+    const globalArticleLimit = await getSetting('daily_article_limit');
+    const articleLimit = userArticleLimit > 0 ? userArticleLimit : Number(globalArticleLimit || 0);
+
+    if (articleLimit <= 0) return null;
+
+    let countSql = `SELECT COUNT(*) AS cnt FROM token_usage WHERE (type = 'article' OR type = 'article-batch') AND createdAt LIKE ?`;
+    const countArgs = [`${today}%`];
+    if (userArticleLimit > 0) {
+      countSql += ' AND createdBy = ?';
+      countArgs.push(user.id);
+    }
+
+    const usageResult = await db.execute({ sql: countSql, args: countArgs });
+    const used = Number(usageResult.rows[0]?.cnt || 0);
+
+    if (used >= articleLimit) {
+      return {
+        error: `Đã đạt giới hạn ${articleLimit} bài viết hôm nay. Vui lòng thử lại vào ngày mai.`,
+        limit: articleLimit, used, remaining: 0, type: 'article_limit',
+      };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 // ─── Helper: gọi AI + lưu token + lưu DB ─────────────────────────────────────
-async function generateAndSave(keyword, title, companyId, company, createdBy = null) {
-  const result = await generateArticle(keyword, title, company);
+async function generateAndSave(keyword, title, companyId, company, createdBy = null, userConfig = {}) {
+  const result = await generateArticle(keyword, title, company, userConfig);
 
   if (result.usage) {
     const usageId = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}-article`;
     await db.execute({
-      sql: 'INSERT INTO token_usage (id, type, input_tokens, output_tokens, total_tokens, keyword, createdAt, createdBy) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      args: [usageId, 'article', result.usage.input_tokens, result.usage.output_tokens, result.usage.total_tokens, keyword, new Date().toISOString(), createdBy],
+      sql: 'INSERT INTO token_usage (id, type, model, input_tokens, output_tokens, total_tokens, keyword, createdAt, createdBy) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      args: [usageId, 'article', result.usage.model || null, result.usage.input_tokens, result.usage.output_tokens, result.usage.total_tokens, keyword, new Date().toISOString(), createdBy],
     });
   }
 
@@ -91,7 +131,18 @@ router.post('/', async (req, res) => {
     const company = compResult.rows[0];
     if (!company) return res.status(404).json({ error: 'Không tìm thấy thông tin công ty' });
 
-    const article = await generateAndSave(keyword, title, companyId, company, user.id);
+    const apiConfig = await getEffectiveApiConfig(user.id);
+    if (apiConfig.blocked) {
+      return res.status(403).json({ error: apiConfig.message, type: 'no_api_key' });
+    }
+
+    // Chỉ kiểm tra giới hạn khi dùng key hệ thống
+    if (apiConfig.usingSystemKey && user.role !== 'admin') {
+      const limitErr = await checkArticleLimit(user);
+      if (limitErr) return res.status(429).json(limitErr);
+    }
+
+    const article = await generateAndSave(keyword, title, companyId, company, user.id, apiConfig);
     res.json(article);
   } catch (error) {
     console.error('[single] Lỗi:', error.message);
@@ -109,6 +160,17 @@ router.post('/batch', async (req, res) => {
   const compResult = await db.execute({ sql: 'SELECT * FROM companies WHERE id = ?', args: [companyId] });
   const company = compResult.rows[0];
   if (!company) return res.status(404).json({ error: 'Không tìm thấy thông tin công ty' });
+
+  const apiConfig = await getEffectiveApiConfig(user.id);
+  if (apiConfig.blocked) {
+    return res.status(403).json({ error: apiConfig.message, type: 'no_api_key' });
+  }
+
+  // Chỉ kiểm tra giới hạn khi dùng key hệ thống
+  if (apiConfig.usingSystemKey && user.role !== 'admin') {
+    const limitErr = await checkArticleLimit(user);
+    if (limitErr) return res.status(429).json(limitErr);
+  }
 
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
@@ -128,7 +190,7 @@ router.post('/batch', async (req, res) => {
   for (let i = 0; i < titles.length; i++) {
     const title = titles[i];
     try {
-      const article = await generateAndSave(keyword, title, companyId, company, user.id);
+      const article = await generateAndSave(keyword, title, companyId, company, user.id, apiConfig);
       succeededCount++;
       send({ type: 'progress', done: i + 1, total: titles.length, title, article });
     } catch (err) {
@@ -160,8 +222,8 @@ async function saveArticleFromBatch(jobKeyword, jobCompanyId, result, createdBy 
     try {
       const usageId = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}-batch`;
       await db.execute({
-        sql: 'INSERT INTO token_usage (id, type, input_tokens, output_tokens, total_tokens, keyword, createdAt, createdBy) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-        args: [usageId, 'article-batch', result.usage.input_tokens, result.usage.output_tokens, result.usage.total_tokens, jobKeyword, new Date().toISOString(), createdBy],
+        sql: 'INSERT INTO token_usage (id, type, model, input_tokens, output_tokens, total_tokens, keyword, createdAt, createdBy) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        args: [usageId, 'article-batch', result.usage.model || null, result.usage.input_tokens, result.usage.output_tokens, result.usage.total_tokens, jobKeyword, new Date().toISOString(), createdBy],
       });
     } catch (e) {
       console.error('[saveArticleFromBatch] Lỗi lưu token:', e.message);

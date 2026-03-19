@@ -62,9 +62,30 @@ router.put('/', requireAdmin, async (req, res) => {
   }
 });
 
-// ─── GET /api-config — Lấy cấu hình API (ẩn key, chỉ trả về có/không) ────────
+// ─── GET /api-config ──────────────────────────────────────────────────────────
+// AUTH off → trả system key (admin only)
+// AUTH on  → admin → system key; user thường → key của chính mình
 router.get('/api-config', async (req, res) => {
   try {
+    const user        = req.user || { id: 'admin', role: 'admin' };
+    const authEnabled = process.env.AUTH_ENABLED === 'true';
+
+    // User thường khi AUTH bật → đọc key cá nhân từ bảng users
+    if (authEnabled && user.role !== 'admin') {
+      const result = await db.execute({
+        sql: 'SELECT gemini_api_key, gemini_model, serpapi_api_key FROM users WHERE id = ?',
+        args: [user.id],
+      });
+      const row = result.rows[0] || {};
+      return res.json({
+        gemini_api_key:  row.gemini_api_key  || '',
+        gemini_model:    row.gemini_model    || 'gemini-2.5-flash',
+        serpapi_api_key: row.serpapi_api_key || '',
+        scope: 'user',
+      });
+    }
+
+    // Admin hoặc AUTH tắt → đọc system key từ settings table
     const result = await db.execute(
       `SELECT key, value FROM settings WHERE key IN ('gemini_api_key', 'gemini_model', 'serpapi_api_key')`
     );
@@ -74,18 +95,46 @@ router.get('/api-config', async (req, res) => {
       gemini_api_key:  map.gemini_api_key  || '',
       gemini_model:    map.gemini_model    || 'gemini-2.5-flash',
       serpapi_api_key: map.serpapi_api_key || '',
+      scope: 'system',
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// ─── PUT /api-config — Lưu cấu hình API → DB + process.env ──────────────────
-router.put('/api-config', requireAdmin, async (req, res) => {
+// ─── PUT /api-config ──────────────────────────────────────────────────────────
+// Admin → lưu vào settings table + process.env (system key)
+// User thường (AUTH on) → lưu vào users table (key cá nhân)
+router.put('/api-config', async (req, res) => {
   try {
+    const user        = req.user || { id: 'admin', role: 'admin' };
+    const authEnabled = process.env.AUTH_ENABLED === 'true';
     const { gemini_api_key, gemini_model, serpapi_api_key } = req.body;
-    const updatedAt = new Date().toISOString();
 
+    // User thường khi AUTH bật → lưu vào users table
+    if (authEnabled && user.role !== 'admin') {
+      const updates = [];
+      const args    = [];
+      if (gemini_api_key  !== undefined) { updates.push('gemini_api_key = ?');  args.push(String(gemini_api_key).trim()); }
+      if (gemini_model    !== undefined) { updates.push('gemini_model = ?');    args.push(String(gemini_model).trim()); }
+      if (serpapi_api_key !== undefined) { updates.push('serpapi_api_key = ?'); args.push(String(serpapi_api_key).trim()); }
+
+      if (updates.length > 0) {
+        args.push(user.id);
+        await db.execute({
+          sql: `UPDATE users SET ${updates.join(', ')} WHERE id = ?`,
+          args,
+        });
+      }
+      return res.json({ success: true, scope: 'user' });
+    }
+
+    // Admin hoặc AUTH tắt → chỉ admin được lưu system key
+    if (user.role !== 'admin') {
+      return res.status(403).json({ error: 'Chỉ admin mới được chỉnh sửa cấu hình hệ thống.' });
+    }
+
+    const updatedAt = new Date().toISOString();
     const fields = { gemini_api_key, gemini_model, serpapi_api_key };
     const envMap = { gemini_api_key: 'GEMINI_API_KEY', gemini_model: 'GEMINI_MODEL', serpapi_api_key: 'SERPAPI_API_KEY' };
 
@@ -96,11 +145,10 @@ router.put('/api-config', requireAdmin, async (req, res) => {
         sql: 'INSERT INTO settings (key, value, label, updatedAt) VALUES (?, ?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updatedAt = excluded.updatedAt',
         args: [key, val, key, updatedAt],
       });
-      // Cập nhật process.env ngay để các service dùng được luôn
       if (val) process.env[envMap[key]] = val;
     }
 
-    res.json({ success: true });
+    res.json({ success: true, scope: 'system' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

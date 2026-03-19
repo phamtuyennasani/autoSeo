@@ -8,6 +8,7 @@ import Settings from './pages/Settings';
 import Help from './pages/Help';
 import Login from './pages/Login';
 import Users from './pages/Users';
+import TokenStats from './pages/TokenStats';
 import { ThemeProvider } from './context/ThemeContext';
 import { TokenProvider } from './context/TokenContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -46,10 +47,11 @@ function AppRoutes() {
         <Route index element={<Navigate to="/keywords" replace />} />
         <Route path="keywords"   element={<Keywords />} />
         <Route path="companies"  element={<Companies />} />
-        <Route path="batch-jobs" element={<BatchJobs />} />
-        <Route path="settings"   element={<Settings />} />
-        <Route path="help"       element={<Help />} />
-        <Route path="users"      element={<Users />} />
+        <Route path="batch-jobs"   element={<BatchJobs />} />
+        <Route path="token-stats" element={<TokenStats />} />
+        <Route path="settings"    element={<Settings />} />
+        <Route path="help"        element={<Help />} />
+        <Route path="users"       element={<Users />} />
       </Route>
     </Routes>
   );

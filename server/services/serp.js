@@ -8,10 +8,12 @@ function getKeys() {
 
 /**
  * Mỗi lần gọi chọn ngẫu nhiên 1 key để phân tải đều.
+ * serpApiKey: key riêng của user (nếu có), ưu tiên hơn system key.
  * Trả về string kết quả tìm kiếm, hoặc null nếu không có key / lỗi.
  */
-async function getSearchContext(keyword) {
-  const keys = getKeys();
+async function getSearchContext(keyword, serpApiKey) {
+  // Nếu có key riêng của user → dùng key đó, không dùng system key
+  const keys = serpApiKey ? [serpApiKey] : getKeys();
 
   if (keys.length === 0) {
     console.log('[SERP] Không có SERPAPI_API_KEY — AI sẽ tự sinh tiêu đề.');

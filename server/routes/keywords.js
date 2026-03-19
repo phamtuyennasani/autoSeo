@@ -3,6 +3,7 @@ const router = express.Router();
 const { db } = require('../data/store');
 const { getSearchContext } = require('../services/serp');
 const { generateTitles } = require('../services/gemini');
+const { getEffectiveApiConfig } = require('../services/apiConfig');
 
 // Lấy danh sách từ khóa kèm thống kê
 router.get('/', async (req, res) => {
@@ -61,18 +62,23 @@ router.post('/', async (req, res) => {
       const count = Math.max(1, Math.min(30, parseInt(titleCount) || 10));
       console.log(`Bắt đầu xử lý keyword: ${keyword}, số tiêu đề: ${count}`);
 
-      const searchContext = await getSearchContext(keyword);
+      const apiConfig = await getEffectiveApiConfig(user.id);
+      if (apiConfig.blocked) {
+        return res.status(403).json({ error: apiConfig.message, type: 'no_api_key' });
+      }
+
+      const searchContext = await getSearchContext(keyword, apiConfig.serpApiKey);
 
       try {
         console.log(`Đang dùng AI tạo ${count} titles...`);
-        const result = await generateTitles(keyword, searchContext, count);
+        const result = await generateTitles(keyword, searchContext, count, apiConfig);
         titles = result.titles;
 
         if (result.usage) {
           const usageId = `${Date.now()}-titles`;
           await db.execute({
-            sql: 'INSERT INTO token_usage (id, type, input_tokens, output_tokens, total_tokens, keyword, createdAt, createdBy) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-            args: [usageId, 'titles', result.usage.input_tokens, result.usage.output_tokens, result.usage.total_tokens, keyword, new Date().toISOString(), user.id],
+            sql: 'INSERT INTO token_usage (id, type, model, input_tokens, output_tokens, total_tokens, keyword, createdAt, createdBy) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            args: [usageId, 'titles', result.usage.model || null, result.usage.input_tokens, result.usage.output_tokens, result.usage.total_tokens, keyword, new Date().toISOString(), user.id],
           });
         }
       } catch (e) {

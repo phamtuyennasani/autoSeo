@@ -19,7 +19,7 @@ const ArticleWriteModal = ({ keyword, title, companyId, onClose, onSuccess }) =>
 
   useEffect(() => {
     if (companyId) {
-      axios.get(API_COMPANY).then(res => {
+      apiClient.get(API_COMPANY).then(res => {
         const found = res.data.find(c => c.id === companyId);
         setCompany(found || null);
       }).catch(() => {});
@@ -30,7 +30,7 @@ const ArticleWriteModal = ({ keyword, title, companyId, onClose, onSuccess }) =>
     setIsGenerating(true);
     setError(null);
     try {
-      const res = await axios.post(API_ARTICLE, { keyword, title, companyId });
+      const res = await apiClient.post(API_ARTICLE, { keyword, title, companyId });
       setGeneratedArticle(res.data);
       refreshStats(); // Cập nhật token stats trên topbar
       if (onSuccess) onSuccess(res.data); // Notify parent to refresh article list

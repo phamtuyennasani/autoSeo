@@ -5,24 +5,26 @@ const { ARTICLE_SYSTEM_INSTRUCTION, buildArticlePrompt, buildTitlesPrompt } = re
 require('dotenv').config();
 
 // Client và model được tạo động mỗi lần gọi để phản ánh config mới nhất từ DB
-function getGenAI() {
-  const key = process.env.GEMINI_API_KEY;
+function getGenAI(apiKey) {
+  const key = apiKey || process.env.GEMINI_API_KEY;
   if (!key) return null;
   return new GoogleGenerativeAI(key);
 }
 
-function getModelName() {
-  return process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+function getModelName(modelName) {
+  return modelName || process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 }
 
-async function generateTitles(keyword, searchContext, count = 10) {
-  const genAI = getGenAI();
+// userConfig = { apiKey?, modelName? } — nếu không truyền, dùng system config
+async function generateTitles(keyword, searchContext, count = 10, userConfig = {}) {
+  const genAI = getGenAI(userConfig.apiKey);
   if (!genAI) throw new Error('GEMINI_API_KEY chưa được cấu hình. Vào Cài đặt → Cấu hình API để nhập key.');
 
   const prompt = buildTitlesPrompt(keyword, searchContext, count);
+  const modelName = getModelName(userConfig.modelName);
 
   const model = genAI.getGenerativeModel({
-    model: getModelName(),
+    model: modelName,
     systemInstruction: 'You are an SEO expert. Return only valid JSON arrays without any explanation or markdown.',
   });
 
@@ -33,6 +35,7 @@ async function generateTitles(keyword, searchContext, count = 10) {
     input_tokens: result.response.usageMetadata?.promptTokenCount || 0,
     output_tokens: result.response.usageMetadata?.candidatesTokenCount || 0,
     total_tokens: result.response.usageMetadata?.totalTokenCount || 0,
+    model: modelName,
   };
 
   try {
@@ -50,14 +53,16 @@ async function generateTitles(keyword, searchContext, count = 10) {
   }
 }
 
-async function generateArticle(keyword, title, companyInfo) {
-  const genAI = getGenAI();
+// userConfig = { apiKey?, modelName? }
+async function generateArticle(keyword, title, companyInfo, userConfig = {}) {
+  const genAI = getGenAI(userConfig.apiKey);
   if (!genAI) throw new Error('GEMINI_API_KEY chưa được cấu hình. Vào Cài đặt → Cấu hình API để nhập key.');
 
   const prompt = buildArticlePrompt(keyword, title, companyInfo);
+  const modelName = getModelName(userConfig.modelName);
 
   const model = genAI.getGenerativeModel({
-    model: getModelName(),
+    model: modelName,
     systemInstruction: ARTICLE_SYSTEM_INSTRUCTION,
   });
 
@@ -67,6 +72,7 @@ async function generateArticle(keyword, title, companyInfo) {
     input_tokens: result.response.usageMetadata?.promptTokenCount || 0,
     output_tokens: result.response.usageMetadata?.candidatesTokenCount || 0,
     total_tokens: result.response.usageMetadata?.totalTokenCount || 0,
+    model: modelName,
   };
 
   const fallback = {
@@ -80,28 +86,22 @@ async function generateArticle(keyword, title, companyInfo) {
   // Bóc JSON ra nếu AI vẫn bọc trong markdown (fallback)
   const extractJson = (str) => {
     if (!str) return null;
-
     // Case 1: bọc trong markdown code block
     const mdMatch = str.match(/```(?:json)?\s*([\s\S]*?)```/);
     if (mdMatch) return mdMatch[1].trim();
-
     // Case 2: tìm JSON object đầu tiên hợp lệ trong string
     const start = str.indexOf('{');
     const end = str.lastIndexOf('}');
     if (start !== -1 && end !== -1 && end > start) {
       return str.slice(start, end + 1);
     }
-
     return null;
   };
-
   const jsonStr = extractJson(raw);
-
   if (!jsonStr) {
     console.error('Không tìm thấy JSON trong response Gemini');
     return fallback;
   }
-
   try {
     const parsed = JSON.parse(jsonrepair(jsonStr));
     return {

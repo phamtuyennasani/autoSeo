@@ -1,17 +1,18 @@
 import React from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { Search, Building2, Zap, Settings, HelpCircle, Sun, Moon, Cpu, TrendingUp, Layers, Users, LogOut } from 'lucide-react';
+import { Search, Building2, Zap, Settings, HelpCircle, Sun, Moon, Cpu, TrendingUp, Layers, Users, LogOut, BarChart3 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { useToken } from '../context/TokenContext';
 import { useAuth } from '../context/AuthContext';
 
 const pageTitles = {
-  '/keywords':   'SEO Keywords',
-  '/companies':  'Website & Công Ty',
-  '/batch-jobs': 'Batch Jobs',
-  '/settings':   'Cài Đặt',
-  '/help':       'Trợ Giúp',
-  '/users':      'Quản Lý Users',
+  '/keywords':     'SEO Keywords',
+  '/companies':    'Website & Công Ty',
+  '/batch-jobs':   'Batch Jobs',
+  '/token-stats':  'Token & Chi Phí',
+  '/settings':     'Cài Đặt',
+  '/help':         'Trợ Giúp',
+  '/users':        'Quản Lý Users',
 };
 
 // Format số token lớn cho dễ đọc: 1234567 → 1.23M, 12345 → 12.3K
@@ -63,6 +64,9 @@ const Layout = () => {
           </NavLink>
           <NavLink to="/batch-jobs" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
             <Layers size={17} className="nav-icon" /> Batch Jobs
+          </NavLink>
+          <NavLink to="/token-stats" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+            <BarChart3 size={17} className="nav-icon" /> Token & Chi Phí
           </NavLink>
         </div>
 

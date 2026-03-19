@@ -3,7 +3,7 @@
  *
  * GET    /api/users        → Danh sách users
  * POST   /api/users        → Tạo user mới
- * PUT    /api/users/:id    → Sửa (role, is_active, limits, password)
+ * PUT    /api/users/:id    → Sửa (role, is_active, limits, password, use_system_key)
  * DELETE /api/users/:id    → Xóa user
  */
 
@@ -16,9 +16,18 @@ const { hashPassword } = require('../services/auth');
 router.get('/', async (req, res) => {
   try {
     const result = await db.execute(
-      'SELECT id, username, role, is_active, daily_token_limit, daily_article_limit, createdAt, lastLoginAt FROM users ORDER BY createdAt DESC'
+      `SELECT id, username, role, is_active, daily_token_limit, daily_article_limit,
+              use_system_key, gemini_api_key IS NOT NULL AND gemini_api_key != '' AS has_own_key,
+              createdAt, lastLoginAt
+       FROM users ORDER BY createdAt DESC`
     );
-    res.json(result.rows);
+    // Normalize boolean fields
+    const rows = result.rows.map(r => ({
+      ...r,
+      use_system_key: Number(r.use_system_key) === 1,
+      has_own_key:    Number(r.has_own_key)    === 1,
+    }));
+    res.json(rows);
   } catch (err) {
     console.error('[users] GET/', err.message);
     res.status(500).json({ error: 'Lỗi server.' });
@@ -27,7 +36,7 @@ router.get('/', async (req, res) => {
 
 // POST / — Tạo user mới
 router.post('/', async (req, res) => {
-  const { username, password, role = 'user', daily_token_limit = 0, daily_article_limit = 0 } = req.body;
+  const { username, password, role = 'user', daily_token_limit = 0, daily_article_limit = 0, use_system_key = false } = req.body;
   if (!username || !password) {
     return res.status(400).json({ error: 'Username và password là bắt buộc.' });
   }
@@ -41,12 +50,12 @@ router.post('/', async (req, res) => {
     const createdAt = new Date().toISOString();
 
     await db.execute({
-      sql: `INSERT INTO users (id, username, password_hash, role, is_active, daily_token_limit, daily_article_limit, createdAt)
-            VALUES (?, ?, ?, ?, 1, ?, ?, ?)`,
-      args: [id, username, password_hash, role, daily_token_limit, daily_article_limit, createdAt],
+      sql: `INSERT INTO users (id, username, password_hash, role, is_active, daily_token_limit, daily_article_limit, use_system_key, createdAt)
+            VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?)`,
+      args: [id, username, password_hash, role, daily_token_limit, daily_article_limit, use_system_key ? 1 : 0, createdAt],
     });
 
-    res.status(201).json({ id, username, role, is_active: 1, daily_token_limit, daily_article_limit, createdAt });
+    res.status(201).json({ id, username, role, is_active: 1, daily_token_limit, daily_article_limit, use_system_key: !!use_system_key, has_own_key: false, createdAt });
   } catch (err) {
     if (err.message && err.message.includes('UNIQUE constraint failed')) {
       return res.status(409).json({ error: 'Username đã tồn tại.' });
@@ -59,14 +68,12 @@ router.post('/', async (req, res) => {
 // PUT /:id — Cập nhật user
 router.put('/:id', async (req, res) => {
   const { id } = req.params;
-  const { role, is_active, daily_token_limit, daily_article_limit, password } = req.body;
+  const { role, is_active, daily_token_limit, daily_article_limit, password, use_system_key } = req.body;
 
   try {
-    // Kiểm tra user tồn tại
     const exist = await db.execute({ sql: 'SELECT id FROM users WHERE id = ?', args: [id] });
     if (!exist.rows[0]) return res.status(404).json({ error: 'Không tìm thấy user.' });
 
-    const updatedAt = new Date().toISOString();
     const updates = [];
     const args = [];
 
@@ -77,6 +84,7 @@ router.put('/:id', async (req, res) => {
     if (is_active !== undefined) { updates.push('is_active = ?'); args.push(is_active ? 1 : 0); }
     if (daily_token_limit !== undefined) { updates.push('daily_token_limit = ?'); args.push(Math.max(0, parseInt(daily_token_limit) || 0)); }
     if (daily_article_limit !== undefined) { updates.push('daily_article_limit = ?'); args.push(Math.max(0, parseInt(daily_article_limit) || 0)); }
+    if (use_system_key !== undefined) { updates.push('use_system_key = ?'); args.push(use_system_key ? 1 : 0); }
     if (password) {
       const hash = await hashPassword(password);
       updates.push('password_hash = ?'); args.push(hash);
@@ -91,10 +99,18 @@ router.put('/:id', async (req, res) => {
     });
 
     const updated = await db.execute({
-      sql: 'SELECT id, username, role, is_active, daily_token_limit, daily_article_limit, createdAt, lastLoginAt FROM users WHERE id = ?',
+      sql: `SELECT id, username, role, is_active, daily_token_limit, daily_article_limit,
+                   use_system_key, gemini_api_key IS NOT NULL AND gemini_api_key != '' AS has_own_key,
+                   createdAt, lastLoginAt
+            FROM users WHERE id = ?`,
       args: [id],
     });
-    res.json(updated.rows[0]);
+    const row = updated.rows[0];
+    res.json({
+      ...row,
+      use_system_key: Number(row.use_system_key) === 1,
+      has_own_key:    Number(row.has_own_key)    === 1,
+    });
   } catch (err) {
     console.error('[users] PUT/:id', err.message);
     res.status(500).json({ error: 'Lỗi server.' });

@@ -55,10 +55,11 @@ function parseResponse(raw, titleFallback) {
  * @param {object} companyInfo  { name, url, info }
  * @returns {{ geminiJobName: string, total: number }}
  */
-async function submitBatchJob(keyword, titles, companyInfo) {
-  if (!process.env.GEMINI_API_KEY) throw new Error('GEMINI_API_KEY is not configured.');
+async function submitBatchJob(keyword, titles, companyInfo, apiKey) {
+  const resolvedKey = apiKey || process.env.GEMINI_API_KEY;
+  if (!resolvedKey) throw new Error('GEMINI_API_KEY is not configured.');
 
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  const ai = new GoogleGenAI({ apiKey: resolvedKey });
 
   const inlinedRequests = titles.map((title) => ({
     contents: [{ parts: [{ text: buildArticlePrompt(keyword, title, companyInfo) }], role: 'user' }],

@@ -127,7 +127,13 @@ async function initDb() {
     // batch_jobs
     { table: 'batch_jobs', col: 'createdBy',       ddl: 'ALTER TABLE batch_jobs ADD COLUMN createdBy TEXT' },
     // token_usage
-    { table: 'token_usage', col: 'createdBy',      ddl: 'ALTER TABLE token_usage ADD COLUMN createdBy TEXT' },
+    { table: 'token_usage', col: 'createdBy', ddl: 'ALTER TABLE token_usage ADD COLUMN createdBy TEXT' },
+    { table: 'token_usage', col: 'model',     ddl: 'ALTER TABLE token_usage ADD COLUMN model TEXT' },
+    // users — per-user API keys
+    { table: 'users', col: 'gemini_api_key',  ddl: 'ALTER TABLE users ADD COLUMN gemini_api_key TEXT' },
+    { table: 'users', col: 'gemini_model',    ddl: 'ALTER TABLE users ADD COLUMN gemini_model TEXT' },
+    { table: 'users', col: 'serpapi_api_key', ddl: 'ALTER TABLE users ADD COLUMN serpapi_api_key TEXT' },
+    { table: 'users', col: 'use_system_key',  ddl: 'ALTER TABLE users ADD COLUMN use_system_key INTEGER NOT NULL DEFAULT 0' },
   ];
 
   for (const m of migrations) {
