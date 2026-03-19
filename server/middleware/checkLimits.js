@@ -28,7 +28,7 @@ async function checkDailyLimits(req, res, next) {
     }
 
     // ── Kiểm tra giới hạn số bài viết/ngày ──────────────────────────────────
-    const globalArticleLimit = await getSetting('daily_article_limit');
+    const globalArticleLimit = Number(await getSetting('daily_article_limit')) || 0;
     const articleLimit = userArticleLimit > 0 ? userArticleLimit : globalArticleLimit;
 
     if (articleLimit > 0) {
@@ -54,7 +54,7 @@ async function checkDailyLimits(req, res, next) {
     }
 
     // ── Kiểm tra giới hạn token/ngày ────────────────────────────────────────
-    const globalTokenLimit = await getSetting('daily_token_limit');
+    const globalTokenLimit = Number(await getSetting('daily_token_limit')) || 0;
     const tokenLimit = userTokenLimit > 0 ? userTokenLimit : globalTokenLimit;
 
     if (tokenLimit > 0) {

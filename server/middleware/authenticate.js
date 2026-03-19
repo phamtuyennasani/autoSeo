@@ -26,7 +26,10 @@ async function authenticate(req, res, next) {
   }
 
   const authHeader = req.headers['authorization'] || '';
-  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  // EventSource không gửi được header → fallback sang ?token= (dùng cho SSE stream)
+  const token = authHeader.startsWith('Bearer ')
+    ? authHeader.slice(7)
+    : (req.query.token || null);
 
   if (!token) {
     return res.status(401).json({ error: 'Unauthorized — Vui lòng đăng nhập.' });

@@ -75,15 +75,7 @@ async function generateArticle(keyword, title, companyInfo, userConfig = {}) {
     model: modelName,
   };
 
-  const fallback = {
-    seo_title: title,
-    seo_description: '',
-    content: raw,
-    image_prompts: [],
-    usage,
-  };
-
-  // Bóc JSON ra nếu AI vẫn bọc trong markdown (fallback)
+  // Bóc JSON ra nếu AI vẫn bọc trong markdown
   const extractJson = (str) => {
     if (!str) return null;
     // Case 1: bọc trong markdown code block
@@ -97,24 +89,25 @@ async function generateArticle(keyword, title, companyInfo, userConfig = {}) {
     }
     return null;
   };
+
   const jsonStr = extractJson(raw);
   if (!jsonStr) {
-    console.error('Không tìm thấy JSON trong response Gemini');
-    return fallback;
+    console.error('[gemini] Không tìm thấy JSON trong response. Raw (500 ký tự đầu):', raw.slice(0, 500));
+    throw new Error('Gemini trả về nội dung không đúng định dạng JSON. Vui lòng thử lại.');
   }
+
   try {
     const parsed = JSON.parse(jsonrepair(jsonStr));
     return {
-      seo_title: typeof parsed.seo_title === 'string' ? parsed.seo_title : title,
+      seo_title:       typeof parsed.seo_title === 'string'       ? parsed.seo_title       : title,
       seo_description: typeof parsed.seo_description === 'string' ? parsed.seo_description : '',
-      content: typeof parsed.content === 'string' ? parsed.content : '',
-      image_prompts: Array.isArray(parsed.image_prompts) ? parsed.image_prompts : [],
+      content:         typeof parsed.content === 'string'         ? parsed.content         : '',
+      image_prompts:   Array.isArray(parsed.image_prompts)        ? parsed.image_prompts   : [],
       usage,
     };
   } catch (err) {
-    console.error('Lỗi parse JSON từ Gemini:', err.message);
-    console.error('Raw response:', raw.slice(0, 500));
-    return fallback;
+    console.error('[gemini] Lỗi parse JSON:', err.message, '| Raw:', raw.slice(0, 500));
+    throw new Error(`Gemini trả về JSON không hợp lệ: ${err.message}`);
   }
 }
 

@@ -5,6 +5,7 @@ const { submitBatchJob, processBatchJob } = require('../services/gemini-batch');
 const { saveArticleFromBatch } = require('./articles');
 const { getSetting } = require('./settings');
 const { getEffectiveApiConfig } = require('../services/apiConfig');
+const requireAdmin = require('../middleware/requireAdmin');
 
 // ─── POST / — Submit batch job mới lên Gemini ────────────────────────────────
 router.post('/', async (req, res) => {
@@ -39,7 +40,7 @@ router.post('/', async (req, res) => {
       userArticleLimit = Number(userResult.rows[0]?.daily_article_limit || 0);
     }
 
-    const globalArticleLimit = await getSetting('daily_article_limit');
+    const globalArticleLimit = Number(await getSetting('daily_article_limit')) || 0;
     const articleLimit = userArticleLimit > 0 ? userArticleLimit : globalArticleLimit;
 
     if (articleLimit > 0) {
@@ -150,7 +151,8 @@ router.post('/:id/check', async (req, res) => {
 
   const titles = JSON.parse(job.titles || '[]');
   try {
-    const checkResult = await processBatchJob(job.gemini_job_name, titles);
+    const creatorApiConfig = await getEffectiveApiConfig(job.createdBy).catch(() => ({}));
+    const checkResult = await processBatchJob(job.gemini_job_name, titles, creatorApiConfig.apiKey);
 
     await db.execute({
       sql: 'UPDATE batch_jobs SET gemini_state = ? WHERE id = ?',
@@ -215,8 +217,8 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
-// ─── POST /check-all — Trigger thủ công ──────────────────────────────────────
-router.post('/check-all', async (req, res) => {
+// ─── POST /check-all — Trigger thủ công (admin only) ─────────────────────────
+router.post('/check-all', requireAdmin, async (req, res) => {
   try {
     const { checkPendingJobs } = require('../jobs/batchJobChecker');
     res.json({ message: 'Đã kích hoạt kiểm tra tất cả job đang chờ.' });

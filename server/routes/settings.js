@@ -6,7 +6,7 @@ const requireAdmin = require('../middleware/requireAdmin');
 // ─── Helper: đọc 1 setting ────────────────────────────────────────────────────
 async function getSetting(key) {
   const result = await db.execute({ sql: 'SELECT value FROM settings WHERE key = ?', args: [key] });
-  return result.rows[0] ? parseInt(result.rows[0].value, 10) : 0;
+  return result.rows[0]?.value ?? null;
 }
 
 // ─── GET / ────────────────────────────────────────────────────────────────────

@@ -7,6 +7,7 @@
 const { db } = require('../data/store');
 const { processBatchJob } = require('../services/gemini-batch');
 const { saveArticleFromBatch } = require('../routes/articles');
+const { getEffectiveApiConfig } = require('../services/apiConfig');
 
 const CHECK_INTERVAL_MS = 60 * 60 * 1000; // 60 phút
 const LOG = (...args) => console.log('[BatchJobChecker]', ...args);
@@ -69,7 +70,8 @@ async function checkPendingJobs() {
     const titles = JSON.parse(job.titles || '[]');
 
     try {
-      const result = await processBatchJob(job.gemini_job_name, titles);
+      const apiConfig = await getEffectiveApiConfig(job.createdBy).catch(() => ({}));
+      const result = await processBatchJob(job.gemini_job_name, titles, apiConfig.apiKey);
 
       // Cập nhật gemini_state
       await db.execute({

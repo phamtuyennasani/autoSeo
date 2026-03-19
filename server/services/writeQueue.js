@@ -15,6 +15,13 @@ function getJob(jobId) {
   return jobs.get(jobId) || null;
 }
 
+function stopJob(jobId) {
+  const job = jobs.get(jobId);
+  if (!job || job.status !== 'running') return false;
+  job.cancelled = true;
+  return true;
+}
+
 /**
  * Bắt đầu một write-queue job trong background.
  * Trả về ngay lập tức, không cần await.
@@ -39,6 +46,13 @@ async function startJob(jobId, keyword, companyId, titles, company, generateAndS
   // Chạy nền — không await
   (async () => {
     for (let i = 0; i < titles.length; i++) {
+      if (job.cancelled) {
+        job.status = 'cancelled';
+        emitter.emit(jobId, { type: 'cancelled', done: job.done, total: job.total, succeeded: job.succeeded, failed: job.failed });
+        setTimeout(() => jobs.delete(jobId), 60 * 60 * 1000);
+        return;
+      }
+
       const title = titles[i];
       job.currentTitle = title;
       job.currentIndex = i;
@@ -62,6 +76,7 @@ async function startJob(jobId, keyword, companyId, titles, company, generateAndS
           total: titles.length,
           title,
           articleId: article.id,
+          article,
           status: 'done',
         });
       } catch (err) {
@@ -95,4 +110,4 @@ async function startJob(jobId, keyword, companyId, titles, company, generateAndS
   })();
 }
 
-module.exports = { getJob, startJob, emitter };
+module.exports = { getJob, startJob, stopJob, emitter };

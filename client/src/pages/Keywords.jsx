@@ -6,7 +6,7 @@ import {
   Search, PenTool, Sparkles, X, Loader2, Trash2, Eye, Calendar,
   ChevronLeft, Plus, Building2, BarChart2, FileText, Hash, RefreshCw,
   CheckCircle2, PlayCircle, Clock, Layers, Tag, AlignLeft, ListOrdered, XCircle,
-  Users as UsersIcon,
+  Users as UsersIcon, Copy, Check,
 } from 'lucide-react';
 import ArticleWriteModal from '../components/ArticleWriteModal';
 import { useToken } from '../context/TokenContext';
@@ -66,10 +66,12 @@ const Keywords = () => {
 
   // Article view
   const [viewingArticle, setViewingArticle] = useState(null);
+  const [copySuccess, setCopySuccess] = useState(null);
 
   // Write Queue (SSE background)
   const [writeQueueJob, setWriteQueueJob] = useState(null); // { jobId, status, total, done, succeeded, failed, currentTitle, results }
   const sseRef = useRef(null); // giữ EventSource để có thể đóng khi cần
+  const articleContentRef = useRef(null);
 
   // Lấy danh sách users cho dropdown (admin only, khi AUTH bật)
   useEffect(() => {
@@ -145,7 +147,9 @@ const Keywords = () => {
   // Kết nối SSE stream cho một write-queue job
   const connectQueueStream = useCallback((jobId, keyword) => {
     if (sseRef.current) { sseRef.current.close(); }
-    const es = new EventSource(`${API_WRITE_QUEUE}/${jobId}/stream`);
+    const token = localStorage.getItem('autoseo_token');
+    const streamUrl = `${API_WRITE_QUEUE}/${jobId}/stream${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+    const es = new EventSource(streamUrl);
     sseRef.current = es;
 
     es.onmessage = (e) => {
@@ -176,9 +180,9 @@ const Keywords = () => {
           results[data.index] = { title: data.title, status: data.status, articleId: data.articleId, error: data.error };
           return { ...prev, done: data.done, succeeded: (prev.succeeded || 0) + (data.status === 'done' ? 1 : 0), failed: (prev.failed || 0) + (data.status === 'error' ? 1 : 0), results };
         });
-        // Cập nhật danh sách bài viết vừa xong
-        if (data.status === 'done') {
-          fetchArticlesForKeyword(keyword);
+        if (data.status === 'done' && data.article) {
+          // Cập nhật trực tiếp vào articlesOfKeyword — không cần HTTP round-trip
+          setArticlesOfKeyword(prev => prev.find(a => a.id === data.article.id) ? prev : [...prev, data.article]);
           fetchData();
           refreshStats();
         }
@@ -194,6 +198,16 @@ const Keywords = () => {
         es.close();
         sseRef.current = null;
       }
+
+      if (data.type === 'cancelled') {
+        setWriteQueueJob(prev => prev ? { ...prev, status: 'cancelled', succeeded: data.succeeded, failed: data.failed } : prev);
+        localStorage.removeItem(`wq_${keyword}`);
+        fetchArticlesForKeyword(keyword);
+        fetchData();
+        refreshStats();
+        es.close();
+        sseRef.current = null;
+      }
     };
 
     es.onerror = () => {
@@ -201,6 +215,14 @@ const Keywords = () => {
       sseRef.current = null;
     };
   }, [fetchArticlesForKeyword, fetchData, refreshStats]);
+
+  // Dừng write-queue job đang chạy
+  const handleStopQueue = async () => {
+    if (!writeQueueJob?.jobId) return;
+    try {
+      await apiClient.delete(`${API_WRITE_QUEUE}/${writeQueueJob.jobId}`);
+    } catch { /* server tự emit 'cancelled' qua SSE */ }
+  };
 
   // Kiểm tra và khôi phục queue job từ localStorage khi vào lại trang
   const resumeQueueJob = async (jobId, keyword) => {
@@ -364,6 +386,81 @@ const Keywords = () => {
   // VIEW: Xem nội dung bài viết cụ thể
   // ============================================================
   if (viewingArticle) {
+    const copyText = (text) => {
+      if (navigator.clipboard?.writeText) {
+        return navigator.clipboard.writeText(text);
+      }
+      // fallback execCommand
+      const el = document.createElement('textarea');
+      el.value = text;
+      el.style.position = 'fixed';
+      el.style.opacity = '0';
+      document.body.appendChild(el);
+      el.focus();
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+      return Promise.resolve();
+    };
+
+    const makeCopyFn = (key) => async () => {
+      try {
+        if (key === 'content' && articleContentRef.current) {
+          const el = articleContentRef.current;
+          const cv = getComputedStyle(document.documentElement);
+          const v = (n) => cv.getPropertyValue(n).trim();
+          const clone = el.cloneNode(true);
+          const q = (sel, styles) => clone.querySelectorAll(sel).forEach(e => Object.assign(e.style, styles));
+          // wrapper
+          Object.assign(clone.style, { fontSize:'15px', lineHeight:'1.85', color:v('--text-primary'), maxWidth:'820px' });
+          // headings shared
+          q('h1,h2,h3,h4', { fontFamily:"'Plus Jakarta Sans',sans-serif", fontWeight:'700', color:v('--text-primary'), marginTop:'2em', marginBottom:'0.6em', lineHeight:'1.4', letterSpacing:'-0.2px' });
+          q('h1', { fontSize:'26px', borderBottom:`2px solid ${v('--border')}`, paddingBottom:'10px' });
+          q('h2', { fontSize:'20px' });
+          q('h3', { fontSize:'17px' });
+          q('h4', { fontSize:'15px' });
+          q('p',  { marginBottom:'1.2em', color:v('--text-primary') });
+          q('ul,ol', { paddingLeft:'1.6em', marginBottom:'1.2em' });
+          q('li', { marginBottom:'0.4em' });
+          q('blockquote', { borderLeft:`3px solid ${v('--accent')}`, padding:'10px 16px', margin:'1.5em 0', background:v('--accent-subtle'), borderRadius:`0 ${v('--radius-sm')} ${v('--radius-sm')} 0`, color:v('--text-secondary'), fontStyle:'italic' });
+          q('code', { fontFamily:"'Fira Code','Consolas',monospace", fontSize:'13px', background:'rgba(99,102,241,0.1)', color:'#a78bfa', padding:'2px 6px', borderRadius:'4px' });
+          q('pre',  { background:v('--bg-root'), border:`1px solid ${v('--border')}`, borderRadius:v('--radius-md'), padding:'16px 20px', overflowX:'auto', margin:'1.5em 0' });
+          q('pre code', { background:'none', padding:'0', color:v('--text-primary'), fontSize:'13.5px' });
+          q('strong', { fontWeight:'700', color:v('--text-primary') });
+          q('em',     { fontStyle:'italic', color:v('--text-secondary') });
+          q('a',  { color:v('--accent'), textDecoration:'underline', textUnderlineOffset:'3px' });
+          q('hr', { border:'none', borderTop:`1px solid ${v('--border')}`, margin:'2em 0' });
+          q('table', { width:'100%', borderCollapse:'collapse', margin:'1.5em 0', fontSize:'14px' });
+          q('th,td', { padding:'10px 14px', border:`1px solid ${v('--border')}`, textAlign:'left' });
+          q('th', { background:v('--bg-panel'), fontWeight:'600', color:v('--text-primary') });
+          await copyText(clone.outerHTML);
+        } else {
+          await copyText(viewingArticle[key] || '');
+        }
+        setCopySuccess(key);
+        setTimeout(() => setCopySuccess(null), 2000);
+      } catch (err) {
+        console.error('[copy] failed:', err);
+      }
+    };
+    const CopyBtn = ({ field }) => (
+      <button
+        onClick={makeCopyFn(field)}
+        title="Copy"
+        style={{
+          display: 'inline-flex', alignItems: 'center', gap: '4px',
+          fontSize: '11px', fontWeight: '500', padding: '3px 10px',
+          background: copySuccess === field ? 'rgba(34,197,94,0.12)' : 'var(--accent-subtle)',
+          border: `1px solid ${copySuccess === field ? 'rgba(34,197,94,0.4)' : 'rgba(99,102,241,0.35)'}`,
+          borderRadius: '5px', cursor: 'pointer',
+          color: copySuccess === field ? '#4ade80' : 'var(--accent)',
+          transition: 'all 0.2s', fontFamily: 'Inter, sans-serif', flexShrink: 0,
+        }}
+      >
+        {copySuccess === field ? <><Check size={11} /> Đã copy</> : <><Copy size={11} /> Copy</>}
+      </button>
+    );
+
     return (
       <div>
         <div className="page-header">
@@ -408,6 +505,7 @@ const Keywords = () => {
               <div style={{ marginBottom: '12px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)', marginBottom: '5px' }}>
                   <Tag size={11} /> SEO Title <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>({viewingArticle.seo_title.length} ký tự)</span>
+                  <CopyBtn field="seo_title" />
                 </div>
                 <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-primary)', background: 'var(--bg-panel)', padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
                   {viewingArticle.seo_title}
@@ -418,6 +516,7 @@ const Keywords = () => {
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)', marginBottom: '5px' }}>
                   <AlignLeft size={11} /> Meta Description <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>({viewingArticle.seo_description.length} ký tự)</span>
+                  <CopyBtn field="seo_description" />
                 </div>
                 <div style={{ fontSize: '13px', color: 'var(--text-secondary)', background: 'var(--bg-panel)', padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', lineHeight: '1.6' }}>
                   {viewingArticle.seo_description}
@@ -428,7 +527,11 @@ const Keywords = () => {
         )}
 
         <div className="panel" style={{ padding: '28px 32px' }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '12px' }}>
+            <CopyBtn field="content" />
+          </div>
           <div
+            ref={articleContentRef}
             className="article-html-content"
             dangerouslySetInnerHTML={{ __html: marked.parse(viewingArticle.content || '') }}
           />
@@ -511,6 +614,27 @@ const Keywords = () => {
                     — {writeQueueJob.currentTitle}
                   </span>
                 )}
+                <button
+                  onClick={handleStopQueue}
+                  style={{ marginLeft: 4, display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '3px 10px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 'var(--radius-sm)', color: 'var(--danger)', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}
+                  title="Dừng hàng đợi sau bài đang viết"
+                >
+                  <X size={12} /> Dừng
+                </button>
+              </div>
+            )}
+            {/* QUEUE CANCELLED */}
+            {writeQueueJob && writeQueueJob.status === 'cancelled' && (
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '7px 12px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 'var(--radius-md)', fontSize: '13px', fontWeight: '600', color: 'var(--danger)' }}>
+                <XCircle size={14} />
+                <span>Đã dừng: {writeQueueJob.succeeded} thành công{writeQueueJob.failed > 0 ? `, ${writeQueueJob.failed} lỗi` : ''}</span>
+                <button
+                  onClick={() => setWriteQueueJob(null)}
+                  style={{ marginLeft: 4, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 1 }}
+                  title="Đóng"
+                >
+                  <XCircle size={14} />
+                </button>
               </div>
             )}
             {/* QUEUE DONE */}
@@ -561,8 +685,8 @@ const Keywords = () => {
             {titles.length > 0 ? titles.map((title, idx) => {
               const article = getArticleForTitle(title);
               const isThisWriting = isWritingAll && !article;
-              const queueResult = writeQueueJob?.results?.[idx];
-              const isQueueWritingThis = writeQueueJob?.status === 'running' && writeQueueJob?.currentIndex === idx;
+              const queueResult = writeQueueJob?.results?.find(r => r?.title === title);
+              const isQueueWritingThis = writeQueueJob?.status === 'running' && writeQueueJob?.currentTitle === title;
 
               return (
                 <div key={idx} style={{

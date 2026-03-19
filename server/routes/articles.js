@@ -208,16 +208,28 @@ router.post('/batch', async (req, res) => {
 async function saveArticleFromBatch(jobKeyword, jobCompanyId, result, createdBy = null) {
   if (result.error) return { saved: false, message: `AI error: ${result.error}` };
 
-  // Duplicate check
-  const dupResult = await db.execute({
-    sql: 'SELECT id FROM articles WHERE keyword = ? AND title = ?',
-    args: [jobKeyword, result.title],
+  const { seo_title = result.title, seo_description = '', content = '', image_prompts = [] } = result;
+  const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  const createdAt = new Date().toISOString();
+
+  // Atomic INSERT: chỉ chèn nếu (keyword, title) chưa tồn tại — tránh race condition
+  const insertResult = await db.execute({
+    sql: `INSERT INTO articles (id, keyword, title, companyId, content, seo_title, seo_description, image_prompts, createdAt, createdBy)
+          SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+          WHERE NOT EXISTS (SELECT 1 FROM articles WHERE keyword = ? AND title = ?)`,
+    args: [id, jobKeyword, result.title, jobCompanyId, content, seo_title, seo_description, JSON.stringify(image_prompts), createdAt, createdBy,
+           jobKeyword, result.title],
   });
-  if (dupResult.rows[0]) {
-    return { saved: false, skipped: true, id: dupResult.rows[0].id, message: 'Đã tồn tại, bỏ qua' };
+
+  if (insertResult.rowsAffected === 0) {
+    const existing = await db.execute({
+      sql: 'SELECT id FROM articles WHERE keyword = ? AND title = ?',
+      args: [jobKeyword, result.title],
+    });
+    return { saved: false, skipped: true, id: existing.rows[0]?.id, message: 'Đã tồn tại, bỏ qua' };
   }
 
-  // Lưu token usage
+  // Lưu token usage sau khi insert thành công
   if (result.usage) {
     try {
       const usageId = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}-batch`;
@@ -229,15 +241,6 @@ async function saveArticleFromBatch(jobKeyword, jobCompanyId, result, createdBy 
       console.error('[saveArticleFromBatch] Lỗi lưu token:', e.message);
     }
   }
-
-  const { seo_title = result.title, seo_description = '', content = '', image_prompts = [] } = result;
-  const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-  const createdAt = new Date().toISOString();
-
-  await db.execute({
-    sql: 'INSERT INTO articles (id, keyword, title, companyId, content, seo_title, seo_description, image_prompts, createdAt, createdBy) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    args: [id, jobKeyword, result.title, jobCompanyId, content, seo_title, seo_description, JSON.stringify(image_prompts), createdAt, createdBy],
-  });
 
   return { saved: true, id, title: result.title, seo_title, createdAt };
 }

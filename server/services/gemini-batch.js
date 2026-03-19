@@ -87,10 +87,11 @@ async function submitBatchJob(keyword, titles, companyInfo, apiKey) {
  * @param {string[]} titles        mảng tiêu đề (theo đúng thứ tự đã submit)
  * @returns {{ done: boolean, state: string, results?: Array }}
  */
-async function processBatchJob(geminiJobName, titles) {
-  if (!process.env.GEMINI_API_KEY) throw new Error('GEMINI_API_KEY is not configured.');
+async function processBatchJob(geminiJobName, titles, apiKey) {
+  const resolvedKey = apiKey || process.env.GEMINI_API_KEY;
+  if (!resolvedKey) throw new Error('GEMINI_API_KEY is not configured.');
 
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  const ai = new GoogleGenAI({ apiKey: resolvedKey });
   const job = await ai.batches.get({ name: geminiJobName });
 
   console.log(`[batch] Check job ${geminiJobName}: ${job.state}`);

@@ -3,7 +3,7 @@ const router = express.Router();
 const { db } = require('../data/store');
 const { generateAndSave } = require('./articles');
 const { getSetting } = require('./settings');
-const { getJob, startJob, emitter } = require('../services/writeQueue');
+const { getJob, startJob, stopJob, emitter } = require('../services/writeQueue');
 const { getEffectiveApiConfig } = require('../services/apiConfig');
 
 // ─── POST / — Bắt đầu write-queue job ────────────────────────────────────────
@@ -126,6 +126,13 @@ router.get('/:jobId/stream', (req, res) => {
   emitter.on(jobId, handler);
 
   req.on('close', () => emitter.off(jobId, handler));
+});
+
+// ─── DELETE /:jobId — Dừng job đang chạy ─────────────────────────────────────
+router.delete('/:jobId', (req, res) => {
+  const stopped = stopJob(req.params.jobId);
+  if (!stopped) return res.status(404).json({ error: 'Job không tồn tại hoặc đã hoàn thành' });
+  res.json({ success: true });
 });
 
 module.exports = router;
