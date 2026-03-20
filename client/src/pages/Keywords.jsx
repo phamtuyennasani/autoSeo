@@ -235,6 +235,11 @@ const Keywords = () => {
         refreshStats();
         es.close();
         sseRef.current = null;
+        if (data.failed > 0) {
+          toast.warning(`Hàng đợi hoàn tất: ${data.succeeded} thành công, ${data.failed} lỗi`, { description: `Từ khóa: ${keyword}` });
+        } else {
+          toast.success(`Hàng đợi hoàn tất: ${data.succeeded} bài đã viết`, { description: `Từ khóa: ${keyword}` });
+        }
       }
 
       if (data.type === 'cancelled') {
@@ -245,6 +250,7 @@ const Keywords = () => {
         refreshStats();
         es.close();
         sseRef.current = null;
+        toast.info(`Hàng đợi đã dừng: ${data.succeeded} bài đã viết`, { description: `Từ khóa: ${keyword}` });
       }
     };
 
