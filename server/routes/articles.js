@@ -72,7 +72,7 @@ router.get('/', async (req, res) => {
   try {
     const user = req.user || { id: 'admin', role: 'admin' };
     const isAdmin = user.role === 'admin';
-    const { keyword } = req.query;
+    const { keyword, companyId } = req.query;
 
     let sql = `SELECT a.*, c.name as companyName FROM articles a LEFT JOIN companies c ON a.companyId = c.id`;
     const args = [];
@@ -82,7 +82,13 @@ router.get('/', async (req, res) => {
       conditions.push('a.keyword = ?');
       args.push(keyword);
     }
-    if (!isAdmin) {
+    if (companyId) {
+      conditions.push('a.companyId = ?');
+      args.push(companyId);
+    }
+    // Khi lọc theo keyword+companyId thì không giới hạn createdBy
+    // (admin có thể viết bài giùm user, vẫn phải hiển thị cho user)
+    if (!isAdmin && !(keyword && companyId)) {
       conditions.push('a.createdBy = ?');
       args.push(user.id);
     }

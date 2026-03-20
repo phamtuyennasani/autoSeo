@@ -103,10 +103,11 @@ const Keywords = () => {
     }
   };
 
-  const fetchArticlesForKeyword = useCallback(async (keyword) => {
+  const fetchArticlesForKeyword = useCallback(async (keyword, companyId) => {
     setLoadingArticles(true);
     try {
-      const res = await apiClient.get(API_ARTICLE, { params: { keyword } });
+      const params = companyId ? { keyword, companyId } : { keyword };
+      const res = await apiClient.get(API_ARTICLE, { params });
       setArticlesOfKeyword(res.data);
     } catch (err) {
       console.error(err);
@@ -121,11 +122,11 @@ const Keywords = () => {
     setWriteQueueJob(null);
     setSelectedKeyword(item);
     setArticlesOfKeyword([]);
-    fetchArticlesForKeyword(item.keyword);
+    fetchArticlesForKeyword(item.keyword, item.companyId);
     fetchPendingBatchJob(item.keyword);
     // Khôi phục queue job nếu đang chạy
     const storedJobId = localStorage.getItem(`wq_${item.keyword}`);
-    if (storedJobId) resumeQueueJob(storedJobId, item.keyword);
+    if (storedJobId) resumeQueueJob(storedJobId, item.keyword, item.companyId);
   };
 
   // Fetch batch job đang pending cho keyword hiện tại (status = pending)
@@ -145,7 +146,7 @@ const Keywords = () => {
   };
 
   // Kết nối SSE stream cho một write-queue job
-  const connectQueueStream = useCallback((jobId, keyword) => {
+  const connectQueueStream = useCallback((jobId, keyword, companyId) => {
     if (sseRef.current) { sseRef.current.close(); }
     const token = localStorage.getItem('autoseo_token');
     const streamUrl = `${API_WRITE_QUEUE}/${jobId}/stream${token ? `?token=${encodeURIComponent(token)}` : ''}`;
@@ -192,7 +193,7 @@ const Keywords = () => {
       if (data.type === 'done') {
         setWriteQueueJob(prev => prev ? { ...prev, status: 'done', succeeded: data.succeeded, failed: data.failed } : prev);
         localStorage.removeItem(`wq_${keyword}`);
-        fetchArticlesForKeyword(keyword);
+        fetchArticlesForKeyword(keyword, companyId);
         fetchData();
         refreshStats();
         es.close();
@@ -202,7 +203,7 @@ const Keywords = () => {
       if (data.type === 'cancelled') {
         setWriteQueueJob(prev => prev ? { ...prev, status: 'cancelled', succeeded: data.succeeded, failed: data.failed } : prev);
         localStorage.removeItem(`wq_${keyword}`);
-        fetchArticlesForKeyword(keyword);
+        fetchArticlesForKeyword(keyword, companyId);
         fetchData();
         refreshStats();
         es.close();
@@ -225,13 +226,13 @@ const Keywords = () => {
   };
 
   // Kiểm tra và khôi phục queue job từ localStorage khi vào lại trang
-  const resumeQueueJob = async (jobId, keyword) => {
+  const resumeQueueJob = async (jobId, keyword, companyId) => {
     try {
       const res = await apiClient.get(`${API_WRITE_QUEUE}/${jobId}`);
       const job = res.data;
       setWriteQueueJob({ jobId, ...job });
       if (job.status === 'running') {
-        connectQueueStream(jobId, keyword);
+        connectQueueStream(jobId, keyword, companyId);
       } else {
         localStorage.removeItem(`wq_${keyword}`);
       }
@@ -259,7 +260,7 @@ const Keywords = () => {
       const { jobId } = res.data;
       localStorage.setItem(`wq_${selectedKeyword.keyword}`, jobId);
       setWriteQueueJob({ jobId, status: 'running', total: unwrittenTitles.length, done: 0, succeeded: 0, failed: 0, currentTitle: null, results: [] });
-      connectQueueStream(jobId, selectedKeyword.keyword);
+      connectQueueStream(jobId, selectedKeyword.keyword, selectedKeyword.companyId);
     } catch (err) {
       const data = err.response?.data;
       if (data?.type === 'article_limit') {
@@ -312,7 +313,7 @@ const Keywords = () => {
   // Khi viết 1 bài xong thành công, refresh danh sách bài
   const handleArticleWritten = () => {
     if (selectedKeyword) {
-      fetchArticlesForKeyword(selectedKeyword.keyword);
+      fetchArticlesForKeyword(selectedKeyword.keyword, selectedKeyword.companyId);
       fetchData(); // cập nhật articleCount ngoài list
     }
   };
@@ -483,7 +484,7 @@ const Keywords = () => {
                 if (!window.confirm('Xóa bài viết này và viết lại?')) return;
                 await apiClient.delete(`${API_ARTICLE}/${viewingArticle.id}`);
                 setViewingArticle(null);
-                fetchArticlesForKeyword(selectedKeyword.keyword);
+                fetchArticlesForKeyword(selectedKeyword.keyword, selectedKeyword.companyId);
                 fetchData();
                 setWriteModalTitle(viewingArticle.title);
                 setIsWriteModalOpen(true);
@@ -860,7 +861,7 @@ const Keywords = () => {
               placeholder="Tìm kiếm từ khóa..."
               value={searchText}
               onChange={e => setSearchText(e.target.value)}
-              style={{ paddingLeft: 32, height: 34, fontSize: 13 }}
+              style={{ paddingLeft: 32, fontSize: 14 }}
             />
             {searchText && (
               <button
@@ -892,14 +893,14 @@ const Keywords = () => {
                   fetchData(uid);
                 }}
                 className="input-field"
-                style={{ paddingLeft: 30, height: 34, fontSize: 13, cursor: 'pointer',
+                style={{ paddingLeft: 30, fontSize: 14, cursor: 'pointer',
                   borderColor: filterUserId ? 'var(--accent)' : undefined,
                 }}
               >
-                <option value="">Tất cả users</option>
+                <option value="">Tất cả Tài Khoản</option>
                 {userList.map(u => (
                   <option key={u.id} value={u.id}>
-                    {u.username}{u.role === 'admin' ? ' (admin)' : ''}
+                    {u.full_name || u.username}{u.role === 'admin' ? ' (admin)' : ''}
                   </option>
                 ))}
               </select>
@@ -916,12 +917,12 @@ const Keywords = () => {
               value={filterCompanyId}
               onChange={e => setFilterCompanyId(e.target.value)}
               className="input-field"
-              style={{ paddingLeft: 30, height: 34, fontSize: 13, cursor: 'pointer',
+              style={{ paddingLeft: 30, fontSize: 14, cursor: 'pointer',
                 borderColor: filterCompanyId ? 'var(--accent)' : undefined,
               }}
             >
               <option value="">
-                {filterUserId ? 'Công ty của user này' : 'Tất cả công ty'}
+                Danh sách Website/Công ty 
               </option>
               {filterCompanies.map(c => (
                 <option key={c.id} value={c.id}>{c.name}</option>

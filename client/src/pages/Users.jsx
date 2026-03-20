@@ -568,7 +568,6 @@ const Users = () => {
       await load();
     } finally { setActionLoading(null); }
   };
-
   if (currentUser?.role !== 'admin') {
     return (
       <div style={{ padding: '60px', textAlign: 'center', color: 'var(--text-secondary)' }}>
@@ -578,11 +577,9 @@ const Users = () => {
       </div>
     );
   }
-
   const activeCount    = users.filter(u => u.is_active).length;
   const adminCount     = users.filter(u => u.role === 'admin').length;
   const sysKeyCount    = users.filter(u => !u.has_own_key && u.use_system_key).length;
-
   return (
     <div>
       {/* HEADER */}
@@ -647,7 +644,7 @@ const Users = () => {
             const isSelf     = u.id === currentUser?.id;
             const isToggling = actionLoading === u.id + '-toggle';
             const isDeleting = actionLoading === u.id + '-delete';
-            const initial    = u.username.charAt(0).toUpperCase();
+            const initial    = u.full_name ? u.full_name.charAt(0).toUpperCase() : u.username.charAt(0).toUpperCase();
             const avatarColors = [
               ['#6366f1','rgba(99,102,241,0.15)'],['#10b981','rgba(16,185,129,0.15)'],
               ['#f59e0b','rgba(245,158,11,0.15)'], ['#ef4444','rgba(239,68,68,0.15)'],
@@ -680,15 +677,16 @@ const Users = () => {
                     border: `1.5px solid ${clr}30`,
                   }}>{initial}</div>
                   <div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
+                    {u.full_name && (
+                      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)',marginBottom:1 }}>{u.full_name}</div>
+                    )}
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>
                       {u.username}
                       {isSelf && (
                         <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--accent)', background: 'var(--accent-subtle)', padding: '1px 6px', borderRadius: 99, fontWeight: 600 }}>bạn</span>
                       )}
                     </div>
-                    {u.full_name && (
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{u.full_name}</div>
-                    )}
+                    
                     {u.email && (
                       <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{u.email}</div>
                     )}

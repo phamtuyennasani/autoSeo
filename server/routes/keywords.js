@@ -72,7 +72,7 @@ router.post('/', async (req, res) => {
       try {
         console.log(`Đang dùng AI tạo ${count} titles...`);
         const result = await generateTitles(keyword, searchContext, count, apiConfig);
-        titles = result.titles;
+        titles = result.titles.slice(0, count);
 
         if (result.usage) {
           const usageId = `${Date.now()}-titles`;
