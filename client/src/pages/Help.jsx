@@ -93,7 +93,7 @@ function FieldRow({ name, desc }) {
 export default function Help() {
   return (
     <div className="page-content">
-      <div style={{ maxWidth: 800, margin: '0 auto' }}>
+      <div style={{ margin: '0 auto' }}>
 
         {/* Header */}
         <div style={{ marginBottom: 28 }}>
@@ -588,7 +588,7 @@ export default function Help() {
 
         {/* Footer */}
         <div style={{ textAlign: 'center', padding: '20px 0', fontSize: 12, color: 'var(--text-muted)' }}>
-          AutoSEO — Powered by Google Gemini AI
+          AutoSEO — Hệ thống hỗ trợ viết bài chuẩn SEO tự động bằng AI cho website doanh nghiệp.
         </div>
 
       </div>

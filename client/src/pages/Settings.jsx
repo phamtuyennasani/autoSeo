@@ -6,7 +6,7 @@ import {
   Save, RefreshCw, Loader2, CheckCircle2,
   Zap, FileText, AlertTriangle, Info, BarChart3,
   Shield, TrendingUp, Calendar, KeyRound, Eye, EyeOff, Cpu,
-  Calculator, DollarSign, ChevronDown, ChevronUp, Upload
+  Calculator, DollarSign, ChevronDown, ChevronUp, Upload, User
 } from 'lucide-react';
 
 import { API } from '../config/api';
@@ -387,7 +387,7 @@ function SerpKeyField({ value, onChange, show, onToggleShow }) {
 }
 
 function ApiConfigTab() {
-  const { user, authEnabled } = useAuth();
+  const { user, authEnabled, updateUser } = useAuth();
   const isAdmin = user?.role === 'admin';
   const isUserScope = authEnabled && !isAdmin; // user thường khi AUTH bật
 
@@ -741,7 +741,7 @@ function CostCalculatorTab() {
 
 // ── Main Component ─────────────────────────────────────────────────────────────
 export default function SettingsPage() {
-  const { user } = useAuth();
+  const { user, updateUser } = useAuth();
   const isAdmin = user?.role === 'admin' || !user; // bypass mode (AUTH disabled) → hiện đủ
   const [activeTab, setActiveTab] = useState(isAdmin ? 'limits' : 'api');
   const [data, setData] = useState(null);
@@ -759,6 +759,13 @@ export default function SettingsPage() {
   const [pwSaving, setPwSaving] = useState(false);
   const [pwError, setPwError] = useState('');
   const [pwSuccess, setPwSuccess] = useState('');
+
+  // Cập nhật hồ sơ
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [profileForm, setProfileForm] = useState({ full_name: '', email: '', phone: '' });
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileError, setProfileError] = useState('');
+  const [profileSuccess, setProfileSuccess] = useState('');
 
   const handleChangePw = async (e) => {
     e.preventDefault();
@@ -779,6 +786,33 @@ export default function SettingsPage() {
       setPwError(err.response?.data?.error || 'Lỗi đổi mật khẩu.');
     } finally {
       setPwSaving(false);
+    }
+  };
+
+  const openProfile = () => {
+    setProfileForm({
+      full_name: user?.full_name || '',
+      email: user?.email || '',
+      phone: user?.phone || '',
+    });
+    setProfileError('');
+    setProfileSuccess('');
+    setIsProfileOpen(true);
+  };
+
+  const handleUpdateProfile = async (e) => {
+    e.preventDefault();
+    setProfileError(''); setProfileSuccess('');
+    setProfileSaving(true);
+    try {
+      await apiClient.put('/api/auth/profile', profileForm);
+      updateUser(profileForm);
+      setProfileSuccess('Cập nhật thông tin thành công!');
+      setTimeout(() => { setIsProfileOpen(false); setProfileSuccess(''); }, 2000);
+    } catch (err) {
+      setProfileError(err.response?.data?.error || 'Lỗi cập nhật thông tin.');
+    } finally {
+      setProfileSaving(false);
     }
   };
 
@@ -832,7 +866,7 @@ export default function SettingsPage() {
 
   return (
     <div className="page-content">
-      <div style={{ maxWidth: 740, margin: '0 auto' }}>
+      <div style={{margin: '0 auto' }}>
 
         {/* Header */}
         <div className="page-title-row" style={{ marginBottom: 24 }}>
@@ -842,9 +876,14 @@ export default function SettingsPage() {
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             {user && (
-              <button onClick={() => setIsChangePwOpen(true)} className="btn btn-outline" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <KeyRound size={14} /> Đổi mật khẩu
-              </button>
+              <>
+                <button onClick={openProfile} className="btn btn-outline" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <User size={14} /> Hồ sơ
+                </button>
+                <button onClick={() => setIsChangePwOpen(true)} className="btn btn-outline" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <KeyRound size={14} /> Đổi mật khẩu
+                </button>
+              </>
             )}
             {activeTab === 'limits' && (
               <button onClick={fetchSettings} className="btn btn-outline" disabled={loading}>
@@ -986,6 +1025,71 @@ export default function SettingsPage() {
       </div>
 
       {/* MODAL ĐỔI MẬT KHẨU */}
+      {isProfileOpen && (
+        <div className="modal-overlay">
+          <div className="modal-dialog" style={{ maxWidth: 420 }}>
+            <div className="modal-header">
+              <div className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <User size={18} color="var(--accent)" /> Cập Nhật Hồ Sơ
+              </div>
+              <button className="close-btn" disabled={profileSaving} onClick={() => setIsProfileOpen(false)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <form onSubmit={handleUpdateProfile}>
+                {profileError && (
+                  <div className="info-box info-box-red" style={{ marginBottom: 14 }}>
+                    <AlertTriangle size={14} /><span>{profileError}</span>
+                  </div>
+                )}
+                {profileSuccess && (
+                  <div className="info-box info-box-blue" style={{ marginBottom: 14 }}>
+                    <CheckCircle2 size={14} /><span>{profileSuccess}</span>
+                  </div>
+                )}
+                <div className="input-group">
+                  <label className="input-label">Họ và tên</label>
+                  <input
+                    type="text" className="input-field"
+                    placeholder="Nguyễn Văn A"
+                    value={profileForm.full_name}
+                    onChange={e => setProfileForm(f => ({ ...f, full_name: e.target.value }))}
+                    disabled={profileSaving}
+                  />
+                </div>
+                <div className="input-group">
+                  <label className="input-label">Email</label>
+                  <input
+                    type="email" className="input-field"
+                    placeholder="email@example.com"
+                    value={profileForm.email}
+                    onChange={e => setProfileForm(f => ({ ...f, email: e.target.value }))}
+                    disabled={profileSaving}
+                  />
+                </div>
+                <div className="input-group">
+                  <label className="input-label">Số điện thoại</label>
+                  <input
+                    type="tel" className="input-field"
+                    placeholder="0901234567"
+                    value={profileForm.phone}
+                    onChange={e => setProfileForm(f => ({ ...f, phone: e.target.value }))}
+                    disabled={profileSaving}
+                  />
+                </div>
+                <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                  <button type="button" className="btn btn-outline" onClick={() => setIsProfileOpen(false)} disabled={profileSaving}>Hủy</button>
+                  <button type="submit" className="btn btn-primary" disabled={profileSaving}>
+                    {profileSaving
+                      ? <><Loader2 className="animate-spin" size={15} /> Đang lưu...</>
+                      : <><Save size={15} /> Lưu thông tin</>}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
       {isChangePwOpen && (
         <div className="modal-overlay">
           <div className="modal-dialog" style={{ maxWidth: 420 }}>

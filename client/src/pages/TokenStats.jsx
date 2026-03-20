@@ -222,7 +222,7 @@ const TokenStats = () => {
   const totalTokensForPercent = stats?.total_tokens || 1;
 
   return (
-    <div style={{ maxWidth: '1100px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+    <div style={{ margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '24px' }}>
 
       {/* ── Header ── */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>

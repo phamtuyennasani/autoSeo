@@ -114,6 +114,26 @@ router.put('/change-password', authenticate, async (req, res) => {
   }
 });
 
+// PUT /profile — Cập nhật thông tin cá nhân (full_name, email, phone)
+router.put('/profile', authenticate, async (req, res) => {
+  if (process.env.AUTH_ENABLED !== 'true') {
+    return res.status(400).json({ error: 'Chức năng này chỉ khả dụng khi bật xác thực.' });
+  }
+  const full_name = (req.body.full_name || '').trim() || null;
+  const email     = (req.body.email     || '').trim() || null;
+  const phone     = (req.body.phone     || '').trim() || null;
+  try {
+    await db.execute({
+      sql: 'UPDATE users SET full_name = ?, email = ?, phone = ? WHERE id = ?',
+      args: [full_name, email, phone, req.user.id],
+    });
+    res.json({ full_name, email, phone });
+  } catch (err) {
+    console.error('[auth/profile]', err.message);
+    res.status(500).json({ error: 'Lỗi cập nhật: ' + err.message });
+  }
+});
+
 // GET /status — Trả về trạng thái AUTH_ENABLED (không cần token)
 router.get('/status', (req, res) => {
   res.json({ authEnabled: process.env.AUTH_ENABLED === 'true' });

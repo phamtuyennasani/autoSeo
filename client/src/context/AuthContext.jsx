@@ -74,6 +74,14 @@ export function AuthProvider({ children }) {
     return newUser;
   };
 
+  const updateUser = (data) => {
+    setUser(prev => {
+      const updated = { ...prev, ...data };
+      localStorage.setItem('autoseo_user', JSON.stringify(updated));
+      return updated;
+    });
+  };
+
   const logout = async () => {
     try {
       await apiClient.post('/api/auth/logout');
@@ -85,7 +93,7 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, authEnabled, login, logout }}>
+    <AuthContext.Provider value={{ user, token, loading, authEnabled, login, logout, updateUser }}>
       {children}
     </AuthContext.Provider>
   );

@@ -164,7 +164,7 @@ export default function BatchJobs() {
 
   return (
     <div className="page-content">
-      <div style={{ maxWidth: 860, margin: '0 auto' }}>
+      <div style={{ margin: '0 auto' }}>
 
         {/* Header */}
         <div className="page-title-row" style={{ marginBottom: 8 }}>
