@@ -26,7 +26,7 @@ function stopJob(jobId) {
  * Bắt đầu một write-queue job trong background.
  * Trả về ngay lập tức, không cần await.
  */
-async function startJob(jobId, keyword, companyId, titles, company, generateAndSave, createdBy = null, userConfig = {}) {
+async function startJob(jobId, keyword, companyId, titles, company, generateAndSave, createdBy = null, userConfig = {}, keywordId = null) {
   const job = {
     status: 'running',
     keyword,
@@ -65,7 +65,7 @@ async function startJob(jobId, keyword, companyId, titles, company, generateAndS
       });
 
       try {
-        const article = await generateAndSave(keyword, title, companyId, company, createdBy, userConfig);
+        const article = await generateAndSave(keyword, title, companyId, company, createdBy, userConfig, keywordId);
         job.done = i + 1;
         job.succeeded++;
         job.results.push({ title, status: 'done', articleId: article.id });

@@ -109,10 +109,12 @@ const Keywords = () => {
   useEffect(() => { fetchData(); }, []);
   useEffect(() => { setCheckedTitles(new Set()); }, [selectedKeyword?.id]);
 
-  const fetchData = async (userId = filterUserId, page = kwPage) => {
+  const fetchData = async (userId = filterUserId, page = kwPage, search = searchText, companyId = filterCompanyId) => {
     try {
       const params = { page, limit: KW_PAGE_SIZE };
       if (showMultiUser && userId) params.userId = userId;
+      if (search) params.search = search;
+      if (companyId) params.companyId = companyId;
       const comParams = (showMultiUser && userId) ? { userId } : {};
       const [kwRes, comRes] = await Promise.all([
         apiClient.get(API_KEYWORD, { params }),
@@ -302,6 +304,7 @@ const Keywords = () => {
         keyword: selectedKeyword.keyword,
         titles: unwrittenTitles,
         companyId: selectedKeyword.companyId,
+        keywordId: selectedKeyword.id,
       });
       const { jobId } = res.data;
       localStorage.setItem(`wq_${selectedKeyword.keyword}`, jobId);
@@ -456,7 +459,7 @@ const Keywords = () => {
     setIsWritingAll(true);
     setBatchStatus(scheduledAt ? 'Đang hẹn giờ...' : 'Đang gửi job lên Gemini Batch API...');
     try {
-      const body = { keyword: selectedKeyword.keyword, titles: unwrittenTitles, companyId: selectedKeyword.companyId };
+      const body = { keyword: selectedKeyword.keyword, titles: unwrittenTitles, companyId: selectedKeyword.companyId, keywordId: selectedKeyword.id };
       if (scheduledAt) body.scheduledAt = scheduledAt;
       const res = await apiClient.post(API_BATCH_JOBS, body);
       setPendingBatchJob(res.data);
@@ -1203,6 +1206,7 @@ const Keywords = () => {
             keyword={selectedKeyword.keyword}
             title={writeModalTitle}
             companyId={selectedKeyword.companyId}
+            keywordId={selectedKeyword.id}
             onClose={() => { setIsWriteModalOpen(false); setWriteModalTitle(null); }}
             onSuccess={handleArticleWritten}
           />
@@ -1533,9 +1537,7 @@ const Keywords = () => {
   // ============================================================
   // VIEW: Danh sách từ khóa (mặc định)
   // ============================================================
-  const filteredKeywords = keywords
-    .filter(k => !searchText      || k.keyword.toLowerCase().includes(searchText.toLowerCase()))
-    .filter(k => !filterCompanyId || k.companyId === filterCompanyId);
+  const filteredKeywords = keywords;
 
   return (
     <div>
@@ -1566,12 +1568,17 @@ const Keywords = () => {
               type="text"
               placeholder="Tìm kiếm từ khóa..."
               value={searchText}
-              onChange={e => setSearchText(e.target.value)}
+              onChange={e => {
+                const val = e.target.value;
+                setSearchText(val);
+                setKwPage(1);
+                fetchData(filterUserId, 1, val, filterCompanyId);
+              }}
               style={{ paddingLeft: 32, fontSize: 14 }}
             />
             {searchText && (
               <button
-                onClick={() => setSearchText('')}
+                onClick={() => { setSearchText(''); setKwPage(1); fetchData(filterUserId, 1, '', filterCompanyId); }}
                 style={{
                   position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
                   background: 'none', border: 'none', cursor: 'pointer',
@@ -1595,8 +1602,9 @@ const Keywords = () => {
                 onChange={e => {
                   const uid = e.target.value;
                   setFilterUserId(uid);
-                  setFilterCompanyId(''); // reset công ty khi đổi user
-                  fetchData(uid);
+                  setFilterCompanyId('');
+                  setKwPage(1);
+                  fetchData(uid, 1, searchText, '');
                 }}
                 className="input-field"
                 style={{ paddingLeft: 30, fontSize: 14, cursor: 'pointer',
@@ -1621,7 +1629,12 @@ const Keywords = () => {
             }} />
             <select
               value={filterCompanyId}
-              onChange={e => setFilterCompanyId(e.target.value)}
+              onChange={e => {
+                const cid = e.target.value;
+                setFilterCompanyId(cid);
+                setKwPage(1);
+                fetchData(filterUserId, 1, searchText, cid);
+              }}
               className="input-field"
               style={{ paddingLeft: 30, fontSize: 14, cursor: 'pointer',
                 borderColor: filterCompanyId ? 'var(--accent)' : undefined,
@@ -1644,7 +1657,8 @@ const Keywords = () => {
                   setSearchText('');
                   setFilterCompanyId('');
                   setFilterUserId('');
-                  fetchData('');
+                  setKwPage(1);
+                  fetchData('', 1, '', '');
                 }}
                 style={{
                   padding: '4px 10px', borderRadius: 99, fontSize: 12, fontWeight: 600,
@@ -1657,7 +1671,7 @@ const Keywords = () => {
               </button>
             )}
             <span style={{ fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-              {filteredKeywords.length} kết quả
+              {kwTotal} kết quả
             </span>
           </div>
         </div>
@@ -1807,7 +1821,7 @@ const Keywords = () => {
           page={kwPage}
           total={kwTotal}
           pageSize={KW_PAGE_SIZE}
-          onChange={(p) => { setKwPage(p); fetchData(filterUserId, p); }}
+          onChange={(p) => { setKwPage(p); fetchData(filterUserId, p, searchText, filterCompanyId); }}
         />
       )}
 

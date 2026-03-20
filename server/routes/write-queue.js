@@ -9,7 +9,7 @@ const { getEffectiveApiConfig } = require('../services/apiConfig');
 // ─── POST / — Bắt đầu write-queue job ────────────────────────────────────────
 router.post('/', async (req, res) => {
   const user = req.user || { id: 'admin', role: 'admin' };
-  const { keyword, titles, companyId } = req.body;
+  const { keyword, titles, companyId, keywordId = null } = req.body;
   if (!keyword || !Array.isArray(titles) || titles.length === 0 || !companyId)
     return res.status(400).json({ error: 'Thiếu thông tin bắt buộc' });
 
@@ -69,7 +69,7 @@ router.post('/', async (req, res) => {
   if (!company) return res.status(404).json({ error: 'Không tìm thấy công ty' });
 
   const jobId = `wq-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-  await startJob(jobId, keyword, companyId, titles, company, generateAndSave, user.id, apiConfig);
+  await startJob(jobId, keyword, companyId, titles, company, generateAndSave, user.id, apiConfig, keywordId);
 
   res.json({ jobId, total: titles.length, status: 'running' });
 });

@@ -10,7 +10,7 @@ const requireAdmin = require('../middleware/requireAdmin');
 // ─── POST / — Submit batch job mới lên Gemini (hoặc hẹn giờ) ────────────────
 router.post('/', async (req, res) => {
   const user = req.user || { id: 'admin', role: 'admin' };
-  const { keyword, titles, companyId, scheduledAt } = req.body;
+  const { keyword, titles, companyId, scheduledAt, keywordId = null } = req.body;
   if (!keyword || !Array.isArray(titles) || titles.length === 0 || !companyId)
     return res.status(400).json({ error: 'Thiếu thông tin bắt buộc' });
 
@@ -84,9 +84,9 @@ router.post('/', async (req, res) => {
   // ── Hẹn giờ: lưu job ở trạng thái scheduled, không gửi Gemini ngay ──────
   if (scheduledAt) {
     await db.execute({
-      sql: `INSERT INTO batch_jobs (id, gemini_job_name, keyword, companyId, titles, status, total, createdAt, createdBy, scheduled_at)
-            VALUES (?, '', ?, ?, ?, 'scheduled', ?, ?, ?, ?)`,
-      args: [id, keyword, companyId, JSON.stringify(titles), titles.length, createdAt, user.id, scheduledAt],
+      sql: `INSERT INTO batch_jobs (id, gemini_job_name, keyword, companyId, titles, status, total, createdAt, createdBy, scheduled_at, keywordId)
+            VALUES (?, '', ?, ?, ?, 'scheduled', ?, ?, ?, ?, ?)`,
+      args: [id, keyword, companyId, JSON.stringify(titles), titles.length, createdAt, user.id, scheduledAt, keywordId],
     });
     return res.json({ id, keyword, total: titles.length, status: 'scheduled', scheduled_at: scheduledAt, createdAt, createdBy: user.id });
   }
@@ -97,8 +97,8 @@ router.post('/', async (req, res) => {
     const { geminiJobName, total, state } = await submitBatchJob(keyword, titles, company, apiConfig.apiKey);
 
     await db.execute({
-      sql: `INSERT INTO batch_jobs (id, gemini_job_name, keyword, companyId, titles, status, gemini_state, total, createdAt, createdBy) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)`,
-      args: [id, geminiJobName, keyword, companyId, JSON.stringify(titles), state, total, createdAt, user.id],
+      sql: `INSERT INTO batch_jobs (id, gemini_job_name, keyword, companyId, titles, status, gemini_state, total, createdAt, createdBy, keywordId) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)`,
+      args: [id, geminiJobName, keyword, companyId, JSON.stringify(titles), state, total, createdAt, user.id, keywordId],
     });
 
     res.json({ id, geminiJobName, keyword, total, state, status: 'pending', createdAt, createdBy: user.id });
@@ -183,7 +183,7 @@ router.post('/:id/check', async (req, res) => {
 
     for (const result of checkResult.results) {
       try {
-        const outcome = await saveArticleFromBatch(job.keyword, job.companyId, result, job.createdBy);
+        const outcome = await saveArticleFromBatch(job.keyword, job.companyId, result, job.createdBy, job.keywordId);
         if (outcome.saved || outcome.skipped) {
           succeededCount++;
           savedArticles.push({ id: outcome.id, title: result.title, seo_title: outcome.seo_title });

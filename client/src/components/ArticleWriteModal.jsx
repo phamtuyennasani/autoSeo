@@ -9,7 +9,7 @@ const API_COMPANY = API.companies;
 const API_ARTICLE = API.articles;
 
 // companyId được truyền cố định từ Keyword -> không cần chọn lại
-const ArticleWriteModal = ({ keyword, title, companyId, onClose, onSuccess }) => {
+const ArticleWriteModal = ({ keyword, title, companyId, keywordId, onClose, onSuccess }) => {
   const [company, setCompany] = useState(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedArticle, setGeneratedArticle] = useState(null);
@@ -30,7 +30,7 @@ const ArticleWriteModal = ({ keyword, title, companyId, onClose, onSuccess }) =>
     setIsGenerating(true);
     setError(null);
     try {
-      const res = await apiClient.post(API_ARTICLE, { keyword, title, companyId });
+      const res = await apiClient.post(API_ARTICLE, { keyword, title, companyId, keywordId });
       setGeneratedArticle(res.data);
       refreshStats(); // Cập nhật token stats trên topbar
       if (onSuccess) onSuccess(res.data); // Notify parent to refresh article list

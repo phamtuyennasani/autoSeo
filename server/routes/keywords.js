@@ -14,16 +14,28 @@ router.get('/', async (req, res) => {
     const limit = Math.max(1, Math.min(100, parseInt(req.query.limit) || 20));
     const offset = (page - 1) * limit;
 
-    let whereClause = '';
+    const conditions = [];
     const args = [];
 
     if (isAdmin && req.query.userId) {
-      whereClause = ' WHERE k.createdBy = ?';
+      conditions.push('k.createdBy = ?');
       args.push(req.query.userId);
     } else if (!isAdmin) {
-      whereClause = ' WHERE k.createdBy = ?';
+      conditions.push('k.createdBy = ?');
       args.push(user.id);
     }
+
+    if (req.query.search) {
+      conditions.push('k.keyword LIKE ?');
+      args.push(`%${req.query.search}%`);
+    }
+
+    if (req.query.companyId) {
+      conditions.push('k.companyId = ?');
+      args.push(req.query.companyId);
+    }
+
+    const whereClause = conditions.length ? ' WHERE ' + conditions.join(' AND ') : '';
 
     // Đếm tổng để tính totalPages + thống kê toàn bộ
     const countResult = await db.execute({
@@ -32,21 +44,24 @@ router.get('/', async (req, res) => {
     });
     const total = Number(countResult.rows[0]?.total || 0);
 
-    // Tổng số tiêu đề và bài viết (toàn bộ, không theo trang)
-    const statsResult = await db.execute({
-      sql: `SELECT SUM(json_array_length(k.titles)) as totalTitles, COUNT(a.id) as totalArticles
-            FROM keywords k
-            LEFT JOIN articles a ON k.keyword = a.keyword
-            ${whereClause}`,
+    // Tổng số tiêu đề (không JOIN để tránh bị nhân bội)
+    const titlesResult = await db.execute({
+      sql: `SELECT SUM(json_array_length(k.titles)) as totalTitles FROM keywords k${whereClause}`,
       args: [...args],
     });
-    const totalTitles   = Number(statsResult.rows[0]?.totalTitles  || 0);
-    const totalArticles = Number(statsResult.rows[0]?.totalArticles || 0);
+    const totalTitles = Number(titlesResult.rows[0]?.totalTitles || 0);
+
+    // Tổng số bài viết
+    const articlesResult = await db.execute({
+      sql: `SELECT COUNT(a.id) as totalArticles FROM keywords k LEFT JOIN articles a ON a.keywordId = k.id${whereClause}`,
+      args: [...args],
+    });
+    const totalArticles = Number(articlesResult.rows[0]?.totalArticles || 0);
 
     const sql = `
       SELECT k.*, COUNT(a.id) as articleCount
       FROM keywords k
-      LEFT JOIN articles a ON k.keyword = a.keyword
+      LEFT JOIN articles a ON a.keywordId = k.id
       ${whereClause}
       GROUP BY k.id ORDER BY k.createdAt DESC
       LIMIT ? OFFSET ?

@@ -644,7 +644,7 @@ const Users = () => {
             const isSelf     = u.id === currentUser?.id;
             const isToggling = actionLoading === u.id + '-toggle';
             const isDeleting = actionLoading === u.id + '-delete';
-            const initial    = u.full_name ? u.full_name.charAt(0).toUpperCase() : u.username.charAt(0).toUpperCase();
+            const initial    = (u.full_name?.trim() || u.username || '?').charAt(0).toUpperCase();
             const avatarColors = [
               ['#6366f1','rgba(99,102,241,0.15)'],['#10b981','rgba(16,185,129,0.15)'],
               ['#f59e0b','rgba(245,158,11,0.15)'], ['#ef4444','rgba(239,68,68,0.15)'],

@@ -44,7 +44,7 @@ async function checkArticleLimit(user) {
 }
 
 // ─── Helper: gọi AI + lưu token + lưu DB ─────────────────────────────────────
-async function generateAndSave(keyword, title, companyId, company, createdBy = null, userConfig = {}) {
+async function generateAndSave(keyword, title, companyId, company, createdBy = null, userConfig = {}, keywordId = null) {
   const result = await generateArticle(keyword, title, company, userConfig);
 
   if (result.usage) {
@@ -57,28 +57,28 @@ async function generateAndSave(keyword, title, companyId, company, createdBy = n
 
   const { content = '', seo_title = title, seo_description = '', image_prompts = [] } = result;
 
-  // Nếu bài đã tồn tại (cùng keyword + title) → lưu version cũ rồi UPDATE
-  const existing = await db.execute({
-    sql: 'SELECT * FROM articles WHERE keyword = ? AND title = ?',
-    args: [keyword, title],
-  });
+  // Nếu bài đã tồn tại (cùng keywordId + title, hoặc keyword + title nếu chưa có keywordId) → lưu version cũ rồi UPDATE
+  const existingQuery = keywordId
+    ? { sql: 'SELECT * FROM articles WHERE keywordId = ? AND title = ?', args: [keywordId, title] }
+    : { sql: 'SELECT * FROM articles WHERE keyword = ? AND title = ? AND companyId = ?', args: [keyword, title, companyId] };
+  const existing = await db.execute(existingQuery);
   if (existing.rows[0]) {
     await saveVersion(existing.rows[0].id, existing.rows[0], createdBy);
     await db.execute({
-      sql: 'UPDATE articles SET content = ?, seo_title = ?, seo_description = ?, image_prompts = ? WHERE id = ?',
-      args: [content, seo_title, seo_description, JSON.stringify(image_prompts), existing.rows[0].id],
+      sql: 'UPDATE articles SET content = ?, seo_title = ?, seo_description = ?, image_prompts = ?, keywordId = ? WHERE id = ?',
+      args: [content, seo_title, seo_description, JSON.stringify(image_prompts), keywordId, existing.rows[0].id],
     });
-    return { ...existing.rows[0], content, seo_title, seo_description, image_prompts };
+    return { ...existing.rows[0], content, seo_title, seo_description, image_prompts, keywordId };
   }
 
   // Bài chưa tồn tại → INSERT mới
   const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   const createdAt = new Date().toISOString();
   await db.execute({
-    sql: 'INSERT INTO articles (id, keyword, title, companyId, content, seo_title, seo_description, image_prompts, createdAt, createdBy) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    args: [id, keyword, title, companyId, content, seo_title, seo_description, JSON.stringify(image_prompts), createdAt, createdBy],
+    sql: 'INSERT INTO articles (id, keyword, title, companyId, content, seo_title, seo_description, image_prompts, createdAt, createdBy, keywordId) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    args: [id, keyword, title, companyId, content, seo_title, seo_description, JSON.stringify(image_prompts), createdAt, createdBy, keywordId],
   });
-  return { id, keyword, title, companyId, content, seo_title, seo_description, image_prompts, createdAt, createdBy };
+  return { id, keyword, title, companyId, content, seo_title, seo_description, image_prompts, createdAt, createdBy, keywordId };
 }
 
 // ─── GET danh sách bài viết (có phân trang) ──────────────────────────────────
@@ -253,7 +253,7 @@ router.delete('/:id', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     const user = req.user || { id: 'admin', role: 'admin' };
-    const { keyword, title, companyId } = req.body;
+    const { keyword, title, companyId, keywordId = null } = req.body;
     if (!keyword || !title || !companyId)
       return res.status(400).json({ error: 'Thiếu thông tin bắt buộc' });
 
@@ -272,7 +272,7 @@ router.post('/', async (req, res) => {
       if (limitErr) return res.status(429).json(limitErr);
     }
 
-    const article = await generateAndSave(keyword, title, companyId, company, user.id, apiConfig);
+    const article = await generateAndSave(keyword, title, companyId, company, user.id, apiConfig, keywordId);
     res.json(article);
   } catch (error) {
     console.error('[single] Lỗi:', error.message);
@@ -283,7 +283,7 @@ router.post('/', async (req, res) => {
 // ─── POST /batch — Viết tuần tự nhiều bài, stream SSE ────────────────────────
 router.post('/batch', async (req, res) => {
   const user = req.user || { id: 'admin', role: 'admin' };
-  const { keyword, titles, companyId } = req.body;
+  const { keyword, titles, companyId, keywordId = null } = req.body;
   if (!keyword || !Array.isArray(titles) || titles.length === 0 || !companyId)
     return res.status(400).json({ error: 'Thiếu thông tin bắt buộc' });
 
@@ -320,7 +320,7 @@ router.post('/batch', async (req, res) => {
   for (let i = 0; i < titles.length; i++) {
     const title = titles[i];
     try {
-      const article = await generateAndSave(keyword, title, companyId, company, user.id, apiConfig);
+      const article = await generateAndSave(keyword, title, companyId, company, user.id, apiConfig, keywordId);
       succeededCount++;
       send({ type: 'progress', done: i + 1, total: titles.length, title, article });
     } catch (err) {
@@ -335,26 +335,35 @@ router.post('/batch', async (req, res) => {
 });
 
 // ─── Helper dùng chung: lưu 1 bài từ kết quả Batch API ───────────────────────
-async function saveArticleFromBatch(jobKeyword, jobCompanyId, result, createdBy = null) {
+async function saveArticleFromBatch(jobKeyword, jobCompanyId, result, createdBy = null, jobKeywordId = null) {
   if (result.error) return { saved: false, message: `AI error: ${result.error}` };
 
   const { seo_title = result.title, seo_description = '', content = '', image_prompts = [] } = result;
   const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   const createdAt = new Date().toISOString();
 
-  // Atomic INSERT: chỉ chèn nếu (keyword, title) chưa tồn tại — tránh race condition
+  // Atomic INSERT: chỉ chèn nếu (keywordId + title) hoặc (keyword + companyId + title) chưa tồn tại
+  const existsCheck = jobKeywordId
+    ? 'SELECT 1 FROM articles WHERE keywordId = ? AND title = ?'
+    : 'SELECT 1 FROM articles WHERE keyword = ? AND title = ? AND companyId = ?';
+  const existsArgs = jobKeywordId
+    ? [jobKeywordId, result.title]
+    : [jobKeyword, result.title, jobCompanyId];
+
   const insertResult = await db.execute({
-    sql: `INSERT INTO articles (id, keyword, title, companyId, content, seo_title, seo_description, image_prompts, createdAt, createdBy)
-          SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-          WHERE NOT EXISTS (SELECT 1 FROM articles WHERE keyword = ? AND title = ?)`,
-    args: [id, jobKeyword, result.title, jobCompanyId, content, seo_title, seo_description, JSON.stringify(image_prompts), createdAt, createdBy,
-           jobKeyword, result.title],
+    sql: `INSERT INTO articles (id, keyword, title, companyId, content, seo_title, seo_description, image_prompts, createdAt, createdBy, keywordId)
+          SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+          WHERE NOT EXISTS (${existsCheck})`,
+    args: [id, jobKeyword, result.title, jobCompanyId, content, seo_title, seo_description, JSON.stringify(image_prompts), createdAt, createdBy, jobKeywordId,
+           ...existsArgs],
   });
 
   if (insertResult.rowsAffected === 0) {
     const existing = await db.execute({
-      sql: 'SELECT id FROM articles WHERE keyword = ? AND title = ?',
-      args: [jobKeyword, result.title],
+      sql: jobKeywordId
+        ? 'SELECT id FROM articles WHERE keywordId = ? AND title = ?'
+        : 'SELECT id FROM articles WHERE keyword = ? AND title = ? AND companyId = ?',
+      args: existsArgs,
     });
     return { saved: false, skipped: true, id: existing.rows[0]?.id, message: 'Đã tồn tại, bỏ qua' };
   }
