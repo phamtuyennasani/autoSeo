@@ -35,7 +35,7 @@ router.get('/', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     const user = req.user || { id: 'admin', role: 'admin' };
-    const { name, url, info, contract_code, industry } = req.body;
+    const { name, url, info, contract_code, industry, publish_api_url, auto_publish } = req.body;
     if (!name || !url) return res.status(400).json({ error: 'Name and url are required' });
 
     const id        = Date.now().toString();
@@ -43,11 +43,11 @@ router.post('/', async (req, res) => {
     const createdBy = user.id;
 
     await db.execute({
-      sql:  'INSERT INTO companies (id, name, url, info, contract_code, industry, createdAt, createdBy) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      args: [id, name, url, info || '', contract_code || '', industry || '', createdAt, createdBy],
+      sql:  'INSERT INTO companies (id, name, url, info, contract_code, industry, publish_api_url, auto_publish, createdAt, createdBy) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      args: [id, name, url, info || '', contract_code || '', industry || '', publish_api_url || '', auto_publish ? 1 : 0, createdAt, createdBy],
     });
 
-    res.json({ id, name, url, info, contract_code, industry, createdAt, createdBy });
+    res.json({ id, name, url, info, contract_code, industry, publish_api_url, auto_publish: auto_publish ? 1 : 0, createdAt, createdBy });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Internal server error' });
@@ -59,7 +59,7 @@ router.put('/:id', async (req, res) => {
   try {
     const user = req.user || { id: 'admin', role: 'admin' };
     const { id } = req.params;
-    const { name, url, info, contract_code, industry } = req.body;
+    const { name, url, info, contract_code, industry, publish_api_url, auto_publish } = req.body;
     if (!name || !url) return res.status(400).json({ error: 'Name and url are required' });
 
     // Kiểm tra ownership (admin bypass)
@@ -70,11 +70,11 @@ router.put('/:id', async (req, res) => {
     }
 
     await db.execute({
-      sql:  'UPDATE companies SET name = ?, url = ?, info = ?, contract_code = ?, industry = ? WHERE id = ?',
-      args: [name, url, info || '', contract_code || '', industry || '', id],
+      sql:  'UPDATE companies SET name = ?, url = ?, info = ?, contract_code = ?, industry = ?, publish_api_url = ?, auto_publish = ? WHERE id = ?',
+      args: [name, url, info || '', contract_code || '', industry || '', publish_api_url || '', auto_publish ? 1 : 0, id],
     });
 
-    res.json({ id, name, url, info, contract_code, industry });
+    res.json({ id, name, url, info, contract_code, industry, publish_api_url, auto_publish: auto_publish ? 1 : 0 });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Internal server error' });

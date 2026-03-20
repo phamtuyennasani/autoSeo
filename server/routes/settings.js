@@ -56,6 +56,17 @@ router.put('/', requireAdmin, async (req, res) => {
       }
     }
 
+    // Publish API URL mặc định
+    if ('publish_api_url' in req.body) {
+      const val = String(req.body.publish_api_url || '').trim();
+      await db.execute({
+        sql: `INSERT INTO settings (key, value, label, updatedAt) VALUES ('publish_api_url', ?, 'URL API đăng bài mặc định (bên thứ 3)', ?)
+              ON CONFLICT(key) DO UPDATE SET value = excluded.value, updatedAt = excluded.updatedAt`,
+        args: [val, updatedAt],
+      });
+      changes.publish_api_url = val;
+    }
+
     // Lịch chạy batch (HH:MM hoặc chuỗi rỗng để tắt)
     if ('batch_schedule_time' in req.body) {
       const val = String(req.body.batch_schedule_time || '').trim();

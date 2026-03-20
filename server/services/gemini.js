@@ -3,6 +3,7 @@ const { jsonrepair } = require('jsonrepair');
 const { marked } = require('marked');
 const { ARTICLE_SYSTEM_INSTRUCTION, buildArticlePrompt, buildTitlesPrompt } = require('./prompts');
 const { withKeyFallback } = require('./keyRotation');
+const { applyInlineStyles } = require('./htmlUtils');
 require('dotenv').config();
 
 function getModelName(modelName) {
@@ -99,7 +100,7 @@ async function generateArticle(keyword, title, companyInfo, userConfig = {}) {
       return {
         seo_title:       typeof parsed.seo_title === 'string'       ? parsed.seo_title       : title,
         seo_description: typeof parsed.seo_description === 'string' ? parsed.seo_description : '',
-        content:         typeof parsed.content === 'string'         ? parsed.content         : '',
+        content:         typeof parsed.content === 'string'         ? applyInlineStyles(marked.parse(parsed.content)) : '',
         image_prompts:   Array.isArray(parsed.image_prompts)        ? parsed.image_prompts   : [],
         usage,
       };

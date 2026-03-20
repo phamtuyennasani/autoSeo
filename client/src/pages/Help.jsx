@@ -3,7 +3,7 @@ import {
   BookOpen, ChevronDown, ChevronRight, Building2, Search, FileText,
   Layers, Settings, KeyRound, Zap, AlertTriangle, CheckCircle2,
   ArrowRight, Info, Hash, Clock, Users, ListOrdered, BarChart2,
-  RefreshCw, Copy, ShieldCheck,
+  RefreshCw, Copy, ShieldCheck, Upload, Globe, Link, Send,
 } from 'lucide-react';
 
 function Section({ icon, title, color = 'var(--accent)', children, defaultOpen = false }) {
@@ -81,6 +81,15 @@ function CodeBox({ children }) {
   );
 }
 
+function FieldRow({ name, desc }) {
+  return (
+    <div style={{ display: 'flex', gap: 12, padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
+      <code style={{ fontSize: 12, color: 'var(--accent)', background: 'var(--bg-panel)', padding: '2px 8px', borderRadius: 4, flexShrink: 0, alignSelf: 'flex-start' }}>{name}</code>
+      <span style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6 }}>{desc}</span>
+    </div>
+  );
+}
+
 export default function Help() {
   return (
     <div className="page-content">
@@ -103,7 +112,7 @@ export default function Help() {
         <div style={{ padding: '20px 24px', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', background: 'var(--bg-panel)', marginBottom: 24, borderLeft: '3px solid var(--accent)' }}>
           <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 10 }}>AutoSEO là gì?</div>
           <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.8 }}>
-            AutoSEO là công cụ tự động hóa quy trình tạo nội dung SEO, sử dụng <strong>Google Gemini AI</strong> để sinh tiêu đề và viết bài chuẩn SEO theo thông tin từng doanh nghiệp. Hệ thống hỗ trợ 3 chế độ viết bài: viết lẻ realtime, hàng đợi SSE, và <strong>Gemini Batch API</strong> (giảm 50% chi phí). Có thể dùng một hay nhiều Gemini API Key với cơ chế <strong>xoay vòng tự động</strong>.
+            AutoSEO là công cụ tự động hóa quy trình tạo nội dung SEO, sử dụng <strong>Google Gemini AI</strong> để sinh tiêu đề và viết bài chuẩn SEO theo thông tin từng doanh nghiệp. Hệ thống hỗ trợ 3 chế độ viết bài: viết lẻ realtime, hàng đợi SSE, và <strong>Gemini Batch API</strong> (giảm 50% chi phí). Sau khi bài được tạo, có thể <strong>đăng lên hệ thống bên thứ 3</strong> qua API tự động hoặc thủ công. Hỗ trợ một hay nhiều Gemini API Key với cơ chế <strong>xoay vòng tự động</strong>.
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 14 }}>
             {[
@@ -112,6 +121,7 @@ export default function Help() {
               { icon: <FileText size={12} />, label: 'Viết bài tự động' },
               { icon: <ListOrdered size={12} />, label: 'Hàng đợi SSE' },
               { icon: <Layers size={12} />, label: 'Batch API' },
+              { icon: <Upload size={12} />, label: 'Đăng bài tự động' },
               { icon: <Users size={12} />, label: 'Quản lý User' },
               { icon: <BarChart2 size={12} />, label: 'Thống kê Token' },
             ].map(({ icon, label }) => (
@@ -132,12 +142,13 @@ export default function Help() {
               { icon: <Hash size={13} />, label: 'AI sinh Tiêu đề', color: 'var(--accent)' },
               { icon: <FileText size={13} />, label: 'Viết Bài', color: 'var(--success)' },
               { icon: <Layers size={13} />, label: 'Batch (tùy chọn)', color: 'var(--warning)' },
+              { icon: <Upload size={13} />, label: 'Đăng API', color: '#a78bfa' },
             ].map(({ icon, label, color }, i) => (
               <React.Fragment key={label}>
                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 20, background: `${color}12`, border: `1px solid ${color}30`, fontSize: 13, fontWeight: 600, color }}>
                   {icon} {label}
                 </div>
-                {i < 4 && <ArrowRight size={14} color="var(--text-muted)" />}
+                {i < 5 && <ArrowRight size={14} color="var(--text-muted)" />}
               </React.Fragment>
             ))}
           </div>
@@ -192,12 +203,28 @@ export default function Help() {
             Nhấn <Tag color="var(--info)">Thêm Website</Tag> và điền đầy đủ thông tin:
             <ul style={{ marginTop: 8, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 4 }}>
               <li><strong>Tên công ty</strong> — Tên thương hiệu hiển thị trong bài viết</li>
-              <li><strong>URL website</strong> — AI sẽ chèn link trỏ về đây trong bài</li>
-              <li><strong>Mã hợp đồng</strong> — Dùng để quản lý nội bộ, không ảnh hưởng AI</li>
-              <li><strong>Lĩnh vực</strong> — Giúp AI hiểu ngữ cảnh ngành nghề</li>
+              <li><strong>URL website</strong> — AI sẽ chèn link trỏ về đây trong bài; cũng dùng làm gốc URL khi đăng bài qua API</li>
+              <li><strong>Mã hợp đồng</strong> — Gửi kèm payload khi đăng bài qua API (trường <code style={{ fontSize: 12 }}>ma_hd</code>)</li>
+              <li><strong>Lĩnh vực</strong> — Giúp AI hiểu ngữ cảnh ngành nghề; cũng gửi kèm payload (trường <code style={{ fontSize: 12 }}>linh_vuc</code>)</li>
               <li><strong>Mô tả</strong> — Thông tin chi tiết về sản phẩm, dịch vụ, đặc điểm nổi bật. Càng chi tiết, bài viết càng sát thực tế</li>
             </ul>
           </Step>
+
+          <SubHead><Upload size={14} color="#a78bfa" /> Cấu hình đăng bài tự động (per-company)</SubHead>
+          <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.7, marginBottom: 10 }}>
+            Mỗi công ty có thể cấu hình riêng:
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10 }}>
+            <div style={{ padding: '10px 14px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', background: 'var(--bg-panel)' }}>
+              <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>API URL đăng bài (override)</div>
+              <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>URL endpoint riêng của công ty này. Nếu để trống, hệ thống dùng URL mặc định đã cài trong <Tag>Cài đặt</Tag>. URL của công ty luôn được ưu tiên hơn URL mặc định.</div>
+            </div>
+            <div style={{ padding: '10px 14px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', background: 'var(--bg-panel)' }}>
+              <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>Tự động đăng bài (Auto-publish)</div>
+              <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Khi bật, mỗi bài viết xong sẽ được tự động POST lên API ngay lập tức — không cần thao tác thủ công. Công ty bật Auto-publish hiển thị badge <Tag color="#a78bfa">Auto-post</Tag> trong danh sách.</div>
+            </div>
+          </div>
+
           <Note type="blue">Phần <strong>Mô tả</strong> là quan trọng nhất — AI đọc toàn bộ để cá nhân hóa bài viết. Nên ghi: sản phẩm/dịch vụ chính, điểm mạnh, thông tin liên hệ, địa chỉ...</Note>
           <Note type="yellow">Xóa công ty sẽ <strong>xóa toàn bộ</strong> từ khóa, tiêu đề và bài viết liên quan. Thao tác không thể hoàn tác.</Note>
         </Section>
@@ -312,7 +339,110 @@ export default function Help() {
           <Note type="yellow">Nếu muốn gửi lại: <strong>Xóa job cũ</strong> tại trang Batch Jobs → quay về Từ Khóa → nhấn "Batch API" lại.</Note>
         </Section>
 
-        {/* ── SECTION 6: Quản lý User (admin) ── */}
+        {/* ── SECTION 6: Publish API ── */}
+        <Section icon={<Upload />} title="Bước 6 — Đăng Bài Lên API Bên Thứ 3" color="#a78bfa">
+          <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.7, marginBottom: 16 }}>
+            Sau khi bài được viết, hệ thống có thể <strong>tự động hoặc thủ công POST</strong> bài lên hệ thống bên thứ 3 qua API. Hỗ trợ 3 hình thức: đăng từng bài, đăng hàng loạt, và tự động sau khi viết xong.
+          </div>
+
+          {/* Cấu hình API URL */}
+          <SubHead><Settings size={14} color="#a78bfa" /> Cấu hình API URL</SubHead>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
+            <div style={{ padding: '10px 14px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', background: 'var(--bg-panel)' }}>
+              <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>URL mặc định toàn hệ thống</div>
+              <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Cài tại <Tag>Cài đặt</Tag> → tab <Tag>Cài Đặt</Tag> → mục "API URL Đăng Bài (Mặc Định)". Áp dụng cho tất cả công ty không có URL riêng.</div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 14px', fontSize: 12, color: 'var(--text-muted)' }}>
+              <ArrowRight size={12} /> URL của công ty <strong>luôn ưu tiên hơn</strong> URL mặc định hệ thống
+            </div>
+            <div style={{ padding: '10px 14px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', background: 'var(--bg-panel)' }}>
+              <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>URL riêng theo từng công ty</div>
+              <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Cài trong <Tag>Website / Công ty</Tag> → Chỉnh sửa → trường "API URL Đăng Bài". Nếu nhập URL này, chỉ bài của công ty đó dùng URL riêng.</div>
+            </div>
+          </div>
+
+          {/* 3 hình thức đăng */}
+          <SubHead><Send size={14} color="#a78bfa" /> 3 hình thức đăng bài</SubHead>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 16 }}>
+            <div style={{ padding: '14px 16px', borderRadius: 'var(--radius-md)', border: '1px solid rgba(167,139,250,0.2)', background: 'rgba(167,139,250,0.05)' }}>
+              <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ background: 'rgba(167,139,250,0.15)', color: '#a78bfa', width: 22, height: 22, borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800 }}>1</span>
+                Đăng từng bài (thủ công)
+              </div>
+              <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.7 }}>
+                Trong chi tiết từ khóa, bài nào chưa được đăng sẽ có nút <Tag color="#a78bfa">Post</Tag>. Nhấn để đăng ngay. Nếu lần trước lỗi, nút đổi thành <Tag color="var(--warning)">Thử lại</Tag>.
+              </div>
+            </div>
+
+            <div style={{ padding: '14px 16px', borderRadius: 'var(--radius-md)', border: '1px solid rgba(167,139,250,0.2)', background: 'rgba(167,139,250,0.05)' }}>
+              <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ background: 'rgba(167,139,250,0.15)', color: '#a78bfa', width: 22, height: 22, borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800 }}>2</span>
+                Đăng hàng loạt (batch publish)
+              </div>
+              <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.7 }}>
+                Nhấn nút <Tag color="#a78bfa">Post hàng loạt</Tag> trên toolbar (chỉ hiện khi không có hàng đợi SSE đang chạy). Hệ thống tìm tất cả bài chưa đăng trong từ khóa và POST lên API lần lượt. Kết quả thành công/thất bại hiển thị ngay sau khi xong.
+              </div>
+            </div>
+
+            <div style={{ padding: '14px 16px', borderRadius: 'var(--radius-md)', border: '1px solid rgba(167,139,250,0.2)', background: 'rgba(167,139,250,0.05)' }}>
+              <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ background: 'rgba(167,139,250,0.15)', color: '#a78bfa', width: 22, height: 22, borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800 }}>3</span>
+                Tự động sau khi viết (Auto-publish)
+              </div>
+              <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.7 }}>
+                Bật công tắc <strong>Tự động đăng bài</strong> trong cài đặt công ty. Mỗi khi bài được viết xong (realtime, SSE, hoặc batch import), server tự động POST lên API — không cần thao tác thủ công. Kết quả hiển thị badge <Tag color="var(--success)">Đã post #ID</Tag> ngay trên giao diện.
+              </div>
+            </div>
+          </div>
+
+          {/* Payload */}
+          <SubHead><Globe size={14} color="#a78bfa" /> Cấu trúc dữ liệu gửi đi (JSON Payload)</SubHead>
+          <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 10 }}>
+            Mỗi request là HTTP POST với <code style={{ fontSize: 12 }}>Content-Type: application/json</code>. Payload gồm:
+          </div>
+          <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', overflow: 'hidden', marginBottom: 12 }}>
+            <FieldRow name="title_seo" desc="SEO Title của bài viết (50–60 ký tự)" />
+            <FieldRow name="des_seo" desc="Meta Description của bài viết (150–160 ký tự)" />
+            <FieldRow name="link_seo" desc="URL bài viết = URL website công ty + slug của tiêu đề (VD: https://example.com/thiet-ke-noi-that)" />
+            <FieldRow name="tukhoa_seo" desc="Từ khóa SEO chính (từ khóa đã đặt trong hệ thống)" />
+            <FieldRow name="content_seo" desc="Nội dung bài viết đầy đủ dạng HTML" />
+            <FieldRow name="ma_hd" desc="Mã hợp đồng của công ty" />
+            <FieldRow name="linh_vuc" desc="Lĩnh vực hoạt động của công ty" />
+            <FieldRow name="email" desc="Email của user đã tạo từ khóa (lấy từ bảng users theo người tạo keyword)" />
+          </div>
+          <CodeBox>{`{
+  "title_seo":   "Thiết Kế Nội Thất Chung Cư Cao Cấp - Xu Hướng 2024",
+  "des_seo":     "Khám phá xu hướng thiết kế nội thất chung cư cao cấp...",
+  "link_seo":    "https://noidecor.vn/thiet-ke-noi-that-chung-cu-cao-cap",
+  "tukhoa_seo":  "thiết kế nội thất chung cư",
+  "content_seo": "<h1>...</h1><p>...</p>...",
+  "ma_hd":       "HD-2024-001",
+  "linh_vuc":    "Nội thất",
+  "email":       "user@example.com"
+}`}</CodeBox>
+
+          {/* Trạng thái */}
+          <SubHead><CheckCircle2 size={14} color="var(--success)" /> Trạng thái bài sau khi đăng</SubHead>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 12 }}>
+            {[
+              { label: 'Chưa đăng', color: 'var(--text-muted)', desc: 'Bài chưa được POST lên API' },
+              { label: 'Đã post #ID', color: 'var(--success)', desc: 'Đã đăng thành công, có ID từ hệ thống đối tác' },
+              { label: 'Lỗi post', color: 'var(--danger)', desc: 'API trả về lỗi, có thể thử lại' },
+            ].map(({ label, color, desc }) => (
+              <div key={label} style={{ padding: '10px', borderRadius: 'var(--radius-sm)', background: 'var(--bg-panel)', border: '1px solid var(--border)', fontSize: 12 }}>
+                <div style={{ fontWeight: 700, color, marginBottom: 4 }}>{label}</div>
+                <div style={{ color: 'var(--text-muted)' }}>{desc}</div>
+              </div>
+            ))}
+          </div>
+
+          <Note type="green">API bên thứ 3 cần trả về JSON có trường <code style={{ fontSize: 12 }}>id</code>, <code style={{ fontSize: 12 }}>ID</code>, hoặc <code style={{ fontSize: 12 }}>post_id</code> — hệ thống sẽ lưu làm External ID và hiển thị kèm badge "Đã post".</Note>
+          <Note type="yellow">Hiện tại chưa có xác thực (auth) khi gọi API bên thứ 3. Tính năng xác thực sẽ được bổ sung sau. Đảm bảo API endpoint của bạn chấp nhận request không cần token nếu muốn dùng ngay.</Note>
+          <Note type="blue">Nếu chưa cấu hình URL nào (cả hệ thống lẫn công ty), nút Post và Post hàng loạt sẽ báo lỗi <em>"Chưa cấu hình API URL"</em>.</Note>
+        </Section>
+
+        {/* ── SECTION 7: Quản lý User (admin) ── */}
         <Section icon={<Users />} title="Quản lý Tài khoản (Admin)" color="var(--info)">
           <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.7, marginBottom: 16 }}>
             Khi hệ thống bật xác thực (<code style={{ background: 'var(--bg-panel)', padding: '1px 6px', borderRadius: 4, fontSize: 12 }}>AUTH_ENABLED=true</code>), admin có thể quản lý tài khoản người dùng tại menu <Tag color="var(--info)">Tài khoản</Tag>.
@@ -343,7 +473,7 @@ export default function Help() {
           <Note type="yellow">User bị tạm khóa (<em>is_active = false</em>) không thể đăng nhập cho đến khi được admin kích hoạt lại.</Note>
         </Section>
 
-        {/* ── SECTION 7: Cài đặt ── */}
+        {/* ── SECTION 8: Cài đặt ── */}
         <Section icon={<Settings />} title="Cài đặt — Giới hạn & Thống kê" color="var(--text-secondary)">
           <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.7, marginBottom: 16 }}>
             Tab <strong>Cài Đặt</strong> kiểm soát token và số bài viết mỗi ngày để tránh phát sinh chi phí ngoài ý muốn.
@@ -370,6 +500,14 @@ export default function Help() {
 
             <div style={{ padding: '14px 16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', background: 'var(--bg-panel)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                <Upload size={14} color="#a78bfa" />
+                <strong style={{ fontSize: 13 }}>API URL Đăng Bài (Mặc Định)</strong>
+              </div>
+              <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>URL endpoint bên thứ 3 mà hệ thống sẽ POST bài đến. Dùng cho các công ty không có URL riêng. Để trống nếu chưa cấu hình.</div>
+            </div>
+
+            <div style={{ padding: '14px 16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', background: 'var(--bg-panel)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                 <Clock size={14} color="var(--warning)" />
                 <strong style={{ fontSize: 13 }}>Sử dụng hôm nay</strong>
               </div>
@@ -383,13 +521,13 @@ export default function Help() {
           </div>
         </Section>
 
-        {/* ── SECTION 8: Câu hỏi thường gặp ── */}
+        {/* ── SECTION 9: Câu hỏi thường gặp ── */}
         <Section icon={<Info />} title="Câu hỏi thường gặp" color="var(--info)">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             {[
               {
                 q: 'Gemini API Key xoay vòng hoạt động như thế nào?',
-                a: 'Nhập nhiều key Gemini cách nhau bởi dấu phẩy (VD: AIza111,AIza222,AIza333). Mỗi lần gọi AI, server dùng một thuật toán round-robin — lần 1 dùng key 1, lần 2 dùng key 2... Đến cuối danh sách thì quay lại từ đầu. Cơ chế này phân tải đều giữa các key, giúp tránh bị rate limit khi viết nhiều bài liên tiếp.'
+                a: 'Nhập nhiều key Gemini cách nhau bởi dấu phẩy (VD: AIza111,AIza222,AIza333). Mỗi lần gọi AI, server dùng thuật toán round-robin — lần 1 dùng key 1, lần 2 dùng key 2... Đến cuối danh sách thì quay lại từ đầu. Cơ chế này phân tải đều giữa các key, giúp tránh bị rate limit khi viết nhiều bài liên tiếp.'
               },
               {
                 q: 'Tôi không có SerpAPI, có dùng được không?',
@@ -402,6 +540,22 @@ export default function Help() {
               {
                 q: 'Bài viết có chuẩn SEO không?',
                 a: 'AI được chỉ dẫn cụ thể: từ khóa chính trong ít nhất 2 H2, mật độ từ khóa 1–1.5%, có CTA cuối bài, chèn link website công ty, thêm thông tin liên hệ, độ dài ~1000 từ. SEO Title 50–60 ký tự, Meta Description 150–160 ký tự — đều có nút copy nhanh trên giao diện.'
+              },
+              {
+                q: 'Đăng bài lên API bên thứ 3 hoạt động thế nào?',
+                a: 'Hệ thống HTTP POST JSON payload đến URL đã cài đặt. Payload gồm: title_seo, des_seo, link_seo (URL công ty + slug tiêu đề), tukhoa_seo, content_seo, ma_hd (mã hợp đồng), linh_vuc, và email của người tạo từ khóa. API bên thứ 3 cần trả về 200 OK kèm JSON có trường id/ID/post_id để hiển thị External ID.'
+              },
+              {
+                q: 'link_seo được tạo ra như thế nào?',
+                a: 'link_seo = URL website công ty + "/" + slug của tiêu đề bài. Slug là tiêu đề được chuyển thành chữ thường, bỏ dấu tiếng Việt, thay khoảng trắng bằng dấu gạch ngang. VD: tiêu đề "Thiết Kế Nội Thất Chung Cư" → slug "thiet-ke-noi-that-chung-cu" → link_seo = "https://example.com/thiet-ke-noi-that-chung-cu".'
+              },
+              {
+                q: 'Auto-publish và đăng thủ công khác nhau điểm nào?',
+                a: 'Auto-publish: bật trong cài đặt công ty, mỗi bài được viết xong (bất kỳ chế độ nào) sẽ tự động POST lên API — không cần thao tác. Đăng thủ công: nhấn nút Post từng bài hoặc Post hàng loạt sau khi đã viết xong. Cả hai dùng cùng một payload và cùng API URL đã cấu hình.'
+              },
+              {
+                q: 'Nếu đăng bài thất bại, có thử lại không?',
+                a: 'Có. Bài bị lỗi sẽ hiển thị badge "Lỗi post" và nút "Thử lại" thay thế nút "Post". Nhấn "Thử lại" để gọi lại API. Nút "Post hàng loạt" chỉ gửi các bài chưa đăng (unpublished) và các bài lỗi — không gửi lại bài đã đăng thành công.'
               },
               {
                 q: 'Admin viết bài giùm user có hiển thị cho user không?',

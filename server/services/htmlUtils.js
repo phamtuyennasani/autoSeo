@@ -1,0 +1,50 @@
+// Inject inline styles vào các thẻ HTML sau khi markdown → HTML
+// CSS variables (var(--accent) v.v.) hoạt động bình thường trong browser inline styles
+function applyInlineStyles(html) {
+  if (!html) return '';
+  const hBase = "font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;color:var(--text-primary);margin-top:2em;margin-bottom:0.6em;line-height:1.4;letter-spacing:-0.2px;";
+
+  // 1. Xử lý <pre><code> trước để tránh xung đột với inline code
+  html = html.replace(/<pre(\s[^>]*)?>[\s\S]*?<\/pre>/gi, (match, preAttrs = '') => {
+    return match
+      .replace(/<pre(\s[^>]*)?>/, `<pre${preAttrs} style="background:var(--bg-root);border:1px solid var(--border);border-radius:var(--radius-md);padding:16px 20px;overflow-x:auto;margin:1.5em 0;">`)
+      .replace(/<code([^>]*)>/, `<code$1 style="background:none;padding:0;color:var(--text-primary);font-size:13.5px;font-family:'Fira Code','Consolas',monospace;">`);
+  });
+
+  // 2. Headings
+  html = html.replace(/<h1(\s[^>]*)?>/gi, (_, a = '') => `<h1${a} style="${hBase}font-size:26px;border-bottom:2px solid var(--border);padding-bottom:10px;">`);
+  html = html.replace(/<h2(\s[^>]*)?>/gi, (_, a = '') => `<h2${a} style="${hBase}font-size:20px;">`);
+  html = html.replace(/<h3(\s[^>]*)?>/gi, (_, a = '') => `<h3${a} style="${hBase}font-size:17px;">`);
+  html = html.replace(/<h4(\s[^>]*)?>/gi, (_, a = '') => `<h4${a} style="${hBase}font-size:15px;">`);
+
+  // 3. Paragraph, list
+  html = html.replace(/<p(\s[^>]*)?>/gi,  (_, a = '') => `<p${a} style="margin-bottom:1.2em;color:var(--text-primary);">`);
+  html = html.replace(/<ul(\s[^>]*)?>/gi, (_, a = '') => `<ul${a} style="padding-left:1.6em;margin-bottom:1.2em;">`);
+  html = html.replace(/<ol(\s[^>]*)?>/gi, (_, a = '') => `<ol${a} style="padding-left:1.6em;margin-bottom:1.2em;">`);
+  html = html.replace(/<li(\s[^>]*)?>/gi, (_, a = '') => `<li${a} style="margin-bottom:0.4em;">`);
+
+  // 4. Blockquote
+  html = html.replace(/<blockquote(\s[^>]*)?>/gi, (_, a = '') =>
+    `<blockquote${a} style="border-left:3px solid var(--accent);padding:10px 16px;margin:1.5em 0;background:var(--accent-subtle);border-radius:0 var(--radius-sm) var(--radius-sm) 0;color:var(--text-secondary);font-style:italic;">`);
+
+  // 5. Inline code
+  html = html.replace(/<code(\s[^>]*)?>/gi, (_, a = '') =>
+    `<code${a} style="font-family:'Fira Code','Consolas',monospace;font-size:13px;background:rgba(99,102,241,0.1);color:#a78bfa;padding:2px 6px;border-radius:4px;">`);
+
+  // 6. Inline formatting
+  html = html.replace(/<strong(\s[^>]*)?>/gi, (_, a = '') => `<strong${a} style="font-weight:700;color:var(--text-primary);">`);
+  html = html.replace(/<em(\s[^>]*)?>/gi,     (_, a = '') => `<em${a} style="font-style:italic;color:var(--text-secondary);">`);
+  html = html.replace(/<a(\s[^>]*)?>/gi,      (_, a = '') => `<a${a} style="color:var(--accent);text-decoration:underline;text-underline-offset:3px;">`);
+
+  // 7. HR
+  html = html.replace(/<hr(\s[^>]*)?>/gi, (_, a = '') => `<hr${a} style="border:none;border-top:1px solid var(--border);margin:2em 0;">`);
+
+  // 8. Table
+  html = html.replace(/<table(\s[^>]*)?>/gi, (_, a = '') => `<table${a} style="width:100%;border-collapse:collapse;margin:1.5em 0;font-size:14px;">`);
+  html = html.replace(/<th(\s[^>]*)?>/gi,    (_, a = '') => `<th${a} style="padding:10px 14px;border:1px solid var(--border);text-align:left;background:var(--bg-panel);font-weight:600;color:var(--text-primary);">`);
+  html = html.replace(/<td(\s[^>]*)?>/gi,    (_, a = '') => `<td${a} style="padding:10px 14px;border:1px solid var(--border);text-align:left;">`);
+
+  return html;
+}
+
+module.exports = { applyInlineStyles };

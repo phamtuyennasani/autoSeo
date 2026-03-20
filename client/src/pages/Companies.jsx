@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import apiClient from '../config/api';
-import { Plus, Trash2, Building2, Globe, Pencil, X, Save, User } from 'lucide-react';
+import { Plus, Trash2, Building2, Globe, Pencil, X, Save, User, Upload } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useConfirm } from '../context/ConfirmContext';
+import { AppMultiSelect } from '../components/AppMultiSelect';
 
 import { API } from '../config/api';
 const API_URL = API.companies;
@@ -25,9 +27,11 @@ const INDUSTRIES = [
   'Pháp lý',
   'Khác',
 ];
+const INDUSTRY_OPTIONS = INDUSTRIES.map(ind => ({ value: ind, label: ind }));
 
 const Companies = () => {
   const { user: currentUser, authEnabled } = useAuth();
+  const confirm = useConfirm();
   const isAdmin = currentUser?.role === 'admin' || !currentUser;
   const showMultiUser = authEnabled && isAdmin;
 
@@ -37,12 +41,12 @@ const Companies = () => {
 
   // Add modal
   const [isAddOpen, setIsAddOpen] = useState(false);
-  const [addForm, setAddForm] = useState({ name: '', url: '', info: '', contract_code: '', industry: '' });
+  const [addForm, setAddForm] = useState({ name: '', url: '', info: '', contract_code: '', industry: [], publish_api_url: '', auto_publish: false });
   const [submitting, setSubmitting] = useState(false);
 
   // Edit modal
   const [editingCompany, setEditingCompany] = useState(null);
-  const [editForm, setEditForm] = useState({ name: '', url: '', info: '', contract_code: '', industry: '' });
+  const [editForm, setEditForm] = useState({ name: '', url: '', info: '', contract_code: '', industry: [], publish_api_url: '', auto_publish: false });
   const [saving, setSaving] = useState(false);
 
   useEffect(() => { fetchCompanies(); }, []);
@@ -68,8 +72,8 @@ const Companies = () => {
     e.preventDefault();
     setSubmitting(true);
     try {
-      await apiClient.post(API_URL, addForm);
-      setAddForm({ name: '', url: '', info: '', contract_code: '', industry: '' });
+      await apiClient.post(API_URL, { ...addForm, industry: addForm.industry.join(','), auto_publish: addForm.auto_publish ? 1 : 0 });
+      setAddForm({ name: '', url: '', info: '', contract_code: '', industry: [], publish_api_url: '', auto_publish: false });
       setIsAddOpen(false);
       fetchCompanies();
     } catch (error) {
@@ -82,7 +86,7 @@ const Companies = () => {
   // EDIT - open
   const openEdit = (company) => {
     setEditingCompany(company);
-    setEditForm({ name: company.name, url: company.url, info: company.info || '', contract_code: company.contract_code || '', industry: company.industry || '' });
+    setEditForm({ name: company.name, url: company.url, info: company.info || '', contract_code: company.contract_code || '', industry: (company.industry || '').split(',').filter(Boolean), publish_api_url: company.publish_api_url || '', auto_publish: !!company.auto_publish });
   };
 
   // EDIT - save
@@ -90,7 +94,7 @@ const Companies = () => {
     e.preventDefault();
     setSaving(true);
     try {
-      await apiClient.put(`${API_URL}/${editingCompany.id}`, editForm);
+      await apiClient.put(`${API_URL}/${editingCompany.id}`, { ...editForm, industry: editForm.industry.join(','), auto_publish: editForm.auto_publish ? 1 : 0 });
       setEditingCompany(null);
       fetchCompanies();
     } catch (error) {
@@ -102,7 +106,7 @@ const Companies = () => {
 
   // DELETE
   const handleDelete = async (id, name) => {
-    if (!window.confirm(`Xóa công ty "${name}"? Hành động không thể hoàn tác.`)) return;
+    if (!await confirm({ title: `Xóa công ty "${name}"?`, message: 'Hành động này không thể hoàn tác.', confirmText: 'Xóa', danger: true })) return;
     try {
       await apiClient.delete(`${API_URL}/${id}`);
       fetchCompanies();
@@ -194,15 +198,20 @@ const Companies = () => {
                     <Globe size={11} style={{ flexShrink: 0 }} />
                     {company.url.replace(/^https?:\/\//, '')}
                   </a>
-                  {company.industry && (
-                    <span style={{
+                  {company.industry && company.industry.split(',').filter(Boolean).map(ind => (
+                    <span key={ind} style={{
                       fontSize: '10px', fontWeight: 600, padding: '1px 7px', borderRadius: 99,
                       background: 'rgba(99,102,241,0.08)', color: 'var(--accent)',
                       border: '1px solid rgba(99,102,241,0.2)', whiteSpace: 'nowrap', flexShrink: 0,
                     }}>
-                      {company.industry}
+                      {ind}
                     </span>
-                  )}
+                  ))}
+                  {company.auto_publish ? (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: '10px', fontWeight: 600, padding: '1px 7px', borderRadius: 99, background: 'rgba(34,197,94,0.08)', color: 'var(--success)', border: '1px solid rgba(34,197,94,0.2)', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                      <Upload size={9} /> Auto-post
+                    </span>
+                  ) : null}
                 </div>
               </div>
 
@@ -248,8 +257,8 @@ const Companies = () => {
 
       {/* MODAL THÊM MỚI */}
       {isAddOpen && (
-        <div className="modal-overlay" onClick={() => !submitting && setIsAddOpen(false)}>
-          <div className="modal-dialog" onClick={e => e.stopPropagation()}>
+        <div className="modal-overlay">
+          <div className="modal-dialog">
             <div className="modal-header">
               <div className="modal-title">Thêm Website / Công Ty Mới</div>
               <button className="close-btn" onClick={() => !submitting && setIsAddOpen(false)}><X size={18} /></button>
@@ -268,28 +277,52 @@ const Companies = () => {
                     onChange={e => setAddForm({ ...addForm, url: e.target.value })}
                     required placeholder="https://example.com" disabled={submitting} />
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                  <div className="input-group">
-                    <label className="input-label">Mã Hợp Đồng</label>
-                    <input type="text" className="input-field" value={addForm.contract_code}
-                      onChange={e => setAddForm({ ...addForm, contract_code: e.target.value })}
-                      placeholder="VD: HD-2024-001" disabled={submitting} />
-                  </div>
-                  <div className="input-group">
-                    <label className="input-label">Lĩnh Vực</label>
-                    <select className="input-field" value={addForm.industry}
-                      onChange={e => setAddForm({ ...addForm, industry: e.target.value })}
-                      disabled={submitting}>
-                      <option value="">-- Chọn lĩnh vực --</option>
-                      {INDUSTRIES.map(ind => <option key={ind} value={ind}>{ind}</option>)}
-                    </select>
-                  </div>
+                <div className="input-group">
+                  <label className="input-label">Mã Hợp Đồng</label>
+                  <input type="text" className="input-field" value={addForm.contract_code}
+                    onChange={e => setAddForm({ ...addForm, contract_code: e.target.value })}
+                    placeholder="VD: HD-2024-001" disabled={submitting} />
+                </div>
+                <div className="input-group">
+                  <label className="input-label">Lĩnh Vực</label>
+                  <AppMultiSelect
+                    value={addForm.industry}
+                    onChange={v => setAddForm({ ...addForm, industry: v })}
+                    disabled={submitting}
+                    options={INDUSTRY_OPTIONS}
+                    placeholder="-- Chọn lĩnh vực --"
+                  />
                 </div>
                 <div className="input-group">
                   <label className="input-label">Mô tả (AI dùng để cá nhân hóa bài viết)</label>
                   <textarea className="input-field" value={addForm.info}
                     onChange={e => setAddForm({ ...addForm, info: e.target.value })}
                     placeholder="Lĩnh vực, sản phẩm, dịch vụ..." rows={4} disabled={submitting} />
+                </div>
+                <div className="input-group">
+                  <label className="input-label">API URL Đăng Bài <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>(để trống = dùng URL mặc định trong Cài Đặt)</span></label>
+                  <input type="url" className="input-field" value={addForm.publish_api_url}
+                    onChange={e => setAddForm({ ...addForm, publish_api_url: e.target.value })}
+                    placeholder="https://api.example.com/posts" disabled={submitting} />
+                </div>
+                <div className="input-group" style={{ marginBottom: 8 }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', userSelect: 'none' }}>
+                    <div
+                      onClick={() => !submitting && setAddForm(f => ({ ...f, auto_publish: !f.auto_publish }))}
+                      style={{
+                        width: 36, height: 20, borderRadius: 99, flexShrink: 0,
+                        background: addForm.auto_publish ? 'var(--success)' : 'var(--border)',
+                        position: 'relative', transition: 'background 0.2s', cursor: 'pointer',
+                      }}
+                    >
+                      <div style={{
+                        position: 'absolute', top: 3, left: addForm.auto_publish ? 18 : 3,
+                        width: 14, height: 14, borderRadius: '50%', background: '#fff',
+                        transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                      }} />
+                    </div>
+                    <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>Tự động đăng bài sau khi viết xong</span>
+                  </label>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '8px' }}>
                   <button type="button" className="btn btn-outline" onClick={() => setIsAddOpen(false)} disabled={submitting}>Hủy</button>
@@ -305,8 +338,8 @@ const Companies = () => {
 
       {/* MODAL CHỈNH SỬA */}
       {editingCompany && (
-        <div className="modal-overlay" onClick={() => !saving && setEditingCompany(null)}>
-          <div className="modal-dialog" onClick={e => e.stopPropagation()}>
+        <div className="modal-overlay">
+          <div className="modal-dialog">
             <div className="modal-header">
               <div className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Pencil size={17} color="var(--accent)" />
@@ -328,28 +361,52 @@ const Companies = () => {
                     onChange={e => setEditForm({ ...editForm, url: e.target.value })}
                     required disabled={saving} />
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                  <div className="input-group">
-                    <label className="input-label">Mã Hợp Đồng</label>
-                    <input type="text" className="input-field" value={editForm.contract_code}
-                      onChange={e => setEditForm({ ...editForm, contract_code: e.target.value })}
-                      placeholder="VD: HD-2024-001" disabled={saving} />
-                  </div>
-                  <div className="input-group">
-                    <label className="input-label">Lĩnh Vực</label>
-                    <select className="input-field" value={editForm.industry}
-                      onChange={e => setEditForm({ ...editForm, industry: e.target.value })}
-                      disabled={saving}>
-                      <option value="">-- Chọn lĩnh vực --</option>
-                      {INDUSTRIES.map(ind => <option key={ind} value={ind}>{ind}</option>)}
-                    </select>
-                  </div>
+                <div className="input-group">
+                  <label className="input-label">Mã Hợp Đồng</label>
+                  <input type="text" className="input-field" value={editForm.contract_code}
+                    onChange={e => setEditForm({ ...editForm, contract_code: e.target.value })}
+                    placeholder="VD: HD-2024-001" disabled={saving} />
+                </div>
+                <div className="input-group">
+                  <label className="input-label">Lĩnh Vực</label>
+                  <AppMultiSelect
+                    value={editForm.industry}
+                    onChange={v => setEditForm({ ...editForm, industry: v })}
+                    disabled={saving}
+                    options={INDUSTRY_OPTIONS}
+                    placeholder="-- Chọn lĩnh vực --"
+                  />
                 </div>
                 <div className="input-group">
                   <label className="input-label">Mô tả (AI dùng để cá nhân hóa bài viết)</label>
                   <textarea className="input-field" value={editForm.info}
                     onChange={e => setEditForm({ ...editForm, info: e.target.value })}
                     rows={5} disabled={saving} />
+                </div>
+                <div className="input-group">
+                  <label className="input-label">API URL Đăng Bài <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>(để trống = dùng URL mặc định trong Cài Đặt)</span></label>
+                  <input type="url" className="input-field" value={editForm.publish_api_url}
+                    onChange={e => setEditForm({ ...editForm, publish_api_url: e.target.value })}
+                    placeholder="https://api.example.com/posts" disabled={saving} />
+                </div>
+                <div className="input-group" style={{ marginBottom: 8 }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', userSelect: 'none' }}>
+                    <div
+                      onClick={() => !saving && setEditForm(f => ({ ...f, auto_publish: !f.auto_publish }))}
+                      style={{
+                        width: 36, height: 20, borderRadius: 99, flexShrink: 0,
+                        background: editForm.auto_publish ? 'var(--success)' : 'var(--border)',
+                        position: 'relative', transition: 'background 0.2s', cursor: 'pointer',
+                      }}
+                    >
+                      <div style={{
+                        position: 'absolute', top: 3, left: editForm.auto_publish ? 18 : 3,
+                        width: 14, height: 14, borderRadius: '50%', background: '#fff',
+                        transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                      }} />
+                    </div>
+                    <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>Tự động đăng bài sau khi viết xong</span>
+                  </label>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '8px' }}>
                   <button type="button" className="btn btn-outline" onClick={() => setEditingCompany(null)} disabled={saving}>Hủy</button>

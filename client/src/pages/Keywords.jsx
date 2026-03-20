@@ -1,17 +1,19 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
 import apiClient from '../config/api';
-import { marked } from 'marked';
 import { useNavigate } from 'react-router-dom';
 import {
   Search, PenTool, Sparkles, X, Loader2, Trash2, Eye, Calendar,
   ChevronLeft, Plus, Building2, BarChart2, FileText, Hash, RefreshCw,
   CheckCircle2, PlayCircle, Clock, Layers, Tag, AlignLeft, ListOrdered, XCircle,
-  Users as UsersIcon, Copy, Check, Edit3, ChevronRight, Zap,
+  Users as UsersIcon, Copy, Check, Edit3, ChevronRight, Zap, Upload,
 } from 'lucide-react';
 import ArticleWriteModal from '../components/ArticleWriteModal';
+import { AppSelect } from '../components/AppSelect';
+import { RichTextEditor } from '../components/RichTextEditor';
 import { useToken } from '../context/TokenContext';
 import { useAuth } from '../context/AuthContext';
+import { useConfirm } from '../context/ConfirmContext';
 
 import { API } from '../config/api';
 
@@ -27,6 +29,7 @@ const Keywords = () => {
   const [loading, setLoading] = useState(true);
   const { refreshStats } = useToken();
   const { user: currentUser, authEnabled } = useAuth();
+  const confirm = useConfirm();
   const navigate = useNavigate();
   const isAdmin = currentUser?.role === 'admin' || !currentUser;
   // Chỉ hiển thị UI phân quyền user khi AUTH bật (tránh hiện filter/cột thừa khi dùng đơn lẻ)
@@ -93,11 +96,45 @@ const Keywords = () => {
   const [kwTotalArticles, setKwTotalArticles] = useState(0);
   const KW_PAGE_SIZE = 20;
 
+  // Publish
+  const [publishingIds, setPublishingIds] = useState(new Set()); // IDs đang được publish
+  const [isBatchPublishing, setIsBatchPublishing] = useState(false);
+
   // Write Queue (SSE background)
   const [writeQueueJob, setWriteQueueJob] = useState(null); // { jobId, status, total, done, succeeded, failed, currentTitle, results }
+  const [writeQueueTitles, setWriteQueueTitles] = useState(new Set()); // titles đã submit vào SSE queue hiện tại
   const [checkedTitles, setCheckedTitles] = useState(new Set()); // titles được check để viết bằng hàng đợi SSE
   const sseRef = useRef(null); // giữ EventSource để có thể đóng khi cần
   const articleContentRef = useRef(null);
+
+  // Áp dụng inline styles vào các thẻ HTML sau khi markdown được render
+  useEffect(() => {
+    const el = articleContentRef.current;
+    if (!el) return;
+    const cv = getComputedStyle(document.documentElement);
+    const v  = (n) => cv.getPropertyValue(n).trim();
+    const q  = (sel, styles) => el.querySelectorAll(sel).forEach(e => Object.assign(e.style, styles));
+    q('h1,h2,h3,h4', { fontFamily:"'Plus Jakarta Sans',sans-serif", fontWeight:'700', color:v('--text-primary'), marginTop:'2em', marginBottom:'0.6em', lineHeight:'1.4', letterSpacing:'-0.2px' });
+    q('h1', { fontSize:'26px', borderBottom:`2px solid ${v('--border')}`, paddingBottom:'10px' });
+    q('h2', { fontSize:'20px' });
+    q('h3', { fontSize:'17px' });
+    q('h4', { fontSize:'15px' });
+    q('p',  { marginBottom:'1.2em', color:v('--text-primary') });
+    q('ul,ol', { paddingLeft:'1.6em', marginBottom:'1.2em' });
+    q('li', { marginBottom:'0.4em' });
+    q('blockquote', { borderLeft:`3px solid ${v('--accent')}`, padding:'10px 16px', margin:'1.5em 0', background:v('--accent-subtle'), borderRadius:`0 ${v('--radius-sm')} ${v('--radius-sm')} 0`, color:v('--text-secondary'), fontStyle:'italic' });
+    q('code', { fontFamily:"'Fira Code','Consolas',monospace", fontSize:'13px', background:'rgba(99,102,241,0.1)', color:'#a78bfa', padding:'2px 6px', borderRadius:'4px' });
+    q('pre',  { background:v('--bg-root'), border:`1px solid ${v('--border')}`, borderRadius:v('--radius-md'), padding:'16px 20px', overflowX:'auto', margin:'1.5em 0' });
+    q('pre code', { background:'none', padding:'0', color:v('--text-primary'), fontSize:'13.5px' });
+    q('strong', { fontWeight:'700', color:v('--text-primary') });
+    q('em',     { fontStyle:'italic', color:v('--text-secondary') });
+    q('a',  { color:v('--accent'), textDecoration:'underline', textUnderlineOffset:'3px' });
+    q('hr', { border:'none', borderTop:`1px solid ${v('--border')}`, margin:'2em 0' });
+    q('table', { width:'100%', borderCollapse:'collapse', margin:'1.5em 0', fontSize:'14px' });
+    q('th,td', { padding:'10px 14px', border:`1px solid ${v('--border')}`, textAlign:'left' });
+    q('th', { background:v('--bg-panel'), fontWeight:'600', color:v('--text-primary') });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewingArticle?.content]);
 
   // Lấy danh sách users cho dropdown (admin only, khi AUTH bật)
   useEffect(() => {
@@ -153,6 +190,7 @@ const Keywords = () => {
     // Đóng SSE cũ nếu có
     if (sseRef.current) { sseRef.current.close(); sseRef.current = null; }
     setWriteQueueJob(null);
+    setWriteQueueTitles(new Set());
     setSelectedKeyword(item);
     setArticlesOfKeyword([]);
     fetchArticlesForKeyword(item.keyword, item.companyId);
@@ -170,8 +208,9 @@ const Keywords = () => {
       const pendingJobs = jobs.filter(j => j.status === 'pending' || j.status === 'scheduled');
       const pendingJob = pendingJobs[0] || null;
       // Gom tất cả titles từ các pending/scheduled jobs
+      // Server đã parse titles thành array, không cần JSON.parse lại
       const allPendingTitles = new Set(
-        pendingJobs.flatMap(j => { try { return JSON.parse(j.titles || '[]'); } catch { return []; } })
+        pendingJobs.flatMap(j => Array.isArray(j.titles) ? j.titles : [])
       );
       setPendingBatchJob(pendingJob);
       setHasPendingBatch(pendingJobs.length > 0);
@@ -231,6 +270,7 @@ const Keywords = () => {
 
       if (data.type === 'done') {
         setWriteQueueJob(prev => prev ? { ...prev, status: 'done', succeeded: data.succeeded, failed: data.failed } : prev);
+        setWriteQueueTitles(new Set());
         localStorage.removeItem(`wq_${keyword}`);
         fetchArticlesForKeyword(keyword, companyId);
         fetchData();
@@ -246,6 +286,7 @@ const Keywords = () => {
 
       if (data.type === 'cancelled') {
         setWriteQueueJob(prev => prev ? { ...prev, status: 'cancelled', succeeded: data.succeeded, failed: data.failed } : prev);
+        setWriteQueueTitles(new Set());
         localStorage.removeItem(`wq_${keyword}`);
         fetchArticlesForKeyword(keyword, companyId);
         fetchData();
@@ -309,6 +350,7 @@ const Keywords = () => {
       const { jobId } = res.data;
       localStorage.setItem(`wq_${selectedKeyword.keyword}`, jobId);
       setWriteQueueJob({ jobId, status: 'running', total: unwrittenTitles.length, done: 0, succeeded: 0, failed: 0, currentTitle: null, results: [] });
+      setWriteQueueTitles(new Set(unwrittenTitles));
       connectQueueStream(jobId, selectedKeyword.keyword, selectedKeyword.companyId);
     } catch (err) {
       const data = err.response?.data;
@@ -349,7 +391,7 @@ const Keywords = () => {
 
   const handleDeleteKeyword = async (id, e) => {
     e.stopPropagation();
-    if (!window.confirm("Xóa từ khóa này? Hành động không thể hoàn tác.")) return;
+    if (!await confirm({ title: 'Xóa từ khóa?', message: 'Hành động này không thể hoàn tác, toàn bộ tiêu đề và bài viết liên quan sẽ bị xóa.', confirmText: 'Xóa', danger: true })) return;
     try {
       await apiClient.delete(`${API_KEYWORD}/${id}`);
       fetchData();
@@ -377,6 +419,40 @@ const Keywords = () => {
     }
     setWriteModalTitle(article.title);
     setIsWriteModalOpen(true);
+  };
+
+  // Publish 1 bài lên API bên thứ 3
+  const handlePublishArticle = async (article) => {
+    setPublishingIds(prev => new Set([...prev, article.id]));
+    try {
+      const res = await apiClient.post(`${API_ARTICLE}/${article.id}/publish`);
+      setArticlesOfKeyword(prev => prev.map(a => a.id === article.id ? res.data : a));
+      if (viewingArticle?.id === article.id) setViewingArticle(res.data);
+      toast.success(`Đã đăng bài thành công${res.data.publish_external_id ? ' #' + res.data.publish_external_id : ''}!`);
+    } catch (err) {
+      const msg = err.response?.data?.error || 'Đăng bài thất bại';
+      toast.error(msg);
+      // cập nhật trạng thái failed
+      setArticlesOfKeyword(prev => prev.map(a => a.id === article.id ? { ...a, publish_status: 'failed' } : a));
+    } finally {
+      setPublishingIds(prev => { const n = new Set(prev); n.delete(article.id); return n; });
+    }
+  };
+
+  // Publish hàng loạt tất cả bài chưa post trong keyword hiện tại
+  const handlePublishBatch = async () => {
+    const unpublished = articlesOfKeyword.filter(a => a.publish_status !== 'published');
+    if (unpublished.length === 0) return;
+    setIsBatchPublishing(true);
+    try {
+      const res = await apiClient.post(`${API_ARTICLE}/publish-batch`, { ids: unpublished.map(a => a.id) });
+      toast.success(`Đã đăng ${res.data.succeeded}/${res.data.total} bài thành công`);
+      fetchArticlesForKeyword(selectedKeyword.keyword, selectedKeyword.companyId);
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Publish hàng loạt thất bại');
+    } finally {
+      setIsBatchPublishing(false);
+    }
   };
 
   // Mở modal chỉnh sửa bài viết
@@ -423,7 +499,7 @@ const Keywords = () => {
 
   const handleRestoreVersion = async (versionId) => {
     if (!viewingArticle) return;
-    if (!window.confirm('Khôi phục phiên bản này? Bản hiện tại sẽ được lưu lại trong lịch sử.')) return;
+    if (!await confirm({ title: 'Khôi phục phiên bản?', message: 'Bản hiện tại sẽ được lưu lại trong lịch sử trước khi khôi phục.', confirmText: 'Khôi phục' })) return;
     setRestoringVersionId(versionId);
     try {
       // Optimistic: xóa ngay khỏi UI trước khi chờ server
@@ -445,7 +521,7 @@ const Keywords = () => {
   const handleWriteAll = async (scheduledAt = null) => {
     if (!selectedKeyword || isWritingAll) return;
     const allUnwritten = (selectedKeyword.titles || []).filter(
-      t => !articlesOfKeyword.find(a => a.title === t)
+      t => !articlesOfKeyword.find(a => a.title === t) && !pendingBatchTitles.has(t)
     );
     const unwrittenTitles = batchCheckedTitles.size > 0
       ? allUnwritten.filter(t => batchCheckedTitles.has(t))
@@ -544,35 +620,8 @@ const Keywords = () => {
       try {
         if (overrideValue !== undefined) {
           await copyText(overrideValue);
-        } else if (key === 'content' && articleContentRef.current) {
-          const el = articleContentRef.current;
-          const cv = getComputedStyle(document.documentElement);
-          const v = (n) => cv.getPropertyValue(n).trim();
-          const clone = el.cloneNode(true);
-          const q = (sel, styles) => clone.querySelectorAll(sel).forEach(e => Object.assign(e.style, styles));
-          // wrapper
-          Object.assign(clone.style, { fontSize:'15px', lineHeight:'1.85', color:v('--text-primary'), maxWidth:'820px' });
-          // headings shared
-          q('h1,h2,h3,h4', { fontFamily:"'Plus Jakarta Sans',sans-serif", fontWeight:'700', color:v('--text-primary'), marginTop:'2em', marginBottom:'0.6em', lineHeight:'1.4', letterSpacing:'-0.2px' });
-          q('h1', { fontSize:'26px', borderBottom:`2px solid ${v('--border')}`, paddingBottom:'10px' });
-          q('h2', { fontSize:'20px' });
-          q('h3', { fontSize:'17px' });
-          q('h4', { fontSize:'15px' });
-          q('p',  { marginBottom:'1.2em', color:v('--text-primary') });
-          q('ul,ol', { paddingLeft:'1.6em', marginBottom:'1.2em' });
-          q('li', { marginBottom:'0.4em' });
-          q('blockquote', { borderLeft:`3px solid ${v('--accent')}`, padding:'10px 16px', margin:'1.5em 0', background:v('--accent-subtle'), borderRadius:`0 ${v('--radius-sm')} ${v('--radius-sm')} 0`, color:v('--text-secondary'), fontStyle:'italic' });
-          q('code', { fontFamily:"'Fira Code','Consolas',monospace", fontSize:'13px', background:'rgba(99,102,241,0.1)', color:'#a78bfa', padding:'2px 6px', borderRadius:'4px' });
-          q('pre',  { background:v('--bg-root'), border:`1px solid ${v('--border')}`, borderRadius:v('--radius-md'), padding:'16px 20px', overflowX:'auto', margin:'1.5em 0' });
-          q('pre code', { background:'none', padding:'0', color:v('--text-primary'), fontSize:'13.5px' });
-          q('strong', { fontWeight:'700', color:v('--text-primary') });
-          q('em',     { fontStyle:'italic', color:v('--text-secondary') });
-          q('a',  { color:v('--accent'), textDecoration:'underline', textUnderlineOffset:'3px' });
-          q('hr', { border:'none', borderTop:`1px solid ${v('--border')}`, margin:'2em 0' });
-          q('table', { width:'100%', borderCollapse:'collapse', margin:'1.5em 0', fontSize:'14px' });
-          q('th,td', { padding:'10px 14px', border:`1px solid ${v('--border')}`, textAlign:'left' });
-          q('th', { background:v('--bg-panel'), fontWeight:'600', color:v('--text-primary') });
-          await copyText(clone.outerHTML);
+        } else if (key === 'content') {
+          await copyText(viewingArticle.content || '');
         } else {
           await copyText(viewingArticle[key] || '');
         }
@@ -634,7 +683,7 @@ const Keywords = () => {
               </button>
               <button
                 onClick={async () => {
-                  if (!window.confirm('Xóa bài viết này và viết lại?')) return;
+                  if (!await confirm({ title: 'Xóa và viết lại?', message: 'Bài viết hiện tại sẽ bị xóa để viết lại bằng AI.', confirmText: 'Xóa & Viết lại', danger: true })) return;
                   await apiClient.delete(`${API_ARTICLE}/${viewingArticle.id}`);
                   setViewingArticle(null);
                   fetchArticlesForKeyword(selectedKeyword.keyword, selectedKeyword.companyId);
@@ -719,15 +768,15 @@ const Keywords = () => {
             ref={articleContentRef}
             className="article-html-content"
             id='seo-html-content'
-            dangerouslySetInnerHTML={{ __html: marked.parse(viewingArticle.content || '') }}
+            dangerouslySetInnerHTML={{ __html: viewingArticle.content || '' }}
           />
         </div>
       </div>
 
       {/* VERSION HISTORY MODAL — trong cùng return block của viewingArticle */}
       {isVersionModalOpen && (
-        <div className="modal-overlay" onClick={() => setIsVersionModalOpen(false)}>
-          <div className="modal-dialog" style={{ maxWidth: 540 }} onClick={e => e.stopPropagation()}>
+        <div className="modal-overlay">
+          <div className="modal-dialog" style={{ maxWidth: 540 }}>
             <div className="modal-header">
               <div className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <Clock size={18} color="var(--accent)" /> Lịch Sử Phiên Bản
@@ -778,8 +827,8 @@ const Keywords = () => {
 
       {/* EDIT ARTICLE MODAL */}
       {isEditModalOpen && editingArticle && (
-        <div className="modal-overlay" onClick={() => !isSavingEdit && setIsEditModalOpen(false)}>
-          <div className="modal-dialog" style={{ maxWidth: 740 }} onClick={e => e.stopPropagation()}>
+        <div className="modal-overlay">
+          <div className="modal-dialog" style={{ maxWidth: 860 }}>
             <div className="modal-header">
               <div className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <Edit3 size={18} color="var(--accent)" /> Chỉnh Sửa Bài Viết
@@ -813,11 +862,10 @@ const Keywords = () => {
                   </div>
                 </div>
                 <div className="input-group">
-                  <label className="input-label">Nội dung bài viết (Markdown)</label>
-                  <textarea
-                    className="input-field" rows={14} style={{ fontFamily: 'monospace', fontSize: 13 }}
+                  <label className="input-label">Nội dung bài viết</label>
+                  <RichTextEditor
                     value={editForm.content}
-                    onChange={e => setEditForm(f => ({ ...f, content: e.target.value }))}
+                    onChange={v => setEditForm(f => ({ ...f, content: v }))}
                     disabled={isSavingEdit}
                   />
                 </div>
@@ -847,7 +895,7 @@ const Keywords = () => {
     const unwrittenTitles = titles.filter(t => !getArticleForTitle(t));
     const unwrittenCount = unwrittenTitles.length;
     const writtenCount = titles.length - unwrittenCount;
-    // Tiêu đề eligible cho SSE: chưa viết + chưa nằm trong pending batch
+    // Tiêu đề eligible cho SSE và Batch: chưa viết + chưa nằm trong pending batch
     const sseCandidates = unwrittenTitles.filter(t => !pendingBatchTitles.has(t));
     const checkedUnwritten = sseCandidates.filter(t => checkedTitles.has(t));
     const allUnwrittenChecked = sseCandidates.length > 0 && checkedUnwritten.length === sseCandidates.length;
@@ -882,115 +930,130 @@ const Keywords = () => {
                 {unwrittenCount > 0 && <span className="badge badge-orange"><Clock size={11} /> {unwrittenCount} chưa viết</span>}
               </div>
             </div>
-
-            {/* NÚT VIẾT TẤT CẢ */}
-            {!isWritingAll && !writeQueueJob && (unwrittenCount > 0 || sseCandidates.length > 0) && (
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                {unwrittenCount > 0 && (
-                  <button onClick={() => { setBatchCheckedTitles(new Set()); setIsBatchModalOpen(true); }} className="btn btn-primary" style={{ gap: '6px' }}>
-                    <Layers size={16} /> Batch API ({unwrittenCount} bài)
-                  </button>
-                )}
-                {sseCandidates.length > 0 && (
-                  <button
-                    onClick={handleWriteAllQueue}
-                    className="btn btn-outline"
-                    style={{
-                      gap: '6px',
-                      color: 'var(--accent)',
-                      background: checkedUnwritten.length > 0 ? 'rgba(99,102,241,0.08)' : 'transparent',
-                      fontWeight: checkedUnwritten.length > 0 ? 600 : undefined,
-                    }}
-                  >
-                    <ListOrdered size={16} />
-                    {checkedUnwritten.length > 0
-                      ? `Gửi Yêu Cầu · ${checkedUnwritten.length} đã chọn`
-                      : `Gửi Yêu Cầu (${sseCandidates.length} bài)`}
-                  </button>
-                )}
-              </div>
-            )}
-            {hasPendingBatch && (
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '7px 12px', background: pendingBatchJob?.status === 'scheduled' ? 'rgba(99,102,241,0.08)' : 'rgba(34,197,94,0.08)', border: `1px solid ${pendingBatchJob?.status === 'scheduled' ? 'rgba(99,102,241,0.25)' : 'rgba(34,197,94,0.25)'}`, borderRadius: 'var(--radius-md)', fontSize: '13px', fontWeight: '600', color: pendingBatchJob?.status === 'scheduled' ? 'var(--accent)' : 'var(--success)' }}>
-                {pendingBatchJob?.status === 'scheduled' ? <Clock size={14} /> : <CheckCircle2 size={14} />}
-                <span>
-                  {pendingBatchJob?.status === 'scheduled'
-                    ? `Batch hẹn lúc ${pendingBatchJob.scheduled_at ? new Date(pendingBatchJob.scheduled_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : ''}`
-                    : `Đã tạo Batch Job${pendingBatchJob?.gemini_state ? ` (${pendingBatchJob.gemini_state.replace('JOB_STATE_', '')})` : ''}`}
-                </span>
-                <button
-                  onClick={() => navigate('/batch-jobs')}
-                  style={{ fontSize: 11, fontWeight: 600, color: 'var(--accent)', background: 'var(--accent-subtle)', border: 'none', borderRadius: 10, padding: '2px 8px', cursor: 'pointer' }}
-                >
-                  Xem →
-                </button>
-                <button
-                  onClick={async () => {
-                    if (pendingBatchJob?.id) {
-                      try { await apiClient.delete(`${API_BATCH_JOBS}/${pendingBatchJob.id}`); } catch (e) { /* ignore */ }
-                    }
-                    fetchPendingBatchJob(selectedKeyword.keyword);
-                  }}
-                  title="Xóa batch job này và gửi lại"
-                  style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 20, height: 20, borderRadius: '50%', background: 'none', border: '1px solid currentColor', cursor: 'pointer', opacity: 0.5, padding: 0, color: 'inherit' }}
-                >
-                  <X size={11} />
-                </button>
-              </div>
-            )}
-            {isWritingAll && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 14px', background: 'var(--accent-subtle)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: 'var(--radius-md)', fontSize: '13px', fontWeight: '600', color: 'var(--accent)' }}>
-                <Loader2 className="animate-spin" size={14} />
-                {batchStatus || 'Đang gửi Batch Job...'}
-              </div>
-            )}
-            {/* QUEUE RUNNING */}
-            {writeQueueJob && writeQueueJob.status === 'running' && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 14px', background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.25)', borderRadius: 'var(--radius-md)', fontSize: '13px', fontWeight: '600', color: 'var(--accent)' }}>
-                <Loader2 className="animate-spin" size={14} />
-                <span>Hàng đợi: {writeQueueJob.done}/{writeQueueJob.total}</span>
-                {writeQueueJob.currentTitle && (
-                  <span style={{ fontWeight: 400, color: 'var(--text-secondary)', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    — {writeQueueJob.currentTitle}
+             <div style={{ display: 'flex', gap: '8px', marginTop: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+              {/* NÚT VIẾT TẤT CẢ */}
+              {!isWritingAll && !writeQueueJob && sseCandidates.length > 0 && (
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  {sseCandidates.length > 0 && (
+                    <button onClick={() => { setBatchCheckedTitles(new Set()); setIsBatchModalOpen(true); }} className="btn btn-primary" style={{ gap: '6px' }}>
+                      <Layers size={16} /> Batch API ({sseCandidates.length} bài)
+                    </button>
+                  )}
+                  {sseCandidates.length > 0 && (
+                    <button
+                      onClick={handleWriteAllQueue}
+                      className="btn btn-outline"
+                      style={{
+                        gap: '6px',
+                        color: 'var(--accent)',
+                        background: checkedUnwritten.length > 0 ? 'rgba(99,102,241,0.08)' : 'transparent',
+                        fontWeight: checkedUnwritten.length > 0 ? 600 : undefined,
+                      }}
+                    >
+                      <ListOrdered size={16} />
+                      {checkedUnwritten.length > 0
+                        ? `Gửi Yêu Cầu · ${checkedUnwritten.length} đã chọn`
+                        : `Gửi Yêu Cầu (${sseCandidates.length} bài)`}
+                    </button>
+                  )}
+                </div>
+              )}
+              {hasPendingBatch && (
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '7px 12px', background: pendingBatchJob?.status === 'scheduled' ? 'rgba(99,102,241,0.08)' : 'rgba(34,197,94,0.08)', border: `1px solid ${pendingBatchJob?.status === 'scheduled' ? 'rgba(99,102,241,0.25)' : 'rgba(34,197,94,0.25)'}`, borderRadius: 'var(--radius-md)', fontSize: '13px', fontWeight: '600', color: pendingBatchJob?.status === 'scheduled' ? 'var(--accent)' : 'var(--success)' }}>
+                  {pendingBatchJob?.status === 'scheduled' ? <Clock size={14} /> : <CheckCircle2 size={14} />}
+                  <span>
+                    {pendingBatchJob?.status === 'scheduled'
+                      ? `Batch hẹn lúc ${pendingBatchJob.scheduled_at ? new Date(pendingBatchJob.scheduled_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : ''}`
+                      : `Đã tạo Batch Job${pendingBatchJob?.gemini_state ? ` (${pendingBatchJob.gemini_state.replace('JOB_STATE_', '')})` : ''}`}
                   </span>
-                )}
-                <button
-                  onClick={handleStopQueue}
-                  style={{ marginLeft: 4, display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '3px 10px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 'var(--radius-sm)', color: 'var(--danger)', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}
-                  title="Dừng hàng đợi sau bài đang viết"
-                >
-                  <X size={12} /> Dừng
-                </button>
-              </div>
-            )}
-            {/* QUEUE CANCELLED */}
-            {writeQueueJob && writeQueueJob.status === 'cancelled' && (
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '7px 12px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 'var(--radius-md)', fontSize: '13px', fontWeight: '600', color: 'var(--danger)' }}>
-                <XCircle size={14} />
-                <span>Đã dừng: {writeQueueJob.succeeded} thành công{writeQueueJob.failed > 0 ? `, ${writeQueueJob.failed} lỗi` : ''}</span>
-                <button
-                  onClick={() => setWriteQueueJob(null)}
-                  style={{ marginLeft: 4, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 1 }}
-                  title="Đóng"
-                >
+                  <button
+                    onClick={() => navigate('/batch-jobs')}
+                    style={{ fontSize: 11, fontWeight: 600, color: 'var(--accent)', background: 'var(--accent-subtle)', border: 'none', borderRadius: 10, padding: '2px 8px', cursor: 'pointer' }}
+                  >
+                    Xem →
+                  </button>
+                  <button
+                    onClick={async () => {
+                      if (pendingBatchJob?.id) {
+                        try { await apiClient.delete(`${API_BATCH_JOBS}/${pendingBatchJob.id}`); } catch (e) { /* ignore */ }
+                      }
+                      fetchPendingBatchJob(selectedKeyword.keyword);
+                    }}
+                    title="Xóa batch job này và gửi lại"
+                    style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 20, height: 20, borderRadius: '50%', background: 'none', border: '1px solid currentColor', cursor: 'pointer', opacity: 0.5, padding: 0, color: 'inherit' }}
+                  >
+                    <X size={11} />
+                  </button>
+                </div>
+              )}
+              {isWritingAll && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 14px', background: 'var(--accent-subtle)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: 'var(--radius-md)', fontSize: '13px', fontWeight: '600', color: 'var(--accent)' }}>
+                  <Loader2 className="animate-spin" size={14} />
+                  {batchStatus || 'Đang gửi Batch Job...'}
+                </div>
+              )}
+              {/* QUEUE RUNNING */}
+              {writeQueueJob && writeQueueJob.status === 'running' && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 14px', background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.25)', borderRadius: 'var(--radius-md)', fontSize: '13px', fontWeight: '600', color: 'var(--accent)' }}>
+                  <Loader2 className="animate-spin" size={14} />
+                  <span>Hàng đợi: {writeQueueJob.done}/{writeQueueJob.total}</span>
+                  {writeQueueJob.currentTitle && (
+                    <span style={{ fontWeight: 400, color: 'var(--text-secondary)', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      — {writeQueueJob.currentTitle}
+                    </span>
+                  )}
+                  <button
+                    onClick={handleStopQueue}
+                    style={{ marginLeft: 4, display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '3px 10px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 'var(--radius-sm)', color: 'var(--danger)', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}
+                    title="Dừng hàng đợi sau bài đang viết"
+                  >
+                    <X size={12} /> Dừng
+                  </button>
+                </div>
+              )}
+              {/* QUEUE CANCELLED */}
+              {writeQueueJob && writeQueueJob.status === 'cancelled' && (
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '7px 12px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 'var(--radius-md)', fontSize: '13px', fontWeight: '600', color: 'var(--danger)' }}>
                   <XCircle size={14} />
-                </button>
-              </div>
-            )}
-            {/* QUEUE DONE */}
-            {writeQueueJob && writeQueueJob.status === 'done' && (
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '7px 12px', background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.25)', borderRadius: 'var(--radius-md)', fontSize: '13px', fontWeight: '600', color: 'var(--success)' }}>
-                <CheckCircle2 size={14} />
-                <span>Hàng đợi xong: {writeQueueJob.succeeded} thành công{writeQueueJob.failed > 0 ? `, ${writeQueueJob.failed} lỗi` : ''}</span>
+                  <span>Đã dừng: {writeQueueJob.succeeded} thành công{writeQueueJob.failed > 0 ? `, ${writeQueueJob.failed} lỗi` : ''}</span>
+                  <button
+                    onClick={() => setWriteQueueJob(null)}
+                    style={{ marginLeft: 4, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 1 }}
+                    title="Đóng"
+                  >
+                    <XCircle size={14} />
+                  </button>
+                </div>
+              )}
+              {/* QUEUE DONE */}
+              {writeQueueJob && writeQueueJob.status === 'done' && (
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '7px 12px', background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.25)', borderRadius: 'var(--radius-md)', fontSize: '13px', fontWeight: '600', color: 'var(--success)' }}>
+                  <CheckCircle2 size={14} />
+                  <span>Hàng đợi xong: {writeQueueJob.succeeded} thành công{writeQueueJob.failed > 0 ? `, ${writeQueueJob.failed} lỗi` : ''}</span>
+                  <button
+                    onClick={() => setWriteQueueJob(null)}
+                    style={{ marginLeft: 4, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 1 }}
+                    title="Đóng"
+                  >
+                    <XCircle size={14} />
+                  </button>
+                </div>
+              )}
+              {/* PUBLISH HÀNG LOẠT */}
+              {articlesOfKeyword.filter(a => a.publish_status !== 'published').length > 0 && !isWritingAll && writeQueueJob?.status !== 'running' && (
                 <button
-                  onClick={() => setWriteQueueJob(null)}
-                  style={{ marginLeft: 4, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 1 }}
-                  title="Đóng"
+                  onClick={handlePublishBatch}
+                  className="btn btn-outline"
+                  style={{ gap: '6px', color: 'var(--success)', borderColor: 'rgba(34,197,94,0.3)', marginLeft: 'auto' }}
+                  disabled={isBatchPublishing}
                 >
-                  <XCircle size={14} />
+                  {isBatchPublishing
+                    ? <><Loader2 size={15} className="animate-spin" /> Đang post...</>
+                    : <><Upload size={15} /> Post hàng loạt ({articlesOfKeyword.filter(a => a.publish_status !== 'published').length} bài)</>
+                  }
                 </button>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </div>
 
@@ -1046,11 +1109,13 @@ const Keywords = () => {
             {titles.length > 0 ? titles.map((title, idx) => {
               const article = getArticleForTitle(title);
               const isThisWriting = isWritingAll && !article;
+              const isInQueue = writeQueueTitles.has(title); // title này đã được submit vào SSE queue
               const queueResult = writeQueueJob?.results?.find(r => r?.title === title);
               const isQueueWritingThis = writeQueueJob?.status === 'running' && writeQueueJob?.currentTitle === title;
 
               const isChecked = checkedTitles.has(title);
-              const isCheckable = !article && !writeQueueJob && !pendingBatchTitles.has(title);
+              // Checkable: chưa có bài + không có queue đang chạy + không trong batch + không trong SSE queue hiện tại
+              const isCheckable = !article && !writeQueueJob && !pendingBatchTitles.has(title) && !isInQueue;
               return (
                 <div
                   key={idx}
@@ -1111,7 +1176,9 @@ const Keywords = () => {
                           ? <XCircle size={16} color="var(--danger)" style={{ flexShrink: 0 }} />
                           : pendingBatchTitles.has(title)
                             ? <Layers size={16} color="var(--accent)" style={{ flexShrink: 0 }} />
-                            : <Clock size={16} color="var(--text-muted)" style={{ flexShrink: 0 }} />
+                            : isInQueue && writeQueueJob?.status === 'running'
+                              ? <Zap size={16} color="var(--accent)" style={{ flexShrink: 0 }} />
+                              : <Clock size={16} color="var(--text-muted)" style={{ flexShrink: 0 }} />
                   }
 
                   {/* Title */}
@@ -1123,6 +1190,18 @@ const Keywords = () => {
                   {article && (
                     <span style={{ fontSize: '11px', color: 'var(--text-secondary)', flexShrink: 0 }}>
                       {formatDate(article.createdAt)}
+                    </span>
+                  )}
+
+                  {/* Publish status badge */}
+                  {article?.publish_status === 'published' && (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: '11px', fontWeight: 600, color: 'var(--success)', background: 'rgba(34,197,94,0.08)', padding: '2px 8px', borderRadius: 20, border: '1px solid rgba(34,197,94,0.2)', flexShrink: 0, whiteSpace: 'nowrap' }}>
+                      <Upload size={10} /> Đã post{article.publish_external_id ? ` #${article.publish_external_id}` : ''}
+                    </span>
+                  )}
+                  {article?.publish_status === 'failed' && (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: '11px', fontWeight: 600, color: 'var(--danger)', background: 'rgba(239,68,68,0.08)', padding: '2px 8px', borderRadius: 20, border: '1px solid rgba(239,68,68,0.2)', flexShrink: 0 }}>
+                      Lỗi post
                     </span>
                   )}
 
@@ -1144,6 +1223,20 @@ const Keywords = () => {
                         >
                           <Edit3 size={13} /> Sửa
                         </button>
+                        {article.publish_status !== 'published' && (
+                          <button
+                            onClick={() => handlePublishArticle(article)}
+                            className="btn btn-sm btn-outline"
+                            style={{ gap: '5px', color: 'var(--success)', borderColor: 'rgba(34,197,94,0.3)' }}
+                            disabled={publishingIds.has(article.id)}
+                            title={article.publish_status === 'failed' ? 'Thử lại đăng bài' : 'Đăng bài lên API'}
+                          >
+                            {publishingIds.has(article.id)
+                              ? <><Loader2 size={13} className="animate-spin" /> Đang post...</>
+                              : <><Upload size={13} /> {article.publish_status === 'failed' ? 'Thử lại' : 'Post'}</>
+                            }
+                          </button>
+                        )}
                         <button
                           onClick={() => {
                             setViewingArticle(null);
@@ -1160,7 +1253,8 @@ const Keywords = () => {
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '11px', fontWeight: '600', color: 'var(--accent)', background: 'var(--accent-subtle)', padding: '3px 9px', borderRadius: 20 }}>
                         <Loader2 className="animate-spin" size={11} /> Đang viết...
                       </span>
-                    ) : writeQueueJob?.status === 'running' && queueResult === undefined ? (
+                    ) : isInQueue && writeQueueJob?.status === 'running' && queueResult === undefined ? (
+                      // Title này đã submit vào queue, đang chờ lượt viết
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '11px', fontWeight: '600', color: 'var(--text-muted)', background: 'var(--bg-panel)', padding: '3px 9px', borderRadius: 20, border: '1px solid var(--border)' }}>
                         <Clock size={11} /> Chờ viết
                       </span>
@@ -1214,8 +1308,8 @@ const Keywords = () => {
 
         {/* EDIT ARTICLE MODAL */}
         {isEditModalOpen && editingArticle && (
-          <div className="modal-overlay" onClick={() => !isSavingEdit && setIsEditModalOpen(false)}>
-            <div className="modal-dialog" style={{ maxWidth: 740 }} onClick={e => e.stopPropagation()}>
+          <div className="modal-overlay">
+            <div className="modal-dialog" style={{ maxWidth: 860 }}>
               <div className="modal-header">
                 <div className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <Edit3 size={18} color="var(--accent)" /> Chỉnh Sửa Bài Viết
@@ -1249,14 +1343,11 @@ const Keywords = () => {
                     </div>
                   </div>
                   <div className="input-group">
-                    <label className="input-label">Nội Dung (Markdown)</label>
-                    <textarea
-                      className="input-field"
-                      rows={18}
+                    <label className="input-label">Nội dung bài viết</label>
+                    <RichTextEditor
                       value={editForm.content}
-                      onChange={e => setEditForm(f => ({ ...f, content: e.target.value }))}
+                      onChange={v => setEditForm(f => ({ ...f, content: v }))}
                       disabled={isSavingEdit}
-                      style={{ fontFamily: "'Fira Code','Consolas',monospace", fontSize: 13, resize: 'vertical' }}
                     />
                   </div>
                   <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
@@ -1305,8 +1396,8 @@ const Keywords = () => {
           const scheduledDate = batchModalScheduleEnabled ? computeScheduledAt() : null;
 
           return (
-            <div className="modal-overlay" onClick={() => setIsBatchModalOpen(false)}>
-              <div className="modal-dialog" style={{ maxWidth: 520, padding: 0, overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
+            <div className="modal-overlay">
+              <div className="modal-dialog" style={{ maxWidth: 520, padding: 0, overflow: 'hidden' }}>
 
                 {/* Accent top bar */}
                 <div style={{ height: 4, background: 'linear-gradient(90deg, var(--accent), var(--accent-hover, var(--accent)))' }} />
@@ -1592,61 +1683,44 @@ const Keywords = () => {
 
           {/* Lọc theo user — chỉ admin và khi AUTH bật */}
           {showMultiUser && userList.length > 0 && (
-            <div style={{ position: 'relative', flex: '1 1 160px', minWidth: 140 }}>
-              <UsersIcon size={13} style={{
-                position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)',
-                color: 'var(--text-muted)', pointerEvents: 'none',
-              }} />
-              <select
+            <div style={{ flex: '1 1 160px', minWidth: 140 }}>
+              <AppSelect
                 value={filterUserId}
-                onChange={e => {
-                  const uid = e.target.value;
+                onChange={uid => {
                   setFilterUserId(uid);
                   setFilterCompanyId('');
                   setKwPage(1);
                   fetchData(uid, 1, searchText, '');
                 }}
-                className="input-field"
-                style={{ paddingLeft: 30, fontSize: 14, cursor: 'pointer',
-                  borderColor: filterUserId ? 'var(--accent)' : undefined,
-                }}
-              >
-                <option value="">Tất cả Tài Khoản</option>
-                {userList.map(u => (
-                  <option key={u.id} value={u.id}>
-                    {u.full_name || u.username}{u.role === 'admin' ? ' (admin)' : ''}
-                  </option>
-                ))}
-              </select>
+                icon={<UsersIcon size={13} />}
+                active={!!filterUserId}
+                options={[
+                  { value: '', label: 'Tất cả Tài Khoản' },
+                  ...userList.map(u => ({
+                    value: String(u.id),
+                    label: `${u.full_name || u.username}${u.role === 'admin' ? ' (admin)' : ''}`,
+                  })),
+                ]}
+              />
             </div>
           )}
 
           {/* Lọc theo công ty — hiển thị theo user đang filter */}
-          <div style={{ position: 'relative', flex: '1 1 160px', minWidth: 140 }}>
-            <Building2 size={13} style={{
-              position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)',
-              color: 'var(--text-muted)', pointerEvents: 'none',
-            }} />
-            <select
+          <div style={{ flex: '1 1 160px', minWidth: 140 }}>
+            <AppSelect
               value={filterCompanyId}
-              onChange={e => {
-                const cid = e.target.value;
+              onChange={cid => {
                 setFilterCompanyId(cid);
                 setKwPage(1);
                 fetchData(filterUserId, 1, searchText, cid);
               }}
-              className="input-field"
-              style={{ paddingLeft: 30, fontSize: 14, cursor: 'pointer',
-                borderColor: filterCompanyId ? 'var(--accent)' : undefined,
-              }}
-            >
-              <option value="">
-                Danh sách Website/Công ty 
-              </option>
-              {filterCompanies.map(c => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
+              icon={<Building2 size={13} />}
+              active={!!filterCompanyId}
+              options={[
+                { value: '', label: 'Danh sách Website/Công ty' },
+                ...filterCompanies.map(c => ({ value: String(c.id), label: c.name })),
+              ]}
+            />
           </div>
 
           {/* Số kết quả + nút xóa filter */}
@@ -1827,8 +1901,8 @@ const Keywords = () => {
 
       {/* EDIT ARTICLE MODAL */}
       {isEditModalOpen && editingArticle && (
-        <div className="modal-overlay" onClick={() => !isSavingEdit && setIsEditModalOpen(false)}>
-          <div className="modal-dialog" style={{ maxWidth: 740 }} onClick={e => e.stopPropagation()}>
+        <div className="modal-overlay">
+          <div className="modal-dialog" style={{ maxWidth: 860 }}>
             <div className="modal-header">
               <div className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <Edit3 size={18} color="var(--accent)" /> Chỉnh Sửa Bài Viết
@@ -1888,8 +1962,8 @@ const Keywords = () => {
 
       {/* MODAL THÊM TỪ KHÓA */}
       {isAddModalOpen && (
-        <div className="modal-overlay" onClick={() => !isGenerating && setIsAddModalOpen(false)}>
-          <div className="modal-dialog" onClick={e => e.stopPropagation()}>
+        <div className="modal-overlay">
+          <div className="modal-dialog">
             <div className="modal-header">
               <div className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Sparkles size={18} color="var(--accent)" /> Tạo Từ Khóa Mới
@@ -1905,9 +1979,12 @@ const Keywords = () => {
                       Chưa có website nào. Vui lòng tạo tại trang "Website & Công Ty" trước.
                     </div>
                   ) : (
-                    <select className="input-field" value={selectedCompanyId} onChange={e => setSelectedCompanyId(e.target.value)} required disabled={isGenerating}>
-                      {companies.map(c => <option key={c.id} value={c.id}>{c.name} — {c.url}</option>)}
-                    </select>
+                    <AppSelect
+                      value={selectedCompanyId}
+                      onChange={setSelectedCompanyId}
+                      disabled={isGenerating}
+                      options={companies.map(c => ({ value: String(c.id), label: `${c.name} — ${c.url}` }))}
+                    />
                   )}
                 </div>
                 <div className="input-group">

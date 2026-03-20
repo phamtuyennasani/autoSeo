@@ -150,6 +150,13 @@ async function initDb() {
     { table: 'users', col: 'full_name',       ddl: 'ALTER TABLE users ADD COLUMN full_name TEXT' },
     { table: 'users', col: 'email',           ddl: 'ALTER TABLE users ADD COLUMN email TEXT' },
     { table: 'users', col: 'phone',           ddl: 'ALTER TABLE users ADD COLUMN phone TEXT' },
+    // companies — publish API
+    { table: 'companies', col: 'publish_api_url', ddl: 'ALTER TABLE companies ADD COLUMN publish_api_url TEXT' },
+    { table: 'companies', col: 'auto_publish',    ddl: 'ALTER TABLE companies ADD COLUMN auto_publish INTEGER NOT NULL DEFAULT 0' },
+    // articles — publish tracking
+    { table: 'articles', col: 'publish_status',      ddl: "ALTER TABLE articles ADD COLUMN publish_status TEXT NOT NULL DEFAULT 'unpublished'" },
+    { table: 'articles', col: 'published_at',         ddl: 'ALTER TABLE articles ADD COLUMN published_at TEXT' },
+    { table: 'articles', col: 'publish_external_id',  ddl: 'ALTER TABLE articles ADD COLUMN publish_external_id TEXT' },
   ];
 
   for (const m of migrations) {
@@ -188,6 +195,7 @@ async function initDb() {
     { key: 'serpapi_api_key',       value: process.env.SERPAPI_API_KEY || '', label: 'SerpAPI Key' },
     { key: 'batch_schedule_time',   value: '', label: 'Giờ chạy batch tự động (HH:MM, để trống = tắt)' },
     { key: 'batch_schedule_lastrun',value: '', label: 'Ngày chạy batch theo lịch lần cuối' },
+    { key: 'publish_api_url',        value: '', label: 'URL API đăng bài mặc định (bên thứ 3)' },
   ];
   for (const s of seedSettings) {
     await db.execute({

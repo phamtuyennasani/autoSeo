@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import apiClient from '../config/api';
 import { useAuth } from '../context/AuthContext';
+import { AppSelect } from '../components/AppSelect';
 import {
   Save, RefreshCw, Loader2, CheckCircle2,
   Zap, FileText, AlertTriangle, Info, BarChart3,
   Shield, TrendingUp, Calendar, KeyRound, Eye, EyeOff, Cpu,
-  Calculator, DollarSign, ChevronDown, ChevronUp
+  Calculator, DollarSign, ChevronDown, ChevronUp, Upload
 } from 'lucide-react';
 
 import { API } from '../config/api';
@@ -467,10 +468,14 @@ function ApiConfigTab() {
           <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: 'var(--accent-subtle)', color: 'var(--accent)' }}>{form.gemini_model || 'mặc định hệ thống'}</span>
         </div>
         <div style={{ padding: '14px 18px' }}>
-          <select className="input-field" value={form.gemini_model} onChange={e => setForm({ ...form, gemini_model: e.target.value })}>
-            {isUserScope && <option value="">— Dùng model hệ thống —</option>}
-            {GEMINI_MODELS.map(m => <option key={m} value={m}>{m}</option>)}
-          </select>
+          <AppSelect
+            value={form.gemini_model}
+            onChange={v => setForm({ ...form, gemini_model: v })}
+            options={[
+              ...(isUserScope ? [{ value: '', label: '— Dùng model hệ thống —' }] : []),
+              ...GEMINI_MODELS.map(m => ({ value: m, label: m })),
+            ]}
+          />
         </div>
       </div>
 
@@ -746,6 +751,7 @@ export default function SettingsPage() {
   const [error, setError] = useState('');
   const [tokenLimit, setTokenLimit] = useState('0');
   const [articleLimit, setArticleLimit] = useState('0');
+  const [publishApiUrl, setPublishApiUrl] = useState('');
 
   // Đổi mật khẩu
   const [isChangePwOpen, setIsChangePwOpen] = useState(false);
@@ -785,6 +791,7 @@ export default function SettingsPage() {
       const s = res.data.settings;
       setTokenLimit(s.find(r => r.key === 'daily_token_limit')?.value ?? '0');
       setArticleLimit(s.find(r => r.key === 'daily_article_limit')?.value ?? '0');
+      setPublishApiUrl(s.find(r => r.key === 'publish_api_url')?.value ?? '');
     } catch (err) {
       setError('Không thể tải cài đặt: ' + err.message);
     } finally {
@@ -800,6 +807,7 @@ export default function SettingsPage() {
       await apiClient.put(ENDPOINT, {
         daily_token_limit: parseInt(tokenLimit, 10) || 0,
         daily_article_limit: parseInt(articleLimit, 10) || 0,
+        publish_api_url: publishApiUrl.trim(),
       });
       setSaved(true);
       await fetchSettings();
@@ -927,6 +935,34 @@ export default function SettingsPage() {
                   presets={[0, 5, 10, 20, 50, 100]} unit="bài"
                 />
 
+                {/* Publish API URL */}
+                <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden', background: 'var(--bg-panel)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 18px', borderBottom: '1px solid var(--border)', background: 'var(--bg-elevated)' }}>
+                    <div style={{ width: 34, height: 34, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(34,197,94,0.12)', flexShrink: 0 }}>
+                      <Upload size={16} color="var(--success)" />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text)' }}>API URL Đăng Bài (Mặc Định)</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 1 }}>
+                        URL mặc định dùng khi công ty chưa cấu hình riêng. Bài viết hoàn thành sẽ POST JSON lên endpoint này.
+                      </div>
+                    </div>
+                    {publishApiUrl
+                      ? <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: 'var(--success-subtle)', color: 'var(--success)', whiteSpace: 'nowrap' }}>Đã cấu hình</span>
+                      : <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: 'var(--bg-panel)', color: 'var(--text-muted)', border: '1px solid var(--border)', whiteSpace: 'nowrap' }}>Chưa cấu hình</span>
+                    }
+                  </div>
+                  <div style={{ padding: '14px 18px' }}>
+                    <input
+                      type="url"
+                      className="input-field"
+                      value={publishApiUrl}
+                      onChange={e => setPublishApiUrl(e.target.value)}
+                      placeholder="https://api.example.com/posts"
+                    />
+                  </div>
+                </div>
+
                 <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '16px 20px', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', background: 'var(--bg-panel)' }}>
                   <button onClick={handleSave} className="btn btn-primary" disabled={saving} style={{ gap: 7, minWidth: 150, justifyContent: 'center' }}>
                     {saving ? <><Loader2 className="animate-spin" size={15} /> Đang lưu...</> : <><Save size={15} /> Lưu cài đặt</>}
@@ -951,8 +987,8 @@ export default function SettingsPage() {
 
       {/* MODAL ĐỔI MẬT KHẨU */}
       {isChangePwOpen && (
-        <div className="modal-overlay" onClick={() => !pwSaving && setIsChangePwOpen(false)}>
-          <div className="modal-dialog" style={{ maxWidth: 420 }} onClick={e => e.stopPropagation()}>
+        <div className="modal-overlay">
+          <div className="modal-dialog" style={{ maxWidth: 420 }}>
             <div className="modal-header">
               <div className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <KeyRound size={18} color="var(--accent)" /> Đổi Mật Khẩu

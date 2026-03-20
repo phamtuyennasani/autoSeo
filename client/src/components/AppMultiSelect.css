@@ -1,0 +1,226 @@
+/* ── AppMultiSelect ─────────────────────────────────────────── */
+
+/* ── Trigger — chiều cao cố định ── */
+.app-ms-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 42px;
+  padding: 0 12px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: 14px;
+  font-family: 'Inter', sans-serif;
+  cursor: pointer;
+  transition: var(--transition);
+  outline: none;
+  text-align: left;
+  box-sizing: border-box;
+}
+
+.app-ms-trigger:hover:not(:disabled) {
+  border-color: rgba(99, 102, 241, 0.35);
+}
+
+.app-ms-trigger:focus-visible {
+  border-color: var(--border-active);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+  background: rgba(99, 102, 241, 0.04);
+}
+
+.app-ms-trigger[data-state="open"] {
+  border-color: var(--border-active);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+  background: rgba(99, 102, 241, 0.04);
+}
+
+.app-ms-trigger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.app-ms-body {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.app-ms-placeholder {
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+/* ── Tags trong trigger (tối đa 2 + badge) ── */
+.app-ms-tags {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  overflow: hidden;
+}
+
+.app-ms-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 99px;
+  background: var(--accent-subtle);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.app-ms-tag--more {
+  background: var(--bg-panel);
+  color: var(--text-secondary);
+  border-color: var(--border);
+  font-weight: 600;
+}
+
+.app-ms-tag-remove {
+  display: inline-flex;
+  align-items: center;
+  color: var(--accent);
+  cursor: pointer;
+  opacity: 0.6;
+  line-height: 1;
+  transition: opacity 0.1s;
+  padding: 1px;
+  border-radius: 99px;
+}
+
+.app-ms-tag-remove:hover {
+  opacity: 1;
+  background: rgba(99, 102, 241, 0.15);
+}
+
+/* ── Chevron ── */
+.app-ms-chevron {
+  color: var(--text-secondary);
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+
+.app-ms-trigger[data-state="open"] .app-ms-chevron {
+  transform: rotate(180deg);
+}
+
+/* ── Dropdown content ── */
+.app-ms-content {
+  background: var(--bg-modal);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.22), 0 2px 8px rgba(0, 0, 0, 0.1);
+  z-index: 9999;
+  overflow: hidden;
+  width: var(--radix-popover-trigger-width);
+  animation: appMsIn 0.13s ease;
+}
+
+@keyframes appMsIn {
+  from { opacity: 0; transform: translateY(-5px); }
+  to   { opacity: 1; transform: translateY(0);    }
+}
+
+/* ── Header: đã chọn N + clear ── */
+.app-ms-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px 6px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.app-ms-clear {
+  background: none;
+  border: none;
+  font-size: 11px;
+  font-family: 'Inter', sans-serif;
+  color: var(--accent);
+  cursor: pointer;
+  padding: 0;
+  opacity: 0.8;
+  transition: opacity 0.1s;
+}
+
+.app-ms-clear:hover {
+  opacity: 1;
+}
+
+/* ── List ── */
+.app-ms-list {
+  padding: 4px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.app-ms-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.app-ms-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.app-ms-list::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 99px;
+}
+
+/* ── Từng option ── */
+.app-ms-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-family: 'Inter', sans-serif;
+  color: var(--text-primary);
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.1s;
+}
+
+.app-ms-item:hover {
+  background: var(--accent-subtle);
+  color: var(--accent);
+}
+
+.app-ms-item--checked {
+  color: var(--accent);
+}
+
+.app-ms-item--checked:hover {
+  background: var(--accent-subtle);
+}
+
+/* ── Custom checkbox ── */
+.app-ms-checkbox {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  border: 1.5px solid var(--border);
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: var(--transition);
+}
+
+.app-ms-checkbox--checked {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}

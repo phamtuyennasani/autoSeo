@@ -1,0 +1,152 @@
+/* ── AppSelect — Radix UI Select styled theo design system ─── */
+
+/* ── Trigger (button hiển thị giá trị đang chọn) ── */
+.app-select-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 14px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: 14px;
+  font-family: 'Inter', sans-serif;
+  font-weight: 400;
+  cursor: pointer;
+  transition: var(--transition);
+  outline: none;
+  text-align: left;
+  box-sizing: border-box;
+}
+
+.app-select-trigger:hover:not([data-disabled]) {
+  border-color: rgba(99, 102, 241, 0.35);
+}
+
+.app-select-trigger:focus-visible {
+  border-color: var(--border-active);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+  background: rgba(99, 102, 241, 0.04);
+}
+
+.app-select-trigger[data-disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* placeholder color */
+.app-select-trigger[data-placeholder] {
+  color: var(--text-muted);
+}
+
+/* ── Small variant: dùng trong toolbar / header ── */
+.app-select-sm {
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 9px;
+  width: auto;
+  gap: 6px;
+}
+
+/* ── Active: đang lọc → viền accent ── */
+.app-select-active {
+  border-color: var(--accent) !important;
+}
+
+/* ── Icon bên trái ── */
+.app-select-left-icon {
+  display: flex;
+  align-items: center;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+/* ── Chevron bên phải ── */
+.app-select-chevron {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+
+.app-select-trigger[data-state="open"] .app-select-chevron {
+  transform: rotate(180deg);
+}
+
+/* ── Dropdown content ── */
+.app-select-content {
+  background: var(--bg-modal);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.28), 0 2px 8px rgba(0, 0, 0, 0.12);
+  z-index: 9999;
+  overflow: hidden;
+  min-width: var(--radix-select-trigger-width);
+  max-height: var(--radix-select-content-available-height);
+  animation: appSelectIn 0.13s ease;
+}
+
+@keyframes appSelectIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0);    }
+}
+
+.app-select-viewport {
+  padding: 4px;
+}
+
+/* ── Từng lựa chọn ── */
+.app-select-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-family: 'Inter', sans-serif;
+  color: var(--text-primary);
+  cursor: pointer;
+  outline: none;
+  user-select: none;
+  transition: background 0.1s;
+}
+
+.app-select-item[data-highlighted] {
+  background: var(--accent-subtle);
+  color: var(--accent);
+}
+
+.app-select-item[data-state="checked"] {
+  font-weight: 500;
+  color: var(--accent);
+}
+
+/* ── Check icon ── */
+.app-select-check {
+  display: flex;
+  align-items: center;
+  color: var(--accent);
+  opacity: 0;
+  flex-shrink: 0;
+}
+
+.app-select-item[data-state="checked"] .app-select-check {
+  opacity: 1;
+}
+
+/* ── Scroll buttons ── */
+.app-select-scroll-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 22px;
+  font-size: 9px;
+  color: var(--text-secondary);
+  cursor: default;
+}

@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import apiClient from '../config/api';
-import { X, Loader2, FileText, CheckCircle2, Sparkles, Copy, Check, Building2 } from 'lucide-react';
+import { X, Loader2, FileText, CheckCircle2, Sparkles, Copy, Check, Building2, Save, Upload } from 'lucide-react';
 import { useToken } from '../context/TokenContext';
+import { RichTextEditor } from './RichTextEditor';
 
 import { API } from '../config/api';
 
@@ -13,7 +14,10 @@ const ArticleWriteModal = ({ keyword, title, companyId, keywordId, onClose, onSu
   const [company, setCompany] = useState(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedArticle, setGeneratedArticle] = useState(null);
+  const [editedContent, setEditedContent] = useState('');
   const [copied, setCopied] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isPublishing, setIsPublishing] = useState(false);
   const [error, setError] = useState(null);
   const { refreshStats } = useToken();
 
@@ -32,8 +36,23 @@ const ArticleWriteModal = ({ keyword, title, companyId, keywordId, onClose, onSu
     try {
       const res = await apiClient.post(API_ARTICLE, { keyword, title, companyId, keywordId });
       setGeneratedArticle(res.data);
+      setEditedContent(res.data.content || '');
       refreshStats(); // Cập nhật token stats trên topbar
       if (onSuccess) onSuccess(res.data); // Notify parent to refresh article list
+
+      // Auto-publish nếu công ty bật (server đã xử lý, nhưng nếu status vẫn chưa published thì thử publish)
+      if (company?.auto_publish && res.data.publish_status !== 'published') {
+        setIsPublishing(true);
+        try {
+          const pubRes = await apiClient.post(`${API_ARTICLE}/${res.data.id}/publish`);
+          setGeneratedArticle(pubRes.data);
+          if (onSuccess) onSuccess(pubRes.data);
+        } catch (pubErr) {
+          console.warn('[ArticleWriteModal] auto-publish failed:', pubErr.message);
+        } finally {
+          setIsPublishing(false);
+        }
+      }
     } catch (err) {
       console.error(err);
       setError(err.response?.data?.details || 'Lỗi khi viết bài. Vui lòng kiểm tra lại cấu hình API hoặc thử lại sau.');
@@ -44,14 +63,27 @@ const ArticleWriteModal = ({ keyword, title, companyId, keywordId, onClose, onSu
 
   const handleCopy = () => {
     if (!generatedArticle) return;
-    navigator.clipboard.writeText(generatedArticle.content);
+    navigator.clipboard.writeText(editedContent);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const handleSave = async () => {
+    if (!generatedArticle?.id) return;
+    setIsSaving(true);
+    try {
+      await apiClient.put(`${API_ARTICLE}/${generatedArticle.id}`, { content: editedContent });
+      if (onSuccess) onSuccess({ ...generatedArticle, content: editedContent });
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   return (
-    <div className="modal-overlay" onClick={!isGenerating ? onClose : undefined}>
-      <div className="modal-dialog modal-lg" onClick={e => e.stopPropagation()}>
+    <div className="modal-overlay">
+      <div className="modal-dialog modal-lg" style={{ maxWidth: 860 }}>
         {/* HEADER */}
         <div className="modal-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -114,16 +146,35 @@ const ArticleWriteModal = ({ keyword, title, companyId, keywordId, onClose, onSu
           ) : (
             <div>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--success)', fontWeight: '600', fontSize: '14px' }}>
-                  <CheckCircle2 size={18} /> Viết bài thành công!
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--success)', fontWeight: '600', fontSize: '14px' }}>
+                    <CheckCircle2 size={18} /> Viết bài thành công!
+                  </div>
+                  {isPublishing && (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--text-secondary)' }}>
+                      <Loader2 size={13} className="animate-spin" /> Đang đăng bài...
+                    </span>
+                  )}
+                  {generatedArticle?.publish_status === 'published' && (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600, color: 'var(--success)', background: 'rgba(34,197,94,0.08)', padding: '2px 9px', borderRadius: 20, border: '1px solid rgba(34,197,94,0.2)' }}>
+                      <Upload size={11} /> Đã đăng{generatedArticle.publish_external_id ? ` #${generatedArticle.publish_external_id}` : ''}
+                    </span>
+                  )}
                 </div>
-                <button className="btn btn-outline btn-sm" onClick={handleCopy} style={{ gap: '5px' }}>
-                  {copied ? <><Check size={14} /> Đã copy</> : <><Copy size={14} /> Copy Markdown</>}
-                </button>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button className="btn btn-outline btn-sm" onClick={handleCopy} style={{ gap: '5px' }}>
+                    {copied ? <><Check size={14} /> Đã copy</> : <><Copy size={14} /> Copy</>}
+                  </button>
+                  <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={isSaving} style={{ gap: '5px' }}>
+                    {isSaving ? <><Loader2 size={14} className="animate-spin" /> Đang lưu...</> : <><Save size={14} /> Lưu thay đổi</>}
+                  </button>
+                </div>
               </div>
-              <div className="article-output">
-                {generatedArticle.content}
-              </div>
+              <RichTextEditor
+                value={editedContent}
+                onChange={setEditedContent}
+                disabled={isSaving}
+              />
             </div>
           )}
         </div>

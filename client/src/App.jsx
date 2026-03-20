@@ -13,6 +13,7 @@ import { Toaster } from 'sonner';
 import { ThemeProvider } from './context/ThemeContext';
 import { TokenProvider } from './context/TokenContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { ConfirmProvider } from './context/ConfirmContext';
 
 // PrivateRoute: redirect /login nếu AUTH=true và chưa đăng nhập
 function PrivateRoute({ children }) {
@@ -64,8 +65,10 @@ function App() {
       <TokenProvider>
         <AuthProvider>
           <BrowserRouter>
-            <AppRoutes />
-            <Toaster richColors position="top-right" />
+            <ConfirmProvider>
+              <AppRoutes />
+              <Toaster richColors position="top-right" />
+            </ConfirmProvider>
           </BrowserRouter>
         </AuthProvider>
       </TokenProvider>

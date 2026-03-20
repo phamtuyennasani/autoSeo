@@ -6,6 +6,7 @@ import {
   ChevronDown, ChevronUp, Loader2, Send, AlertTriangle, FileText, Zap
 } from 'lucide-react';
 import { useToken } from '../context/TokenContext';
+import { useConfirm } from '../context/ConfirmContext';
 
 import { API } from '../config/api';
 const API_ENDPOINT = API.batchJobs;
@@ -57,20 +58,25 @@ export default function BatchJobs() {
   const [deletingId, setDeletingId] = useState(null);
   const [checkResult, setCheckResult] = useState({});
   const [triggering, setTriggering] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [lastCheckIso, setLastCheckIso] = useState(null);
   const { refreshStats } = useToken();
+  const confirm = useConfirm();
 
   const nextCheck = useNextCheckCountdown(lastCheckIso);
 
-  const fetchJobs = useCallback(async () => {
+  const fetchJobs = useCallback(async (showLoader = false) => {
+    if (showLoader) setRefreshing(true);
     try {
       const res = await apiClient.get(API_ENDPOINT);
-      setJobs(res.data.jobs);
+      setJobs(res.data.jobs ?? []);
       if (res.data.lastCheck) setLastCheckIso(res.data.lastCheck);
     } catch (err) {
       console.error(err);
+      toast.error('Lỗi tải dữ liệu: ' + (err.response?.data?.error || err.message));
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
@@ -119,7 +125,7 @@ export default function BatchJobs() {
   };
 
   const handleSubmitNow = async (job) => {
-    if (!window.confirm('Gửi ngay batch job này lên Gemini?')) return;
+    if (!await confirm({ title: 'Gửi ngay batch job?', message: 'Job sẽ được gửi lên Gemini Batch API ngay lập tức.', confirmText: 'Gửi ngay' })) return;
     setSubmittingId(job.id);
     try {
       await apiClient.post(`${API_ENDPOINT}/${job.id}/submit-now`);
@@ -132,7 +138,7 @@ export default function BatchJobs() {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Xóa batch job này? Sau đó có thể gửi lại yêu cầu viết từ trang Từ Khóa.')) return;
+    if (!await confirm({ title: 'Xóa batch job?', message: 'Sau đó có thể gửi lại yêu cầu viết từ trang Từ Khóa.', confirmText: 'Xóa', danger: true })) return;
     setDeletingId(id);
     try {
       await apiClient.delete(`${API_ENDPOINT}/${id}`);
@@ -182,8 +188,10 @@ export default function BatchJobs() {
                   : <><Zap size={14} /> Kiểm tra Tất Cả Ngay</>}
               </button>
             )}
-            <button onClick={fetchJobs} className="btn btn-outline" title="Làm mới danh sách">
-              <RefreshCw size={15} /> Làm mới
+            <button onClick={() => fetchJobs(true)} className="btn btn-outline" title="Làm mới danh sách" disabled={refreshing}>
+              {refreshing
+                ? <><Loader2 className="animate-spin" size={15} /> Đang làm mới...</>
+                : <><RefreshCw size={15} /> Làm mới</>}
             </button>
           </div>
         </div>

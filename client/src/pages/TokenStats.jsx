@@ -7,9 +7,10 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
 import api from '../config/api';
 import { useAuth } from '../context/AuthContext';
+import { AppSelect } from '../components/AppSelect';
 import {
   Cpu, DollarSign, TrendingUp, Activity, RefreshCw, Trash2,
-  ChevronDown, BarChart2, Calendar, Users, Zap, AlertCircle, Info,
+  BarChart2, Calendar, Users, Zap, AlertCircle, Info,
 } from 'lucide-react';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -258,23 +259,18 @@ const TokenStats = () => {
 
           {/* Admin: user filter — chỉ hiện khi AUTH bật */}
           {authEnabled && isAdmin && stats?.users?.length > 0 && (
-            <select
+            <AppSelect
+              size="sm"
               value={userId}
-              onChange={e => setUserId(e.target.value)}
-              style={{
-                padding: '6px 10px', borderRadius: '9px',
-                border: '1px solid var(--border)',
-                background: 'var(--bg-input)',
-                color: 'var(--text-primary)',
-                fontSize: '12px', cursor: 'pointer',
-                fontFamily: 'Inter, sans-serif',
-              }}
-            >
-              <option value="all">Tất cả users</option>
-              {stats.users.map(u => (
-                <option key={u.id} value={u.id}>{u.username} ({fmt(u.total_tokens)} tokens)</option>
-              ))}
-            </select>
+              onChange={setUserId}
+              options={[
+                { value: 'all', label: 'Tất cả users' },
+                ...stats.users.map(u => ({
+                  value: String(u.id),
+                  label: `${u.username} (${fmt(u.total_tokens)} tokens)`,
+                })),
+              ]}
+            />
           )}
 
           <button
