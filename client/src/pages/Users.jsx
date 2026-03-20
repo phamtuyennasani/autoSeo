@@ -217,7 +217,7 @@ function UserModal({ mode, user, onClose, onSave }) {
           borderRadius: '16px',
           boxShadow: '0 24px 80px rgba(0,0,0,0.45)',
           overflow: 'hidden',
-          maxHeight: '90vh',
+          maxHeight: '95vh',
           display: 'flex', flexDirection: 'column',
         }}
       >

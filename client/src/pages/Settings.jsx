@@ -310,6 +310,81 @@ function GeminiKeyField({ value, onChange, show, onToggleShow }) {
   );
 }
 
+function SerpKeyField({ value, onChange, show, onToggleShow }) {
+  const keys = value ? value.split(',').map(k => k.trim()).filter(Boolean) : [];
+  const keyCount = keys.length;
+
+  return (
+    <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 18px', borderBottom: '1px solid var(--border)', background: 'var(--bg-panel)' }}>
+        <div style={{ width: 34, height: 34, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(34,197,94,0.12)', flexShrink: 0 }}>
+          <KeyRound size={16} color="var(--success)" />
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
+            SerpAPI Key
+            <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text-muted)' }}>(Tùy chọn)</span>
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+            Lấy tại <strong>serpapi.com</strong> — Nhập nhiều key cách nhau dấu <strong>,</strong> để xoay vòng. Để trống nếu không dùng.
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          {keyCount > 1 && (
+            <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: 'rgba(34,197,94,0.12)', color: 'var(--success)' }}>
+              {keyCount} keys
+            </span>
+          )}
+          {keyCount > 0
+            ? <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: 'var(--success-subtle)', color: 'var(--success)' }}>Đã cấu hình</span>
+            : <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: 'var(--bg-panel)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>Chưa cấu hình</span>
+          }
+        </div>
+      </div>
+
+      {/* Input */}
+      <div style={{ padding: '14px 18px', position: 'relative' }}>
+        <textarea
+          className="input-field"
+          rows={keyCount > 1 ? Math.min(keyCount + 1, 5) : 2}
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          placeholder={'sk-... (1 key)\nhoặc: sk-..., sk-..., sk-... (nhiều key xoay vòng)'}
+          style={{
+            resize: 'vertical',
+            fontFamily: 'monospace',
+            fontSize: 13,
+            paddingRight: 42,
+            filter: show ? 'none' : 'blur(4px)',
+            transition: 'filter 0.2s',
+            userSelect: show ? 'auto' : 'none',
+          }}
+        />
+        <button
+          onClick={onToggleShow}
+          style={{ position: 'absolute', right: 28, top: 24, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex' }}
+          title={show ? 'Ẩn key' : 'Hiện key'}
+        >
+          {show ? <EyeOff size={16} /> : <Eye size={16} />}
+        </button>
+      </div>
+
+      {/* Key list preview khi show */}
+      {show && keyCount > 1 && (
+        <div style={{ padding: '0 18px 14px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {keys.map((k, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-secondary)' }}>
+              <span style={{ width: 18, height: 18, borderRadius: '50%', background: 'rgba(34,197,94,0.12)', color: 'var(--success)', fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{i + 1}</span>
+              <span style={{ fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{k.slice(0, 12)}...{k.slice(-4)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ApiConfigTab() {
   const { user, authEnabled } = useAuth();
   const isAdmin = user?.role === 'admin';
@@ -400,15 +475,11 @@ function ApiConfigTab() {
       </div>
 
       {/* SerpAPI Key */}
-      <KeyField
-        label={<>SerpAPI Key <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text-muted)' }}>(Tùy chọn)</span></>}
-        sub={<>Lấy tại <strong>serpapi.com</strong> — Để trống nếu không dùng. AI sẽ tự sinh tiêu đề từ kiến thức nội tại.</>}
-        color="var(--success)"
+      <SerpKeyField
         value={form.serpapi_api_key}
         onChange={v => setForm({ ...form, serpapi_api_key: v })}
         show={showSerp}
         onToggleShow={() => setShowSerp(v => !v)}
-        placeholder="Để trống nếu không dùng SerpAPI"
       />
 
       {/* Save */}
@@ -676,6 +747,35 @@ export default function SettingsPage() {
   const [tokenLimit, setTokenLimit] = useState('0');
   const [articleLimit, setArticleLimit] = useState('0');
 
+  // Đổi mật khẩu
+  const [isChangePwOpen, setIsChangePwOpen] = useState(false);
+  const [pwForm, setPwForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
+  const [pwSaving, setPwSaving] = useState(false);
+  const [pwError, setPwError] = useState('');
+  const [pwSuccess, setPwSuccess] = useState('');
+
+  const handleChangePw = async (e) => {
+    e.preventDefault();
+    setPwError(''); setPwSuccess('');
+    if (pwForm.newPassword !== pwForm.confirmPassword) {
+      return setPwError('Mật khẩu mới và xác nhận không khớp.');
+    }
+    setPwSaving(true);
+    try {
+      await apiClient.put('/api/auth/change-password', {
+        currentPassword: pwForm.currentPassword,
+        newPassword: pwForm.newPassword,
+      });
+      setPwSuccess('Đổi mật khẩu thành công!');
+      setPwForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+      setTimeout(() => { setIsChangePwOpen(false); setPwSuccess(''); }, 2000);
+    } catch (err) {
+      setPwError(err.response?.data?.error || 'Lỗi đổi mật khẩu.');
+    } finally {
+      setPwSaving(false);
+    }
+  };
+
   const fetchSettings = useCallback(async () => {
     setLoading(true);
     setError('');
@@ -732,11 +832,18 @@ export default function SettingsPage() {
             <h1 className="page-title">Cài Đặt</h1>
             <p className="page-subtitle">Quản lý giới hạn tài nguyên và cấu hình API keys</p>
           </div>
-          {activeTab === 'limits' && (
-            <button onClick={fetchSettings} className="btn btn-outline" disabled={loading}>
-              <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Làm mới
-            </button>
-          )}
+          <div style={{ display: 'flex', gap: 8 }}>
+            {user && (
+              <button onClick={() => setIsChangePwOpen(true)} className="btn btn-outline" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <KeyRound size={14} /> Đổi mật khẩu
+              </button>
+            )}
+            {activeTab === 'limits' && (
+              <button onClick={fetchSettings} className="btn btn-outline" disabled={loading}>
+                <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Làm mới
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Tabs */}
@@ -841,6 +948,72 @@ export default function SettingsPage() {
         {activeTab === 'calculator' && <CostCalculatorTab />}
 
       </div>
+
+      {/* MODAL ĐỔI MẬT KHẨU */}
+      {isChangePwOpen && (
+        <div className="modal-overlay" onClick={() => !pwSaving && setIsChangePwOpen(false)}>
+          <div className="modal-dialog" style={{ maxWidth: 420 }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <div className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <KeyRound size={18} color="var(--accent)" /> Đổi Mật Khẩu
+              </div>
+              <button className="close-btn" disabled={pwSaving} onClick={() => setIsChangePwOpen(false)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <form onSubmit={handleChangePw}>
+                {pwError && (
+                  <div className="info-box info-box-red" style={{ marginBottom: 14 }}>
+                    <AlertTriangle size={14} /><span>{pwError}</span>
+                  </div>
+                )}
+                {pwSuccess && (
+                  <div className="info-box info-box-blue" style={{ marginBottom: 14 }}>
+                    <CheckCircle2 size={14} /><span>{pwSuccess}</span>
+                  </div>
+                )}
+                <div className="input-group">
+                  <label className="input-label">Mật khẩu hiện tại</label>
+                  <input
+                    type="password" className="input-field"
+                    autoComplete="current-password"
+                    value={pwForm.currentPassword}
+                    onChange={e => setPwForm(f => ({ ...f, currentPassword: e.target.value }))}
+                    disabled={pwSaving} required autoFocus
+                  />
+                </div>
+                <div className="input-group">
+                  <label className="input-label">Mật khẩu mới</label>
+                  <input
+                    type="password" className="input-field"
+                    autoComplete="new-password"
+                    value={pwForm.newPassword}
+                    onChange={e => setPwForm(f => ({ ...f, newPassword: e.target.value }))}
+                    disabled={pwSaving} required minLength={6}
+                  />
+                </div>
+                <div className="input-group">
+                  <label className="input-label">Xác nhận mật khẩu mới</label>
+                  <input
+                    type="password" className="input-field"
+                    autoComplete="new-password"
+                    value={pwForm.confirmPassword}
+                    onChange={e => setPwForm(f => ({ ...f, confirmPassword: e.target.value }))}
+                    disabled={pwSaving} required
+                  />
+                </div>
+                <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                  <button type="button" className="btn btn-outline" onClick={() => setIsChangePwOpen(false)} disabled={pwSaving}>Hủy</button>
+                  <button type="submit" className="btn btn-primary" disabled={pwSaving}>
+                    {pwSaving
+                      ? <><Loader2 className="animate-spin" size={15} /> Đang lưu...</>
+                      : <><KeyRound size={15} /> Đổi mật khẩu</>}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

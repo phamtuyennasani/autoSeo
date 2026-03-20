@@ -6,7 +6,7 @@ import {
   Search, PenTool, Sparkles, X, Loader2, Trash2, Eye, Calendar,
   ChevronLeft, Plus, Building2, BarChart2, FileText, Hash, RefreshCw,
   CheckCircle2, PlayCircle, Clock, Layers, Tag, AlignLeft, ListOrdered, XCircle,
-  Users as UsersIcon, Copy, Check,
+  Users as UsersIcon, Copy, Check, Edit3, ChevronRight, Zap,
 } from 'lucide-react';
 import ArticleWriteModal from '../components/ArticleWriteModal';
 import { useToken } from '../context/TokenContext';
@@ -49,8 +49,11 @@ const Keywords = () => {
   const [isWritingAll, setIsWritingAll] = useState(false);
   const [writeAllProgress, setWriteAllProgress] = useState({ current: 0, total: 0 });
   const [batchStatus, setBatchStatus] = useState('');
-  const [hasPendingBatch, setHasPendingBatch] = useState(false);  // có job đang pending trong DB không?
+  const [hasPendingBatch, setHasPendingBatch] = useState(false);  // có job đang pending/scheduled trong DB không?
   const [pendingBatchJob, setPendingBatchJob] = useState(null);   // job object nếu có
+  const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
+  const [batchModalScheduleEnabled, setBatchModalScheduleEnabled] = useState(false);
+  const [batchModalTime, setBatchModalTime] = useState('');
 
   // Add keyword modal
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -68,6 +71,23 @@ const Keywords = () => {
   const [viewingArticle, setViewingArticle] = useState(null);
   const [copySuccess, setCopySuccess] = useState(null);
 
+  // Edit article modal
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingArticle, setEditingArticle] = useState(null);
+  const [editForm, setEditForm] = useState({ content: '', seo_title: '', seo_description: '' });
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+
+  // Version history modal
+  const [isVersionModalOpen, setIsVersionModalOpen] = useState(false);
+  const [articleVersions, setArticleVersions] = useState([]);
+  const [loadingVersions, setLoadingVersions] = useState(false);
+  const [restoringVersionId, setRestoringVersionId] = useState(null);
+
+  // Pagination (keyword list)
+  const [kwPage, setKwPage] = useState(1);
+  const [kwTotal, setKwTotal] = useState(0);
+  const KW_PAGE_SIZE = 20;
+
   // Write Queue (SSE background)
   const [writeQueueJob, setWriteQueueJob] = useState(null); // { jobId, status, total, done, succeeded, failed, currentTitle, results }
   const sseRef = useRef(null); // giữ EventSource để có thể đóng khi cần
@@ -82,19 +102,20 @@ const Keywords = () => {
 
   useEffect(() => { fetchData(); }, []);
 
-  const fetchData = async (userId = filterUserId) => {
+  const fetchData = async (userId = filterUserId, page = kwPage) => {
     try {
-      const params = {};
+      const params = { page, limit: KW_PAGE_SIZE };
       if (showMultiUser && userId) params.userId = userId;
-      // Companies: nếu filter user thì lấy công ty của user đó
       const comParams = (showMultiUser && userId) ? { userId } : {};
       const [kwRes, comRes] = await Promise.all([
         apiClient.get(API_KEYWORD, { params }),
         apiClient.get(API_COMPANY, { params: comParams })
       ]);
-      setKeywords(kwRes.data);
+      const kwPayload = kwRes.data;
+      setKeywords(kwPayload.data ?? kwPayload);
+      setKwTotal(kwPayload.pagination?.total ?? (kwPayload.data ?? kwPayload).length);
       setCompanies(comRes.data);
-      setFilterCompanies(comRes.data); // cập nhật dropdown công ty
+      setFilterCompanies(comRes.data);
       if (comRes.data.length > 0) setSelectedCompanyId(comRes.data[0].id);
     } catch (error) {
       console.error(error);
@@ -108,7 +129,8 @@ const Keywords = () => {
     try {
       const params = companyId ? { keyword, companyId } : { keyword };
       const res = await apiClient.get(API_ARTICLE, { params });
-      setArticlesOfKeyword(res.data);
+      const payload = res.data;
+      setArticlesOfKeyword(payload.data ?? payload);
     } catch (err) {
       console.error(err);
     } finally {
@@ -135,7 +157,7 @@ const Keywords = () => {
       const res = await apiClient.get(API_BATCH_JOBS, { params: { keyword } });
       // Lấy job mới nhất có status = pending (API trả về { jobs: [], lastCheck })
       const jobs = Array.isArray(res.data) ? res.data : (res.data.jobs || []);
-      const pendingJob = jobs.find(j => j.status === 'pending') || null;
+      const pendingJob = jobs.find(j => j.status === 'pending' || j.status === 'scheduled') || null;
       setPendingBatchJob(pendingJob);
       setHasPendingBatch(!!pendingJob);
     } catch (err) {
@@ -330,8 +352,70 @@ const Keywords = () => {
     setIsWriteModalOpen(true);
   };
 
-  // Gửi Gemini Batch Job → trả về ngay, user xem kết quả ở trang Batch Jobs
-  const handleWriteAll = async () => {
+  // Mở modal chỉnh sửa bài viết
+  const handleEditArticle = (article) => {
+    setEditingArticle(article);
+    setEditForm({
+      content: article.content || '',
+      seo_title: article.seo_title || '',
+      seo_description: article.seo_description || '',
+    });
+    setIsEditModalOpen(true);
+  };
+
+  const handleSaveEdit = async (e) => {
+    e.preventDefault();
+    if (!editingArticle) return;
+    setIsSavingEdit(true);
+    try {
+      const res = await apiClient.put(`${API_ARTICLE}/${editingArticle.id}`, editForm);
+      setArticlesOfKeyword(prev => prev.map(a => a.id === editingArticle.id ? res.data : a));
+      if (viewingArticle?.id === editingArticle.id) setViewingArticle(res.data);
+      setIsEditModalOpen(false);
+      setEditingArticle(null);
+    } catch (err) {
+      alert('Lưu thất bại: ' + (err.response?.data?.error || err.message));
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
+
+  const handleOpenVersions = async (article) => {
+    setIsVersionModalOpen(true);
+    setArticleVersions([]);
+    setLoadingVersions(true);
+    try {
+      const res = await apiClient.get(`${API_ARTICLE}/${article.id}/versions`);
+      setArticleVersions(res.data);
+    } catch (err) {
+      alert('Không tải được lịch sử: ' + (err.response?.data?.error || err.message));
+    } finally {
+      setLoadingVersions(false);
+    }
+  };
+
+  const handleRestoreVersion = async (versionId) => {
+    if (!viewingArticle) return;
+    if (!window.confirm('Khôi phục phiên bản này? Bản hiện tại sẽ được lưu lại trong lịch sử.')) return;
+    setRestoringVersionId(versionId);
+    try {
+      // Optimistic: xóa ngay khỏi UI trước khi chờ server
+      setArticleVersions(prev => prev.filter(v => v.id !== versionId));
+      const res = await apiClient.post(`${API_ARTICLE}/${viewingArticle.id}/restore/${versionId}`);
+      setViewingArticle(res.data);
+      setArticlesOfKeyword(prev => prev.map(a => a.id === res.data.id ? res.data : a));
+      // Reload versions từ server để đồng bộ
+      const vRes = await apiClient.get(`${API_ARTICLE}/${res.data.id}/versions`);
+      setArticleVersions(vRes.data);
+    } catch (err) {
+      alert('Khôi phục thất bại: ' + (err.response?.data?.error || err.message));
+    } finally {
+      setRestoringVersionId(null);
+    }
+  };
+
+  // Gửi Gemini Batch Job — nhận scheduledAt (ISO string) nếu hẹn giờ, null nếu gửi ngay
+  const handleWriteAll = async (scheduledAt = null) => {
     if (!selectedKeyword || isWritingAll) return;
     const unwrittenTitles = (selectedKeyword.titles || []).filter(
       t => !articlesOfKeyword.find(a => a.title === t)
@@ -341,19 +425,15 @@ const Keywords = () => {
       return;
     }
 
+    setIsBatchModalOpen(false);
     setIsWritingAll(true);
-    setBatchStatus('Đang gửi job lên Gemini Batch API...');
+    setBatchStatus(scheduledAt ? 'Đang hẹn giờ...' : 'Đang gửi job lên Gemini Batch API...');
     try {
-      const res = await apiClient.post(API_BATCH_JOBS, {
-        keyword: selectedKeyword.keyword,
-        titles: unwrittenTitles,
-        companyId: selectedKeyword.companyId,
-      });
-      // Cập nhật state từ kết quả trả về
+      const body = { keyword: selectedKeyword.keyword, titles: unwrittenTitles, companyId: selectedKeyword.companyId };
+      if (scheduledAt) body.scheduledAt = scheduledAt;
+      const res = await apiClient.post(API_BATCH_JOBS, body);
       setPendingBatchJob(res.data);
       setHasPendingBatch(true);
-      alert(`✅ Batch job đã được gửi!\n\nGemini sẽ xử lý ${res.data.total} bài viết.\nHãy kiểm tra trang Batch Jobs để theo dõi kết quả.`);
-      navigate('/batch-jobs');
     } catch (err) {
       console.error('Lỗi gửi batch job:', err.message);
       const data = err.response?.data;
@@ -462,7 +542,7 @@ const Keywords = () => {
       </button>
     );
 
-    return (
+    return (<>
       <div>
         <div className="page-header">
           <button
@@ -479,21 +559,37 @@ const Keywords = () => {
                 <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{formatDate(viewingArticle.createdAt)}</span>
               </div>
             </div>
-            <button
-              onClick={async () => {
-                if (!window.confirm('Xóa bài viết này và viết lại?')) return;
-                await apiClient.delete(`${API_ARTICLE}/${viewingArticle.id}`);
-                setViewingArticle(null);
-                fetchArticlesForKeyword(selectedKeyword.keyword, selectedKeyword.companyId);
-                fetchData();
-                setWriteModalTitle(viewingArticle.title);
-                setIsWriteModalOpen(true);
-              }}
-              className="btn btn-outline"
-              style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--warning)', borderColor: 'rgba(245,158,11,0.3)' }}
-            >
-              <RefreshCw size={15} /> Viết Lại
-            </button>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button
+                onClick={() => handleEditArticle(viewingArticle)}
+                className="btn btn-outline"
+                style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                <Edit3 size={15} /> Chỉnh Sửa
+              </button>
+              <button
+                onClick={() => handleOpenVersions(viewingArticle)}
+                className="btn btn-outline"
+                style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                <Clock size={15} /> Lịch Sử
+              </button>
+              <button
+                onClick={async () => {
+                  if (!window.confirm('Xóa bài viết này và viết lại?')) return;
+                  await apiClient.delete(`${API_ARTICLE}/${viewingArticle.id}`);
+                  setViewingArticle(null);
+                  fetchArticlesForKeyword(selectedKeyword.keyword, selectedKeyword.companyId);
+                  fetchData();
+                  setWriteModalTitle(viewingArticle.title);
+                  setIsWriteModalOpen(true);
+                }}
+                className="btn btn-outline"
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--warning)', borderColor: 'rgba(245,158,11,0.3)' }}
+              >
+                <RefreshCw size={15} /> Viết Lại
+              </button>
+            </div>
           </div>
         </div>
         {/* SEO META */}
@@ -550,6 +646,59 @@ const Keywords = () => {
           />
         </div>
       </div>
+
+      {/* VERSION HISTORY MODAL — trong cùng return block của viewingArticle */}
+      {isVersionModalOpen && (
+        <div className="modal-overlay" onClick={() => setIsVersionModalOpen(false)}>
+          <div className="modal-dialog" style={{ maxWidth: 540 }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <div className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Clock size={18} color="var(--accent)" /> Lịch Sử Phiên Bản
+              </div>
+              <button className="close-btn" onClick={() => setIsVersionModalOpen(false)}>✕</button>
+            </div>
+            <div className="modal-body">
+              {loadingVersions ? (
+                <div style={{ textAlign: 'center', padding: '32px', color: 'var(--text-secondary)' }}>
+                  <Loader2 className="animate-spin" size={22} style={{ margin: '0 auto 8px' }} />
+                  Đang tải lịch sử...
+                </div>
+              ) : articleVersions.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '32px', color: 'var(--text-muted)' }}>
+                  Chưa có phiên bản nào được lưu.<br />
+                  <span style={{ fontSize: 12 }}>Lịch sử được lưu tự động khi bạn chỉnh sửa bài.</span>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {articleVersions.map((v, i) => (
+                    <div key={v.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', background: 'var(--bg-panel)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)' }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {v.seo_title || '(không có SEO title)'}
+                        </div>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3 }}>
+                          Phiên bản {articleVersions.length - i} · {formatDate(v.savedAt)}
+                        </div>
+                      </div>
+                      <button
+                        className="btn btn-sm btn-outline"
+                        disabled={restoringVersionId === v.id}
+                        onClick={() => handleRestoreVersion(v.id)}
+                        style={{ flexShrink: 0, gap: 5 }}
+                      >
+                        {restoringVersionId === v.id
+                          ? <><Loader2 className="animate-spin" size={12} /> Đang khôi phục...</>
+                          : <><RefreshCw size={12} /> Khôi phục</>}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
     );
   }
 
@@ -588,8 +737,8 @@ const Keywords = () => {
 
             {/* NÚT VIẾT TẤT CẢ */}
             {unwrittenCount > 0 && !hasPendingBatch && !isWritingAll && !writeQueueJob && (
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button onClick={handleWriteAll} className="btn btn-primary" style={{ gap: '6px' }}>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <button onClick={() => setIsBatchModalOpen(true)} className="btn btn-primary" style={{ gap: '6px' }}>
                   <Layers size={16} /> Batch API ({unwrittenCount} bài)
                 </button>
                 <button onClick={handleWriteAllQueue} className="btn btn-outline" style={{ gap: '6px', borderColor: 'var(--accent)', color: 'var(--accent)' }}>
@@ -597,17 +746,32 @@ const Keywords = () => {
                 </button>
               </div>
             )}
-            {hasPendingBatch && unwrittenCount > 0 && (
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '7px 12px', background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.25)', borderRadius: 'var(--radius-md)', fontSize: '13px', fontWeight: '600', color: 'var(--success)' }}>
-                <CheckCircle2 size={14} />
+            {hasPendingBatch && (
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '7px 12px', background: pendingBatchJob?.status === 'scheduled' ? 'rgba(99,102,241,0.08)' : 'rgba(34,197,94,0.08)', border: `1px solid ${pendingBatchJob?.status === 'scheduled' ? 'rgba(99,102,241,0.25)' : 'rgba(34,197,94,0.25)'}`, borderRadius: 'var(--radius-md)', fontSize: '13px', fontWeight: '600', color: pendingBatchJob?.status === 'scheduled' ? 'var(--accent)' : 'var(--success)' }}>
+                {pendingBatchJob?.status === 'scheduled' ? <Clock size={14} /> : <CheckCircle2 size={14} />}
                 <span>
-                  Đã tạo Batch Job{pendingBatchJob?.gemini_state ? ` (${pendingBatchJob.gemini_state.replace('JOB_STATE_', '')})` : ''}
+                  {pendingBatchJob?.status === 'scheduled'
+                    ? `Batch hẹn lúc ${pendingBatchJob.scheduled_at ? new Date(pendingBatchJob.scheduled_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : ''}`
+                    : `Đã tạo Batch Job${pendingBatchJob?.gemini_state ? ` (${pendingBatchJob.gemini_state.replace('JOB_STATE_', '')})` : ''}`}
                 </span>
                 <button
                   onClick={() => navigate('/batch-jobs')}
-                  style={{ marginLeft: 4, fontSize: 11, fontWeight: 600, color: 'var(--accent)', background: 'var(--accent-subtle)', border: 'none', borderRadius: 10, padding: '2px 8px', cursor: 'pointer' }}
+                  style={{ fontSize: 11, fontWeight: 600, color: 'var(--accent)', background: 'var(--accent-subtle)', border: 'none', borderRadius: 10, padding: '2px 8px', cursor: 'pointer' }}
                 >
-                  Xem job →
+                  Xem →
+                </button>
+                <button
+                  onClick={async () => {
+                    if (pendingBatchJob?.id) {
+                      try { await apiClient.delete(`${API_BATCH_JOBS}/${pendingBatchJob.id}`); } catch (e) { /* ignore */ }
+                    }
+                    setHasPendingBatch(false);
+                    setPendingBatchJob(null);
+                  }}
+                  title="Xóa batch job này và gửi lại"
+                  style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 20, height: 20, borderRadius: '50%', background: 'none', border: '1px solid currentColor', cursor: 'pointer', opacity: 0.5, padding: 0, color: 'inherit' }}
+                >
+                  <X size={11} />
                 </button>
               </div>
             )}
@@ -755,6 +919,13 @@ const Keywords = () => {
                           <Eye size={13} /> Xem bài
                         </button>
                         <button
+                          onClick={() => handleEditArticle(article)}
+                          className="btn btn-sm btn-outline"
+                          style={{ gap: '5px' }}
+                        >
+                          <Edit3 size={13} /> Sửa
+                        </button>
+                        <button
                           onClick={() => {
                             setViewingArticle(null);
                             handleRewrite(article);
@@ -820,6 +991,229 @@ const Keywords = () => {
             onSuccess={handleArticleWritten}
           />
         )}
+
+        {/* EDIT ARTICLE MODAL */}
+        {isEditModalOpen && editingArticle && (
+          <div className="modal-overlay" onClick={() => !isSavingEdit && setIsEditModalOpen(false)}>
+            <div className="modal-dialog" style={{ maxWidth: 740 }} onClick={e => e.stopPropagation()}>
+              <div className="modal-header">
+                <div className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Edit3 size={18} color="var(--accent)" /> Chỉnh Sửa Bài Viết
+                </div>
+                <button className="close-btn" disabled={isSavingEdit} onClick={() => setIsEditModalOpen(false)}>✕</button>
+              </div>
+              <div className="modal-body">
+                <form onSubmit={handleSaveEdit}>
+                  <div className="input-group">
+                    <label className="input-label">SEO Title</label>
+                    <input
+                      type="text" className="input-field"
+                      value={editForm.seo_title}
+                      onChange={e => setEditForm(f => ({ ...f, seo_title: e.target.value }))}
+                      disabled={isSavingEdit}
+                    />
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                      {editForm.seo_title.length} ký tự (khuyến nghị ≤ 60)
+                    </div>
+                  </div>
+                  <div className="input-group">
+                    <label className="input-label">Meta Description</label>
+                    <textarea
+                      className="input-field" rows={3}
+                      value={editForm.seo_description}
+                      onChange={e => setEditForm(f => ({ ...f, seo_description: e.target.value }))}
+                      disabled={isSavingEdit}
+                    />
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                      {editForm.seo_description.length} ký tự (khuyến nghị ≤ 160)
+                    </div>
+                  </div>
+                  <div className="input-group">
+                    <label className="input-label">Nội Dung (Markdown)</label>
+                    <textarea
+                      className="input-field"
+                      rows={18}
+                      value={editForm.content}
+                      onChange={e => setEditForm(f => ({ ...f, content: e.target.value }))}
+                      disabled={isSavingEdit}
+                      style={{ fontFamily: "'Fira Code','Consolas',monospace", fontSize: 13, resize: 'vertical' }}
+                    />
+                  </div>
+                  <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                    <button type="button" className="btn btn-outline" onClick={() => setIsEditModalOpen(false)} disabled={isSavingEdit}>Hủy</button>
+                    <button type="submit" className="btn btn-primary" disabled={isSavingEdit}>
+                      {isSavingEdit
+                        ? <><Loader2 className="animate-spin" size={15} /> Đang lưu...</>
+                        : <><CheckCircle2 size={15} /> Lưu bài</>}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* BATCH MODAL */}
+        {isBatchModalOpen && (() => {
+          const unwrittenTitles = (selectedKeyword.titles || []).filter(
+            t => !articlesOfKeyword.find(a => a.title === t)
+          );
+          const computeScheduledAt = () => {
+            if (!batchModalTime) return null;
+            const [hh, mm] = batchModalTime.split(':').map(Number);
+            const d = new Date();
+            d.setSeconds(0, 0);
+            d.setHours(hh, mm);
+            if (d <= new Date()) d.setDate(d.getDate() + 1);
+            return d;
+          };
+          const scheduledDate = batchModalScheduleEnabled ? computeScheduledAt() : null;
+
+          return (
+            <div className="modal-overlay" onClick={() => setIsBatchModalOpen(false)}>
+              <div className="modal-dialog" style={{ maxWidth: 520, padding: 0, overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
+
+                {/* Accent top bar */}
+                <div style={{ height: 4, background: 'linear-gradient(90deg, var(--accent), var(--accent-hover, var(--accent)))' }} />
+
+                {/* Header */}
+                <div className="modal-header" style={{ padding: '18px 22px 14px' }}>
+                  <div>
+                    <div className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Layers size={18} color="var(--accent)" /> Gửi Batch API
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 5, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <span style={{ background: 'var(--accent-subtle)', color: 'var(--accent)', padding: '2px 8px', borderRadius: 20, fontWeight: 600, fontSize: 11 }}>
+                        {selectedKeyword.keyword}
+                      </span>
+                      <span>·</span>
+                      <span><strong style={{ color: 'var(--success)' }}>{unwrittenTitles.length}</strong> bài sẽ được gửi</span>
+                      <span>·</span>
+                      <span style={{ color: 'var(--warning)', fontWeight: 600 }}>⚡ Tiết kiệm 50% chi phí</span>
+                    </div>
+                  </div>
+                  <button className="close-btn" onClick={() => setIsBatchModalOpen(false)}>✕</button>
+                </div>
+
+                <div className="modal-body" style={{ padding: '0 22px 18px' }}>
+
+                  {/* Article list */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 5, marginBottom: 10,marginTop:10, paddingRight: 2 }}>
+                    {unwrittenTitles.map((t, i) => (
+                      <div key={i} style={{
+                        fontSize: 11.5, color: 'var(--text-secondary)', padding: '5px 8px',
+                        background: 'var(--bg-page)', borderRadius: 'var(--radius-sm)',
+                        border: '1px solid var(--border)', display: 'flex', gap: 6, alignItems: 'flex-start',
+                      }}>
+                        <span style={{ color: 'var(--text-muted)', fontWeight: 700, fontSize: 10, flexShrink: 0, marginTop: 1 }}>{i + 1}</span>
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Mode selector */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+
+                    {/* Gửi ngay */}
+                    <label style={{
+                      display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer',
+                      padding: '12px 16px', borderRadius: 'var(--radius-md)',
+                      border: `2px solid ${!batchModalScheduleEnabled ? 'var(--accent)' : 'var(--border)'}`,
+                      background: !batchModalScheduleEnabled ? 'var(--accent-subtle)' : 'var(--bg-panel)',
+                    }}>
+                      <input type="radio" name="batchMode" checked={!batchModalScheduleEnabled}
+                        onChange={() => setBatchModalScheduleEnabled(false)} style={{ display: 'none' }} />
+                      <div style={{
+                        width: 38, height: 38, borderRadius: '50%', flexShrink: 0,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        background: !batchModalScheduleEnabled ? 'var(--accent)' : 'var(--bg-page)',
+                        border: `1px solid ${!batchModalScheduleEnabled ? 'var(--accent)' : 'var(--border)'}`,
+                      }}>
+                        <Zap size={16} color={!batchModalScheduleEnabled ? '#fff' : 'var(--text-muted)'} />
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontWeight: 700, fontSize: 14, color: !batchModalScheduleEnabled ? 'var(--accent)' : 'var(--text-primary)' }}>Gửi ngay</div>
+                        <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>Submit lên Gemini Batch API ngay lập tức</div>
+                      </div>
+                      <div style={{
+                        width: 18, height: 18, borderRadius: '50%', flexShrink: 0,
+                        border: `2px solid ${!batchModalScheduleEnabled ? 'var(--accent)' : 'var(--border)'}`,
+                        background: !batchModalScheduleEnabled ? 'var(--accent)' : 'transparent',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}>
+                        {!batchModalScheduleEnabled && <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#fff' }} />}
+                      </div>
+                    </label>
+
+                    {/* Hẹn giờ */}
+                    <label style={{
+                      display: 'flex', alignItems: 'flex-start', gap: 12, cursor: 'pointer',
+                      padding: '12px 16px', borderRadius: 'var(--radius-md)',
+                      border: `2px solid ${batchModalScheduleEnabled ? 'var(--accent)' : 'var(--border)'}`,
+                      background: batchModalScheduleEnabled ? 'var(--accent-subtle)' : 'var(--bg-panel)',
+                    }}>
+                      <input type="radio" name="batchMode" checked={batchModalScheduleEnabled}
+                        onChange={() => setBatchModalScheduleEnabled(true)} style={{ display: 'none' }} />
+                      <div style={{
+                        width: 38, height: 38, borderRadius: '50%', flexShrink: 0,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        background: batchModalScheduleEnabled ? 'var(--accent)' : 'var(--bg-page)',
+                        border: `1px solid ${batchModalScheduleEnabled ? 'var(--accent)' : 'var(--border)'}`,
+                      }}>
+                        <Clock size={16} color={batchModalScheduleEnabled ? '#fff' : 'var(--text-muted)'} />
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontWeight: 700, fontSize: 14, color: batchModalScheduleEnabled ? 'var(--accent)' : 'var(--text-primary)' }}>Hẹn giờ gửi</div>
+                        <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>Lưu lại, tự động submit đúng giờ đã chọn</div>
+                        {batchModalScheduleEnabled && (
+                          <div style={{ marginTop: 12 }}>
+                            <input
+                              type="time"
+                              value={batchModalTime}
+                              onChange={e => setBatchModalTime(e.target.value)}
+                              className="input-field"
+                              style={{ width: 140, padding: '8px 12px', fontSize: 16, fontWeight: 700, letterSpacing: 1 }}
+                              autoFocus
+                            />
+                            {scheduledDate ? (
+                              <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-secondary)' }}>
+                                <CheckCircle2 size={13} color="var(--success)" />
+                                <span>Sẽ gửi vào <strong style={{ color: 'var(--accent)' }}>{scheduledDate.toLocaleString('vi-VN', { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</strong></span>
+                              </div>
+                            ) : (
+                              <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-muted)' }}>Chọn giờ để xem lịch hẹn</div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      <div style={{
+                        width: 18, height: 18, borderRadius: '50%', flexShrink: 0, marginTop: 4,
+                        border: `2px solid ${batchModalScheduleEnabled ? 'var(--accent)' : 'var(--border)'}`,
+                        background: batchModalScheduleEnabled ? 'var(--accent)' : 'transparent',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}>
+                        {batchModalScheduleEnabled && <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#fff' }} />}
+                      </div>
+                    </label>
+                  </div>
+                </div>
+
+                <div className="modal-footer" style={{ padding: '14px 22px',display: 'flex', justifyContent: 'flex-end', gap: 10, background: 'var(--bg-panel)' }}>
+                  <button className="btn btn-outline" onClick={() => setIsBatchModalOpen(false)}>Hủy</button>
+                  <button
+                    className="btn btn-primary"
+                    style={{ gap: 7, minWidth: 150 }}
+                    disabled={batchModalScheduleEnabled && !batchModalTime}
+                    onClick={() => handleWriteAll(scheduledDate ? scheduledDate.toISOString() : null)}
+                  >
+                    {batchModalScheduleEnabled ? <Clock size={14} /> : <Zap size={14} />}
+                    {batchModalScheduleEnabled && batchModalTime ? `Hẹn lúc ${batchModalTime}` : 'Gửi ngay'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </div>
     );
   }
@@ -963,7 +1357,7 @@ const Keywords = () => {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div>
               <div className="stat-card-label">Tổng Từ Khóa</div>
-              <div className="stat-card-value">{keywords.length}</div>
+              <div className="stat-card-value">{kwTotal || keywords.length}</div>
             </div>
             <div className="stat-card-icon" style={{ background: 'var(--accent-subtle)' }}>
               <Search size={18} color="var(--accent)" />
@@ -1095,6 +1489,77 @@ const Keywords = () => {
           </div>
         )}
 
+      {/* PAGINATION */}
+      {kwTotal > KW_PAGE_SIZE && (
+        <KwPagination
+          page={kwPage}
+          total={kwTotal}
+          pageSize={KW_PAGE_SIZE}
+          onChange={(p) => { setKwPage(p); fetchData(filterUserId, p); }}
+        />
+      )}
+
+      {/* EDIT ARTICLE MODAL */}
+      {isEditModalOpen && editingArticle && (
+        <div className="modal-overlay" onClick={() => !isSavingEdit && setIsEditModalOpen(false)}>
+          <div className="modal-dialog" style={{ maxWidth: 740 }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <div className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Edit3 size={18} color="var(--accent)" /> Chỉnh Sửa Bài Viết
+              </div>
+              <button className="close-btn" disabled={isSavingEdit} onClick={() => setIsEditModalOpen(false)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <form onSubmit={handleSaveEdit}>
+                <div className="input-group">
+                  <label className="input-label">SEO Title</label>
+                  <input
+                    type="text" className="input-field"
+                    value={editForm.seo_title}
+                    onChange={e => setEditForm(f => ({ ...f, seo_title: e.target.value }))}
+                    disabled={isSavingEdit}
+                  />
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                    {editForm.seo_title.length} ký tự (khuyến nghị ≤ 60)
+                  </div>
+                </div>
+                <div className="input-group">
+                  <label className="input-label">Meta Description</label>
+                  <textarea
+                    className="input-field" rows={3}
+                    value={editForm.seo_description}
+                    onChange={e => setEditForm(f => ({ ...f, seo_description: e.target.value }))}
+                    disabled={isSavingEdit}
+                  />
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                    {editForm.seo_description.length} ký tự (khuyến nghị ≤ 160)
+                  </div>
+                </div>
+                <div className="input-group">
+                  <label className="input-label">Nội Dung (Markdown)</label>
+                  <textarea
+                    className="input-field"
+                    rows={18}
+                    value={editForm.content}
+                    onChange={e => setEditForm(f => ({ ...f, content: e.target.value }))}
+                    disabled={isSavingEdit}
+                    style={{ fontFamily: "'Fira Code','Consolas',monospace", fontSize: 13, resize: 'vertical' }}
+                  />
+                </div>
+                <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                  <button type="button" className="btn btn-outline" onClick={() => setIsEditModalOpen(false)} disabled={isSavingEdit}>Hủy</button>
+                  <button type="submit" className="btn btn-primary" disabled={isSavingEdit}>
+                    {isSavingEdit
+                      ? <><Loader2 className="animate-spin" size={15} /> Đang lưu...</>
+                      : <><CheckCircle2 size={15} /> Lưu bài</>}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* MODAL THÊM TỪ KHÓA */}
       {isAddModalOpen && (
         <div className="modal-overlay" onClick={() => !isGenerating && setIsAddModalOpen(false)}>
@@ -1199,5 +1664,33 @@ const Keywords = () => {
     </div>
   );
 };
+
+function KwPagination({ page, total, pageSize, onChange }) {
+  const totalPages = Math.ceil(total / pageSize);
+  if (totalPages <= 1) return null;
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center', padding: '14px 0' }}>
+      <button
+        className="btn btn-outline btn-sm"
+        disabled={page <= 1}
+        onClick={() => onChange(page - 1)}
+        style={{ display: 'flex', alignItems: 'center', gap: 4 }}
+      >
+        <ChevronLeft size={14} /> Trước
+      </button>
+      <span style={{ fontSize: 13, color: 'var(--text-secondary)', padding: '0 8px' }}>
+        Trang {page} / {totalPages} · {total} từ khóa
+      </span>
+      <button
+        className="btn btn-outline btn-sm"
+        disabled={page >= totalPages}
+        onClick={() => onChange(page + 1)}
+        style={{ display: 'flex', alignItems: 'center', gap: 4 }}
+      >
+        Tiếp <ChevronRight size={14} />
+      </button>
+    </div>
+  );
+}
 
 export default Keywords;

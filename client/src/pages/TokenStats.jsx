@@ -507,9 +507,9 @@ const TokenStats = () => {
                               display: 'flex', alignItems: 'center', justifyContent: 'center',
                               fontSize: '11px', fontWeight: 700, color: 'var(--accent)',
                             }}>
-                              {u.username.charAt(0).toUpperCase()}
+                              {(u.fullname || u.username).charAt(0).toUpperCase()}
                             </div>
-                            {u.username}
+                            {u.fullname || u.username}
                           </div>
                         </td>
                         <td style={{ padding: '9px 10px' }}>

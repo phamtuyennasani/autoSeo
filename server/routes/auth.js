@@ -9,7 +9,7 @@
 const express = require('express');
 const router = express.Router();
 const { db } = require('../data/store');
-const { comparePassword, signToken } = require('../services/auth');
+const { comparePassword, signToken, hashPassword } = require('../services/auth');
 const authenticate = require('../middleware/authenticate');
 
 // POST /login
@@ -80,6 +80,36 @@ router.get('/me', authenticate, async (req, res) => {
     res.json(user);
   } catch (err) {
     console.error('[auth/me]', err.message);
+    res.status(500).json({ error: 'Lỗi server.' });
+  }
+});
+
+// PUT /change-password — Đổi mật khẩu (mọi user đã đăng nhập)
+router.put('/change-password', authenticate, async (req, res) => {
+  // Không hỗ trợ khi AUTH_ENABLED=false (không có user thật)
+  if (process.env.AUTH_ENABLED !== 'true') {
+    return res.status(400).json({ error: 'Chức năng này chỉ khả dụng khi bật xác thực.' });
+  }
+  const { currentPassword, newPassword } = req.body;
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({ error: 'Vui lòng nhập mật khẩu hiện tại và mật khẩu mới.' });
+  }
+  if (newPassword.length < 6) {
+    return res.status(400).json({ error: 'Mật khẩu mới phải có ít nhất 6 ký tự.' });
+  }
+  try {
+    const result = await db.execute({ sql: 'SELECT password_hash FROM users WHERE id = ?', args: [req.user.id] });
+    const user = result.rows[0];
+    if (!user) return res.status(404).json({ error: 'Không tìm thấy user.' });
+
+    const valid = await comparePassword(currentPassword, user.password_hash);
+    if (!valid) return res.status(400).json({ error: 'Mật khẩu hiện tại không đúng.' });
+
+    const newHash = await hashPassword(newPassword);
+    await db.execute({ sql: 'UPDATE users SET password_hash = ? WHERE id = ?', args: [newHash, req.user.id] });
+    res.json({ success: true, message: 'Đổi mật khẩu thành công.' });
+  } catch (err) {
+    console.error('[auth/change-password]', err.message);
     res.status(500).json({ error: 'Lỗi server.' });
   }
 });

@@ -41,11 +41,11 @@ router.get('/', async (req, res) => {
 // ─── PUT / ────────────────────────────────────────────────────────────────────
 router.put('/', requireAdmin, async (req, res) => {
   try {
-    const allowed = ['daily_token_limit', 'daily_article_limit'];
     const updatedAt = new Date().toISOString();
     const changes = {};
 
-    for (const key of allowed) {
+    // Numeric settings
+    for (const key of ['daily_token_limit', 'daily_article_limit']) {
       if (key in req.body) {
         const val = Math.max(0, parseInt(req.body[key], 10) || 0);
         await db.execute({
@@ -54,6 +54,20 @@ router.put('/', requireAdmin, async (req, res) => {
         });
         changes[key] = val;
       }
+    }
+
+    // Lịch chạy batch (HH:MM hoặc chuỗi rỗng để tắt)
+    if ('batch_schedule_time' in req.body) {
+      const val = String(req.body.batch_schedule_time || '').trim();
+      if (val && !/^\d{2}:\d{2}$/.test(val)) {
+        return res.status(400).json({ error: 'Định dạng giờ không hợp lệ. Dùng HH:MM (ví dụ: 02:00).' });
+      }
+      await db.execute({
+        sql: `INSERT INTO settings (key, value, label, updatedAt) VALUES ('batch_schedule_time', ?, 'Giờ chạy batch tự động (HH:MM, để trống = tắt)', ?)
+              ON CONFLICT(key) DO UPDATE SET value = excluded.value, updatedAt = excluded.updatedAt`,
+        args: [val, updatedAt],
+      });
+      changes.batch_schedule_time = val;
     }
 
     res.json({ success: true, updated: changes, updatedAt });

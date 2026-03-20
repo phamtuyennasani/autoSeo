@@ -12,8 +12,10 @@ function getKeys() {
  * Trả về string kết quả tìm kiếm, hoặc null nếu không có key / lỗi.
  */
 async function getSearchContext(keyword, serpApiKey) {
-  // Nếu có key riêng của user → dùng key đó, không dùng system key
-  const keys = serpApiKey ? [serpApiKey] : getKeys();
+  // Parse comma-separated keys: user keys first, then system keys as fallback
+  const keys = serpApiKey
+    ? serpApiKey.split(',').map(k => k.trim()).filter(Boolean)
+    : getKeys();
 
   if (keys.length === 0) {
     console.log('[SERP] Không có SERPAPI_API_KEY — AI sẽ tự sinh tiêu đề.');

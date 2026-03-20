@@ -140,7 +140,7 @@ router.get('/tokens', async (req, res) => {
     let users = [];
     if (isAdmin && authEnabled) {
       const usersResult = await db.execute({
-        sql: `SELECT u.id, u.username, u.role,
+        sql: `SELECT u.id, u.username, u.full_name, u.role,
                 COALESCE(SUM(tu.total_tokens), 0) AS total_tokens,
                 COALESCE(SUM(tu.input_tokens), 0) AS input_tokens,
                 COALESCE(SUM(tu.output_tokens), 0) AS output_tokens,
@@ -196,6 +196,7 @@ router.get('/tokens', async (req, res) => {
       })),
       users:   users.map(u => ({
         ...u,
+        fullname:      u.full_name || null,
         total_tokens:  Number(u.total_tokens),
         input_tokens:  Number(u.input_tokens),
         output_tokens: Number(u.output_tokens),

@@ -90,6 +90,16 @@ async function initDb() {
       completedAt TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS article_versions (
+      id TEXT PRIMARY KEY,
+      articleId TEXT NOT NULL,
+      content TEXT,
+      seo_title TEXT,
+      seo_description TEXT,
+      savedAt TEXT NOT NULL,
+      savedBy TEXT
+    );
+
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL,
@@ -125,7 +135,8 @@ async function initDb() {
     { table: 'companies',  col: 'industry',        ddl: 'ALTER TABLE companies ADD COLUMN industry TEXT' },
     { table: 'companies',  col: 'createdBy',       ddl: 'ALTER TABLE companies ADD COLUMN createdBy TEXT' },
     // batch_jobs
-    { table: 'batch_jobs', col: 'createdBy',       ddl: 'ALTER TABLE batch_jobs ADD COLUMN createdBy TEXT' },
+    { table: 'batch_jobs', col: 'createdBy',    ddl: 'ALTER TABLE batch_jobs ADD COLUMN createdBy TEXT' },
+    { table: 'batch_jobs', col: 'scheduled_at', ddl: 'ALTER TABLE batch_jobs ADD COLUMN scheduled_at TEXT' },
     // token_usage
     { table: 'token_usage', col: 'createdBy', ddl: 'ALTER TABLE token_usage ADD COLUMN createdBy TEXT' },
     { table: 'token_usage', col: 'model',     ddl: 'ALTER TABLE token_usage ADD COLUMN model TEXT' },
@@ -170,9 +181,11 @@ async function initDb() {
     { key: 'daily_token_limit',   value: '0',                              label: 'Giới hạn token/ngày (0 = không giới hạn)' },
     { key: 'daily_article_limit', value: '0',                              label: 'Giới hạn số bài viết/ngày (0 = không giới hạn)' },
     { key: 'last_batch_check',    value: '',                               label: 'Thời điểm check batch job gần nhất' },
-    { key: 'gemini_api_key',      value: process.env.GEMINI_API_KEY  || '', label: 'Gemini API Key' },
-    { key: 'gemini_model',        value: process.env.GEMINI_MODEL    || 'gemini-2.5-flash', label: 'Gemini Model' },
-    { key: 'serpapi_api_key',     value: process.env.SERPAPI_API_KEY || '', label: 'SerpAPI Key' },
+    { key: 'gemini_api_key',        value: process.env.GEMINI_API_KEY  || '', label: 'Gemini API Key' },
+    { key: 'gemini_model',          value: process.env.GEMINI_MODEL    || 'gemini-2.5-flash', label: 'Gemini Model' },
+    { key: 'serpapi_api_key',       value: process.env.SERPAPI_API_KEY || '', label: 'SerpAPI Key' },
+    { key: 'batch_schedule_time',   value: '', label: 'Giờ chạy batch tự động (HH:MM, để trống = tắt)' },
+    { key: 'batch_schedule_lastrun',value: '', label: 'Ngày chạy batch theo lịch lần cuối' },
   ];
   for (const s of seedSettings) {
     await db.execute({

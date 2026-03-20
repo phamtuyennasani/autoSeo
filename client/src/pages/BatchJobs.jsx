@@ -10,9 +10,10 @@ import { API } from '../config/api';
 const API_ENDPOINT = API.batchJobs;
 
 const STATUS_CONFIG = {
-  pending: { label: 'Đang xử lý',  icon: <Clock size={13} />,        color: 'var(--warning)', bg: 'var(--warning-subtle)' },
-  done:    { label: 'Hoàn thành',  icon: <CheckCircle2 size={13} />, color: 'var(--success)', bg: 'var(--success-subtle)' },
-  failed:  { label: 'Thất bại',    icon: <XCircle size={13} />,      color: 'var(--danger)',  bg: 'var(--danger-subtle)'  },
+  scheduled: { label: 'Hẹn giờ',    icon: <Clock size={13} />,        color: 'var(--accent)',  bg: 'var(--accent-subtle)'  },
+  pending:   { label: 'Đang xử lý', icon: <Clock size={13} />,        color: 'var(--warning)', bg: 'var(--warning-subtle)' },
+  done:      { label: 'Hoàn thành', icon: <CheckCircle2 size={13} />, color: 'var(--success)', bg: 'var(--success-subtle)' },
+  failed:    { label: 'Thất bại',   icon: <XCircle size={13} />,      color: 'var(--danger)',  bg: 'var(--danger-subtle)'  },
 };
 
 const GEMINI_STATE_LABEL = {
@@ -51,6 +52,7 @@ export default function BatchJobs() {
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState(null);
   const [checkingId, setCheckingId] = useState(null);
+  const [submittingId, setSubmittingId] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
   const [checkResult, setCheckResult] = useState({});
   const [triggering, setTriggering] = useState(false);
@@ -115,6 +117,19 @@ export default function BatchJobs() {
     }
   };
 
+  const handleSubmitNow = async (job) => {
+    if (!window.confirm('Gửi ngay batch job này lên Gemini?')) return;
+    setSubmittingId(job.id);
+    try {
+      await apiClient.post(`${API_ENDPOINT}/${job.id}/submit-now`);
+      fetchJobs();
+    } catch (err) {
+      alert('Lỗi: ' + (err.response?.data?.error || err.message));
+    } finally {
+      setSubmittingId(null);
+    }
+  };
+
   const handleDelete = async (id) => {
     if (!window.confirm('Xóa batch job này? Sau đó có thể gửi lại yêu cầu viết từ trang Từ Khóa.')) return;
     setDeletingId(id);
@@ -136,8 +151,9 @@ export default function BatchJobs() {
     });
   };
 
-  const pendingCount = jobs.filter(j => j.status === 'pending').length;
-  const doneCount    = jobs.filter(j => j.status === 'done').length;
+  const scheduledCount = jobs.filter(j => j.status === 'scheduled').length;
+  const pendingCount   = jobs.filter(j => j.status === 'pending').length;
+  const doneCount      = jobs.filter(j => j.status === 'done').length;
 
   return (
     <div className="page-content">
@@ -174,9 +190,10 @@ export default function BatchJobs() {
         {/* Stats bar */}
         <div style={{ display: 'flex', gap: 12, marginBottom: 20 }}>
           {[
-            { label: 'Tổng jobs',   value: jobs.length,  color: 'var(--accent)'   },
-            { label: 'Đang chờ',    value: pendingCount, color: 'var(--warning)'  },
-            { label: 'Hoàn thành',  value: doneCount,    color: 'var(--success)'  },
+            { label: 'Tổng jobs',  value: jobs.length,    color: 'var(--accent)'   },
+            { label: 'Hẹn giờ',   value: scheduledCount, color: 'var(--accent)'   },
+            { label: 'Đang chờ',  value: pendingCount,   color: 'var(--warning)'  },
+            { label: 'Hoàn thành', value: doneCount,      color: 'var(--success)'  },
           ].map(s => (
             <div key={s.label} className="panel" style={{ flex: 1, padding: '12px 16px', textAlign: 'center' }}>
               <div style={{ fontSize: 22, fontWeight: 800, color: s.color }}>{s.value}</div>
@@ -251,7 +268,7 @@ export default function BatchJobs() {
                         <span>{job.companyName || job.companyId}</span>
                         <span>{job.total} bài</span>
                         {job.status === 'done' && <span style={{ color: 'var(--success)' }}>✓ {job.succeeded} thành công</span>}
-                        {job.gemini_state && <span style={{ fontFamily: 'monospace', opacity: 0.7 }}>{GEMINI_STATE_LABEL[job.gemini_state] || job.gemini_state}</span>}
+                        {job.gemini_state && job.status !== 'done' && <span style={{ fontFamily: 'monospace', opacity: 0.7 }}>{GEMINI_STATE_LABEL[job.gemini_state] || job.gemini_state}</span>}
                       </div>
                     </div>
 
@@ -262,6 +279,18 @@ export default function BatchJobs() {
 
                     {/* Actions */}
                     <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                      {job.status === 'scheduled' && (
+                        <button
+                          className="btn btn-primary"
+                          style={{ fontSize: 12, padding: '5px 12px', gap: 5 }}
+                          onClick={() => handleSubmitNow(job)}
+                          disabled={submittingId === job.id}
+                        >
+                          {submittingId === job.id
+                            ? <><Loader2 className="animate-spin" size={12} /> Đang gửi...</>
+                            : <><Send size={12} /> Gửi ngay</>}
+                        </button>
+                      )}
                       {job.status === 'pending' && (
                         <button
                           className="btn btn-primary"
@@ -320,8 +349,9 @@ export default function BatchJobs() {
 
                       {/* Job info */}
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 24px', marginBottom: 12, color: 'var(--text-secondary)' }}>
-                        <div><b>Gemini Job:</b> <span style={{ fontFamily: 'monospace', fontSize: 11 }}>{job.gemini_job_name}</span></div>
-                        <div><b>Gửi lúc:</b> {formatDate(job.createdAt)}</div>
+                        {job.gemini_job_name && <div><b>Gemini Job:</b> <span style={{ fontFamily: 'monospace', fontSize: 11 }}>{job.gemini_job_name}</span></div>}
+                        <div><b>Tạo lúc:</b> {formatDate(job.createdAt)}</div>
+                        {job.scheduled_at && <div><b>Hẹn gửi lúc:</b> <span style={{ color: 'var(--accent)', fontWeight: 600 }}>{formatDate(job.scheduled_at)}</span></div>}
                         {job.completedAt && <div><b>Hoàn thành:</b> {formatDate(job.completedAt)}</div>}
                         <div><b>Công ty:</b> {job.companyName || job.companyId}</div>
                       </div>

@@ -42,10 +42,12 @@ async function getEffectiveApiConfig(userId) {
       if (row.use_system_key && systemConfig.apiKey) {
         apiKey = [systemConfig.apiKey, row.gemini_api_key].filter(Boolean).join(',');
       }
+      // SerpAPI: kết hợp key user + key hệ thống để fallback (user key ưu tiên hơn)
+      const serpKeys = [row.serpapi_api_key, systemConfig.serpApiKey].filter(Boolean);
       return {
         apiKey,
-        modelName:      row.gemini_model     || systemConfig.modelName,
-        serpApiKey:     row.serpapi_api_key  || systemConfig.serpApiKey,
+        modelName:      row.gemini_model || systemConfig.modelName,
+        serpApiKey:     serpKeys.join(','),
         usingSystemKey: false, // có key riêng → không tính giới hạn bài/ngày
         blocked:        false,
       };

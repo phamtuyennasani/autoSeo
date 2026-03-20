@@ -5,40 +5,50 @@ const { getSearchContext } = require('../services/serp');
 const { generateTitles } = require('../services/gemini');
 const { getEffectiveApiConfig } = require('../services/apiConfig');
 
-// Lấy danh sách từ khóa kèm thống kê
+// Lấy danh sách từ khóa kèm thống kê (có phân trang)
 router.get('/', async (req, res) => {
   try {
     const user = req.user || { id: 'admin', role: 'admin' };
     const isAdmin = user.role === 'admin';
+    const page  = Math.max(1, parseInt(req.query.page)  || 1);
+    const limit = Math.max(1, Math.min(100, parseInt(req.query.limit) || 20));
+    const offset = (page - 1) * limit;
 
-    let sql = `
-      SELECT k.*,
-             COUNT(a.id) as articleCount
-      FROM keywords k
-      LEFT JOIN articles a ON k.keyword = a.keyword
-    `;
+    let whereClause = '';
     const args = [];
 
-    // Admin có thể filter theo userId, user thường chỉ thấy của mình
     if (isAdmin && req.query.userId) {
-      sql += ' WHERE k.createdBy = ?';
+      whereClause = ' WHERE k.createdBy = ?';
       args.push(req.query.userId);
     } else if (!isAdmin) {
-      sql += ' WHERE k.createdBy = ?';
+      whereClause = ' WHERE k.createdBy = ?';
       args.push(user.id);
     }
 
-    sql += ' GROUP BY k.id ORDER BY k.createdAt DESC';
+    // Đếm tổng để tính totalPages
+    const countResult = await db.execute({
+      sql: `SELECT COUNT(DISTINCT k.id) as total FROM keywords k${whereClause}`,
+      args: [...args],
+    });
+    const total = Number(countResult.rows[0]?.total || 0);
 
-    const result = await db.execute({ sql, args });
+    const sql = `
+      SELECT k.*, COUNT(a.id) as articleCount
+      FROM keywords k
+      LEFT JOIN articles a ON k.keyword = a.keyword
+      ${whereClause}
+      GROUP BY k.id ORDER BY k.createdAt DESC
+      LIMIT ? OFFSET ?
+    `;
+    const result = await db.execute({ sql, args: [...args, limit, offset] });
 
-    const formattedKeywords = result.rows.map(k => {
+    const data = result.rows.map(k => {
       let parsedTitles = [];
       try { parsedTitles = JSON.parse(k.titles); } catch (e) {}
       return { ...k, titles: parsedTitles, titleCount: parsedTitles.length };
     });
 
-    res.json(formattedKeywords);
+    res.json({ data, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Lỗi khi đọc danh sách từ khóa' });

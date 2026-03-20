@@ -7,10 +7,10 @@ const { getSetting } = require('./settings');
 const { getEffectiveApiConfig } = require('../services/apiConfig');
 const requireAdmin = require('../middleware/requireAdmin');
 
-// ─── POST / — Submit batch job mới lên Gemini ────────────────────────────────
+// ─── POST / — Submit batch job mới lên Gemini (hoặc hẹn giờ) ────────────────
 router.post('/', async (req, res) => {
   const user = req.user || { id: 'admin', role: 'admin' };
-  const { keyword, titles, companyId } = req.body;
+  const { keyword, titles, companyId, scheduledAt } = req.body;
   if (!keyword || !Array.isArray(titles) || titles.length === 0 || !companyId)
     return res.status(400).json({ error: 'Thiếu thông tin bắt buộc' });
 
@@ -78,11 +78,23 @@ router.post('/', async (req, res) => {
   const company = compResult.rows[0];
   if (!company) return res.status(404).json({ error: 'Không tìm thấy thông tin công ty' });
 
+  const id = `bj-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const createdAt = new Date().toISOString();
+
+  // ── Hẹn giờ: lưu job ở trạng thái scheduled, không gửi Gemini ngay ──────
+  if (scheduledAt) {
+    await db.execute({
+      sql: `INSERT INTO batch_jobs (id, gemini_job_name, keyword, companyId, titles, status, total, createdAt, createdBy, scheduled_at)
+            VALUES (?, '', ?, ?, ?, 'scheduled', ?, ?, ?, ?)`,
+      args: [id, keyword, companyId, JSON.stringify(titles), titles.length, createdAt, user.id, scheduledAt],
+    });
+    return res.json({ id, keyword, total: titles.length, status: 'scheduled', scheduled_at: scheduledAt, createdAt, createdBy: user.id });
+  }
+
+  // ── Gửi ngay lên Gemini ────────────────────────────────────────────────
   try {
     if (!apiConfig) apiConfig = await getEffectiveApiConfig(user.id);
     const { geminiJobName, total, state } = await submitBatchJob(keyword, titles, company, apiConfig.apiKey);
-    const id = `bj-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-    const createdAt = new Date().toISOString();
 
     await db.execute({
       sql: `INSERT INTO batch_jobs (id, gemini_job_name, keyword, companyId, titles, status, gemini_state, total, createdAt, createdBy) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)`,
@@ -193,6 +205,34 @@ router.post('/:id/check', async (req, res) => {
     res.json({ status: 'done', succeeded: succeededCount, failed: failedCount, articles: savedArticles });
   } catch (err) {
     console.error('[batch-jobs] Lỗi check:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── POST /:id/submit-now — Gửi ngay 1 job đang scheduled ───────────────────
+router.post('/:id/submit-now', async (req, res) => {
+  const jobResult = await db.execute({ sql: 'SELECT * FROM batch_jobs WHERE id = ?', args: [req.params.id] });
+  const job = jobResult.rows[0];
+  if (!job) return res.status(404).json({ error: 'Không tìm thấy batch job' });
+  if (job.status !== 'scheduled') return res.status(400).json({ error: 'Job không ở trạng thái scheduled' });
+
+  const compResult = await db.execute({ sql: 'SELECT * FROM companies WHERE id = ?', args: [job.companyId] });
+  const company = compResult.rows[0];
+  if (!company) return res.status(404).json({ error: 'Không tìm thấy thông tin công ty' });
+
+  try {
+    const apiConfig = await getEffectiveApiConfig(job.createdBy).catch(() => ({}));
+    const titles = JSON.parse(job.titles || '[]');
+    const { geminiJobName, total, state } = await submitBatchJob(job.keyword, titles, company, apiConfig.apiKey);
+
+    await db.execute({
+      sql: `UPDATE batch_jobs SET status = 'pending', gemini_job_name = ?, gemini_state = ?, total = ?, scheduled_at = NULL WHERE id = ?`,
+      args: [geminiJobName, state, total, job.id],
+    });
+
+    res.json({ id: job.id, status: 'pending', geminiJobName, state });
+  } catch (err) {
+    console.error('[batch-jobs] submit-now lỗi:', err.message);
     res.status(500).json({ error: err.message });
   }
 });

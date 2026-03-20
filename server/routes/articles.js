@@ -56,51 +56,175 @@ async function generateAndSave(keyword, title, companyId, company, createdBy = n
   }
 
   const { content = '', seo_title = title, seo_description = '', image_prompts = [] } = result;
+
+  // Nếu bài đã tồn tại (cùng keyword + title) → lưu version cũ rồi UPDATE
+  const existing = await db.execute({
+    sql: 'SELECT * FROM articles WHERE keyword = ? AND title = ?',
+    args: [keyword, title],
+  });
+  if (existing.rows[0]) {
+    await saveVersion(existing.rows[0].id, existing.rows[0], createdBy);
+    await db.execute({
+      sql: 'UPDATE articles SET content = ?, seo_title = ?, seo_description = ?, image_prompts = ? WHERE id = ?',
+      args: [content, seo_title, seo_description, JSON.stringify(image_prompts), existing.rows[0].id],
+    });
+    return { ...existing.rows[0], content, seo_title, seo_description, image_prompts };
+  }
+
+  // Bài chưa tồn tại → INSERT mới
   const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   const createdAt = new Date().toISOString();
-
   await db.execute({
     sql: 'INSERT INTO articles (id, keyword, title, companyId, content, seo_title, seo_description, image_prompts, createdAt, createdBy) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     args: [id, keyword, title, companyId, content, seo_title, seo_description, JSON.stringify(image_prompts), createdAt, createdBy],
   });
-
   return { id, keyword, title, companyId, content, seo_title, seo_description, image_prompts, createdAt, createdBy };
 }
 
-// ─── GET danh sách bài viết ───────────────────────────────────────────────────
+// ─── GET danh sách bài viết (có phân trang) ──────────────────────────────────
 router.get('/', async (req, res) => {
   try {
     const user = req.user || { id: 'admin', role: 'admin' };
     const isAdmin = user.role === 'admin';
     const { keyword, companyId } = req.query;
+    const page  = Math.max(1, parseInt(req.query.page)  || 1);
+    const limit = Math.max(1, Math.min(200, parseInt(req.query.limit) || 50));
+    const offset = (page - 1) * limit;
 
-    let sql = `SELECT a.*, c.name as companyName FROM articles a LEFT JOIN companies c ON a.companyId = c.id`;
-    const args = [];
     const conditions = [];
+    const args = [];
 
-    if (keyword) {
-      conditions.push('a.keyword = ?');
-      args.push(keyword);
-    }
-    if (companyId) {
-      conditions.push('a.companyId = ?');
-      args.push(companyId);
-    }
-    // Khi lọc theo keyword+companyId thì không giới hạn createdBy
-    // (admin có thể viết bài giùm user, vẫn phải hiển thị cho user)
+    if (keyword)   { conditions.push('a.keyword = ?');   args.push(keyword); }
+    if (companyId) { conditions.push('a.companyId = ?'); args.push(companyId); }
     if (!isAdmin && !(keyword && companyId)) {
       conditions.push('a.createdBy = ?');
       args.push(user.id);
     }
 
-    if (conditions.length > 0) sql += ' WHERE ' + conditions.join(' AND ');
-    sql += ' ORDER BY a.createdAt DESC';
+    const whereClause = conditions.length > 0 ? ' WHERE ' + conditions.join(' AND ') : '';
 
-    const result = await db.execute({ sql, args });
-    res.json(result.rows);
+    const countResult = await db.execute({
+      sql: `SELECT COUNT(*) as total FROM articles a${whereClause}`,
+      args: [...args],
+    });
+    const total = Number(countResult.rows[0]?.total || 0);
+
+    const sql = `SELECT a.*, c.name as companyName FROM articles a LEFT JOIN companies c ON a.companyId = c.id${whereClause} ORDER BY a.createdAt DESC LIMIT ? OFFSET ?`;
+    const result = await db.execute({ sql, args: [...args, limit, offset] });
+
+    res.json({ data: result.rows, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── Helper: lưu snapshot bài viết vào article_versions (giữ tối đa 10) ──────
+async function saveVersion(articleId, article, savedBy) {
+  try {
+    const vId = `v-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    await db.execute({
+      sql: 'INSERT INTO article_versions (id, articleId, content, seo_title, seo_description, savedAt, savedBy) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      args: [vId, articleId, article.content, article.seo_title, article.seo_description, new Date().toISOString(), savedBy],
+    });
+    // Giữ tối đa 10 phiên bản gần nhất
+    await db.execute({
+      sql: `DELETE FROM article_versions WHERE articleId = ? AND id NOT IN (SELECT id FROM article_versions WHERE articleId = ? ORDER BY savedAt DESC LIMIT 10)`,
+      args: [articleId, articleId],
+    });
+  } catch (e) {
+    console.warn('[articles] saveVersion lỗi:', e.message);
+  }
+}
+
+// ─── PUT /:id — Chỉnh sửa bài viết ──────────────────────────────────────────
+router.put('/:id', async (req, res) => {
+  try {
+    const user = req.user || { id: 'admin', role: 'admin' };
+    const { id } = req.params;
+    const { content, seo_title, seo_description } = req.body;
+
+    const check = await db.execute({ sql: 'SELECT * FROM articles WHERE id = ?', args: [id] });
+    if (!check.rows[0]) return res.status(404).json({ error: 'Không tìm thấy bài viết' });
+
+    if (user.role !== 'admin' && check.rows[0].createdBy !== user.id) {
+      return res.status(403).json({ error: 'Bạn không có quyền chỉnh sửa bài viết này.' });
+    }
+
+    // Lưu phiên bản cũ trước khi ghi đè
+    await saveVersion(id, check.rows[0], user.id);
+
+    const updates = [];
+    const args = [];
+    if (content !== undefined)         { updates.push('content = ?');         args.push(content); }
+    if (seo_title !== undefined)       { updates.push('seo_title = ?');       args.push(seo_title); }
+    if (seo_description !== undefined) { updates.push('seo_description = ?'); args.push(seo_description); }
+
+    if (updates.length === 0) return res.status(400).json({ error: 'Không có gì để cập nhật.' });
+
+    args.push(id);
+    await db.execute({ sql: `UPDATE articles SET ${updates.join(', ')} WHERE id = ?`, args });
+
+    const updated = await db.execute({
+      sql: 'SELECT a.*, c.name as companyName FROM articles a LEFT JOIN companies c ON a.companyId = c.id WHERE a.id = ?',
+      args: [id],
+    });
+    res.json(updated.rows[0]);
+  } catch (err) {
+    console.error('[articles] PUT /:id', err.message);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── GET /:id/versions — Danh sách phiên bản ─────────────────────────────────
+router.get('/:id/versions', async (req, res) => {
+  try {
+    const result = await db.execute({
+      sql: 'SELECT id, articleId, seo_title, savedAt, savedBy FROM article_versions WHERE articleId = ? ORDER BY savedAt DESC',
+      args: [req.params.id],
+    });
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── POST /:id/restore/:versionId — Khôi phục phiên bản ─────────────────────
+router.post('/:id/restore/:versionId', async (req, res) => {
+  try {
+    const user = req.user || { id: 'admin', role: 'admin' };
+    const { id, versionId } = req.params;
+
+    const vResult = await db.execute({ sql: 'SELECT * FROM article_versions WHERE id = ? AND articleId = ?', args: [versionId, id] });
+    const version = vResult.rows[0];
+    if (!version) return res.status(404).json({ error: 'Không tìm thấy phiên bản' });
+
+    const check = await db.execute({ sql: 'SELECT * FROM articles WHERE id = ?', args: [id] });
+    if (!check.rows[0]) return res.status(404).json({ error: 'Không tìm thấy bài viết' });
+    if (user.role !== 'admin' && check.rows[0].createdBy !== user.id) {
+      return res.status(403).json({ error: 'Bạn không có quyền khôi phục bài viết này.' });
+    }
+
+    // Xóa phiên bản vừa restore trước (tránh bị pruning xóa nhầm sau này)
+    await db.execute({ sql: 'DELETE FROM article_versions WHERE id = ?', args: [versionId] });
+
+    // Lưu trạng thái hiện tại làm snapshot
+    await saveVersion(id, check.rows[0], user.id);
+
+    // Áp dụng phiên bản cũ
+    await db.execute({
+      sql: 'UPDATE articles SET content = ?, seo_title = ?, seo_description = ? WHERE id = ?',
+      args: [version.content, version.seo_title, version.seo_description, id],
+    });
+
+    const updated = await db.execute({
+      sql: 'SELECT a.*, c.name as companyName FROM articles a LEFT JOIN companies c ON a.companyId = c.id WHERE a.id = ?',
+      args: [id],
+    });
+    res.json(updated.rows[0]);
+  } catch (err) {
+    console.error('[articles] restore', err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 
