@@ -51,10 +51,12 @@ const Keywords = () => {
   const [writeAllProgress, setWriteAllProgress] = useState({ current: 0, total: 0 });
   const [batchStatus, setBatchStatus] = useState('');
   const [hasPendingBatch, setHasPendingBatch] = useState(false);  // có job đang pending/scheduled trong DB không?
-  const [pendingBatchJob, setPendingBatchJob] = useState(null);   // job object nếu có
+  const [pendingBatchJob, setPendingBatchJob] = useState(null);   // job object mới nhất nếu có
+  const [pendingBatchTitles, setPendingBatchTitles] = useState(new Set()); // tất cả titles đang trong pending/scheduled batch
   const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
   const [batchModalScheduleEnabled, setBatchModalScheduleEnabled] = useState(false);
   const [batchModalTime, setBatchModalTime] = useState('');
+  const [batchCheckedTitles, setBatchCheckedTitles] = useState(new Set());
 
   // Add keyword modal
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -87,10 +89,13 @@ const Keywords = () => {
   // Pagination (keyword list)
   const [kwPage, setKwPage] = useState(1);
   const [kwTotal, setKwTotal] = useState(0);
+  const [kwTotalTitles, setKwTotalTitles] = useState(0);
+  const [kwTotalArticles, setKwTotalArticles] = useState(0);
   const KW_PAGE_SIZE = 20;
 
   // Write Queue (SSE background)
   const [writeQueueJob, setWriteQueueJob] = useState(null); // { jobId, status, total, done, succeeded, failed, currentTitle, results }
+  const [checkedTitles, setCheckedTitles] = useState(new Set()); // titles được check để viết bằng hàng đợi SSE
   const sseRef = useRef(null); // giữ EventSource để có thể đóng khi cần
   const articleContentRef = useRef(null);
 
@@ -102,6 +107,7 @@ const Keywords = () => {
   }, [showMultiUser]);
 
   useEffect(() => { fetchData(); }, []);
+  useEffect(() => { setCheckedTitles(new Set()); }, [selectedKeyword?.id]);
 
   const fetchData = async (userId = filterUserId, page = kwPage) => {
     try {
@@ -115,6 +121,8 @@ const Keywords = () => {
       const kwPayload = kwRes.data;
       setKeywords(kwPayload.data ?? kwPayload);
       setKwTotal(kwPayload.pagination?.total ?? (kwPayload.data ?? kwPayload).length);
+      setKwTotalTitles(kwPayload.stats?.totalTitles ?? 0);
+      setKwTotalArticles(kwPayload.stats?.totalArticles ?? 0);
       setCompanies(comRes.data);
       setFilterCompanies(comRes.data);
       if (comRes.data.length > 0) setSelectedCompanyId(comRes.data[0].id);
@@ -156,15 +164,21 @@ const Keywords = () => {
   const fetchPendingBatchJob = async (keyword) => {
     try {
       const res = await apiClient.get(API_BATCH_JOBS, { params: { keyword } });
-      // Lấy job mới nhất có status = pending (API trả về { jobs: [], lastCheck })
       const jobs = Array.isArray(res.data) ? res.data : (res.data.jobs || []);
-      const pendingJob = jobs.find(j => j.status === 'pending' || j.status === 'scheduled') || null;
+      const pendingJobs = jobs.filter(j => j.status === 'pending' || j.status === 'scheduled');
+      const pendingJob = pendingJobs[0] || null;
+      // Gom tất cả titles từ các pending/scheduled jobs
+      const allPendingTitles = new Set(
+        pendingJobs.flatMap(j => { try { return JSON.parse(j.titles || '[]'); } catch { return []; } })
+      );
       setPendingBatchJob(pendingJob);
-      setHasPendingBatch(!!pendingJob);
+      setHasPendingBatch(pendingJobs.length > 0);
+      setPendingBatchTitles(allPendingTitles);
     } catch (err) {
       console.error('Lỗi fetch batch job:', err.message);
       setHasPendingBatch(false);
       setPendingBatchJob(null);
+      setPendingBatchTitles(new Set());
     }
   };
 
@@ -267,9 +281,12 @@ const Keywords = () => {
   // Bắt đầu viết tất cả bằng hàng đợi nền (SSE)
   const handleWriteAllQueue = async () => {
     if (!selectedKeyword || writeQueueJob?.status === 'running') return;
-    const unwrittenTitles = (selectedKeyword.titles || []).filter(
-      t => !articlesOfKeyword.find(a => a.title === t)
+    const allUnwritten = (selectedKeyword.titles || []).filter(
+      t => !articlesOfKeyword.find(a => a.title === t) && !pendingBatchTitles.has(t)
     );
+    const unwrittenTitles = checkedTitles.size > 0
+      ? allUnwritten.filter(t => checkedTitles.has(t))
+      : allUnwritten;
     if (unwrittenTitles.length === 0) {
       toast.info('Tất cả tiêu đề đã có bài viết rồi!');
       return;
@@ -418,9 +435,12 @@ const Keywords = () => {
   // Gửi Gemini Batch Job — nhận scheduledAt (ISO string) nếu hẹn giờ, null nếu gửi ngay
   const handleWriteAll = async (scheduledAt = null) => {
     if (!selectedKeyword || isWritingAll) return;
-    const unwrittenTitles = (selectedKeyword.titles || []).filter(
+    const allUnwritten = (selectedKeyword.titles || []).filter(
       t => !articlesOfKeyword.find(a => a.title === t)
     );
+    const unwrittenTitles = batchCheckedTitles.size > 0
+      ? allUnwritten.filter(t => batchCheckedTitles.has(t))
+      : allUnwritten;
     if (unwrittenTitles.length === 0) {
       toast.info('Tất cả tiêu đề đã có bài viết rồi!');
       return;
@@ -461,13 +481,39 @@ const Keywords = () => {
     });
   };
 
-  const totalTitles = keywords.reduce((a, k) => a + (k.titleCount || 0), 0);
-  const totalArticles = keywords.reduce((a, k) => a + (k.articleCount || 0), 0);
 
   // ============================================================
   // VIEW: Xem nội dung bài viết cụ thể
   // ============================================================
   if (viewingArticle) {
+    const slugify = (str) => str
+      .replace(/à|á|ạ|ả|ã|â|ầ|ấ|ậ|ẩ|ẫ|ă|ằ|ắ|ặ|ẳ|ẵ/g, 'a')
+      .replace(/è|é|ẹ|ẻ|ẽ|ê|ề|ế|ệ|ể|ễ/g, 'e')
+      .replace(/ì|í|ị|ỉ|ĩ/g, 'i')
+      .replace(/ò|ó|ọ|ỏ|õ|ô|ồ|ố|ộ|ổ|ỗ|ơ|ờ|ớ|ợ|ở|ỡ/g, 'o')
+      .replace(/ù|ú|ụ|ủ|ũ|ư|ừ|ứ|ự|ử|ữ/g, 'u')
+      .replace(/ỳ|ý|ỵ|ỷ|ỹ/g, 'y')
+      .replace(/đ/g, 'd')
+      .replace(/À|Á|Ạ|Ả|Ã|Â|Ầ|Ấ|Ậ|Ẩ|Ẫ|Ă|Ằ|Ắ|Ặ|Ẳ|Ẵ/g, 'a')
+      .replace(/È|É|Ẹ|Ẻ|Ẽ|Ê|Ề|Ế|Ệ|Ể|Ễ/g, 'e')
+      .replace(/Ì|Í|Ị|Ỉ|Ĩ/g, 'i')
+      .replace(/Ò|Ó|Ọ|Ỏ|Õ|Ô|Ồ|Ố|Ộ|Ổ|Ỗ|Ơ|Ờ|Ớ|Ợ|Ở|Ỡ/g, 'o')
+      .replace(/Ù|Ú|Ụ|Ủ|Ũ|Ư|Ừ|Ứ|Ự|Ử|Ữ/g, 'u')
+      .replace(/Ỳ|Ý|Ỵ|Ỷ|Ỹ/g, 'y')
+      .replace(/Đ/g, 'd')
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9\s-]/g, '')
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '');
+
+    const articleCompany = getCompany(selectedKeyword?.companyId);
+    const companyUrl = (articleCompany?.url || '').replace(/\/$/, '');
+    const suggestedUrl = viewingArticle.seo_title
+      ? `${companyUrl}/${slugify(viewingArticle.seo_title)}`
+      : '';
+
     const copyText = (text) => {
       if (navigator.clipboard?.writeText) {
         return navigator.clipboard.writeText(text);
@@ -485,9 +531,11 @@ const Keywords = () => {
       return Promise.resolve();
     };
 
-    const makeCopyFn = (key) => async () => {
+    const makeCopyFn = (key, overrideValue) => async () => {
       try {
-        if (key === 'content' && articleContentRef.current) {
+        if (overrideValue !== undefined) {
+          await copyText(overrideValue);
+        } else if (key === 'content' && articleContentRef.current) {
           const el = articleContentRef.current;
           const cv = getComputedStyle(document.documentElement);
           const v = (n) => cv.getPropertyValue(n).trim();
@@ -525,9 +573,9 @@ const Keywords = () => {
         console.error('[copy] failed:', err);
       }
     };
-    const CopyBtn = ({ field }) => (
+    const CopyBtn = ({ field, value }) => (
       <button
-        onClick={makeCopyFn(field)}
+        onClick={makeCopyFn(field, value)}
         title="Copy"
         style={{
           display: 'inline-flex', alignItems: 'center', gap: '4px',
@@ -601,8 +649,10 @@ const Keywords = () => {
             </div>
             {viewingArticle.seo_title && (
               <div style={{ marginBottom: '12px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)', marginBottom: '5px' }}>
-                  <Tag size={11} /> SEO Title <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>({viewingArticle.seo_title.length} ký tự)</span>
+                <div style={{ display: 'flex',justifyContent: 'space-between', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)', marginBottom: '5px' }}>
+                  <div style={{ display: 'flex',alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)',  }}>
+                    <Tag size={11} /> SEO Title <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>({viewingArticle.seo_title.length} ký tự)</span>
+                  </div>
                   <CopyBtn field="seo_title" />
                 </div>
                 <div id="seo-title" style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-primary)', background: 'var(--bg-panel)', padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
@@ -612,8 +662,10 @@ const Keywords = () => {
             )}
             {viewingArticle.seo_description && (
               <div style={{ marginBottom: '12px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)', marginBottom: '5px' }}>
-                  <AlignLeft size={11} /> Meta Description <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>({viewingArticle.seo_description.length} ký tự)</span>
+                <div style={{ display: 'flex',justifyContent: 'space-between', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)', marginBottom: '5px' }}>
+                  <div style={{ display: 'flex',alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)',  }}>
+                    <AlignLeft size={11} /> Meta Description <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>({viewingArticle.seo_description.length} ký tự)</span>
+                  </div>
                   <CopyBtn field="seo_description" />
                 </div>
                 <div id="seo-description" style={{ fontSize: '13px', color: 'var(--text-secondary)', background: 'var(--bg-panel)', padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', lineHeight: '1.6' }}>
@@ -622,13 +674,28 @@ const Keywords = () => {
               </div>
             )}
             {viewingArticle.keyword && (
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)', marginBottom: '5px' }}>
-                  <Hash size={11} /> Từ khóa
+              <div style={{ marginBottom: suggestedUrl ? '12px' : '0' }}>
+                <div style={{ display: 'flex',justifyContent: 'space-between', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)', marginBottom: '5px' }}>
+                  <div style={{ display: 'flex',alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)',  }}>
+                    <Hash size={11} /> Từ khóa
+                  </div>
                   <CopyBtn field="keyword" />
                 </div>
                 <div id="seo-keyword" style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)', background: 'var(--bg-panel)', padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
                   {viewingArticle.keyword}
+                </div>
+              </div>
+            )}
+            {suggestedUrl && (
+              <div>
+                <div style={{ display: 'flex',justifyContent: 'space-between', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)', marginBottom: '5px' }}>
+                  <div style={{ display: 'flex',alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)',  }}>
+                    <ChevronRight size={11} /> Link Gợi ý
+                  </div>
+                  <CopyBtn field="suggested_url" value={suggestedUrl} />
+                </div>
+                <div id='seo-link' style={{ fontSize: '13px', color: 'var(--accent)', background: 'var(--accent-subtle)', padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(99,102,241,0.25)', wordBreak: 'break-all', fontFamily: 'monospace' }}>
+                  {suggestedUrl}
                 </div>
               </div>
             )}
@@ -699,6 +766,65 @@ const Keywords = () => {
           </div>
         </div>
       )}
+
+      {/* EDIT ARTICLE MODAL */}
+      {isEditModalOpen && editingArticle && (
+        <div className="modal-overlay" onClick={() => !isSavingEdit && setIsEditModalOpen(false)}>
+          <div className="modal-dialog" style={{ maxWidth: 740 }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <div className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Edit3 size={18} color="var(--accent)" /> Chỉnh Sửa Bài Viết
+              </div>
+              <button className="close-btn" disabled={isSavingEdit} onClick={() => setIsEditModalOpen(false)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <form onSubmit={handleSaveEdit}>
+                <div className="input-group">
+                  <label className="input-label">SEO Title</label>
+                  <input
+                    type="text" className="input-field"
+                    value={editForm.seo_title}
+                    onChange={e => setEditForm(f => ({ ...f, seo_title: e.target.value }))}
+                    disabled={isSavingEdit}
+                  />
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                    {editForm.seo_title.length} ký tự (khuyến nghị ≤ 60)
+                  </div>
+                </div>
+                <div className="input-group">
+                  <label className="input-label">Meta Description</label>
+                  <textarea
+                    className="input-field" rows={3}
+                    value={editForm.seo_description}
+                    onChange={e => setEditForm(f => ({ ...f, seo_description: e.target.value }))}
+                    disabled={isSavingEdit}
+                  />
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                    {editForm.seo_description.length} ký tự (khuyến nghị ≤ 160)
+                  </div>
+                </div>
+                <div className="input-group">
+                  <label className="input-label">Nội dung bài viết (Markdown)</label>
+                  <textarea
+                    className="input-field" rows={14} style={{ fontFamily: 'monospace', fontSize: 13 }}
+                    value={editForm.content}
+                    onChange={e => setEditForm(f => ({ ...f, content: e.target.value }))}
+                    disabled={isSavingEdit}
+                  />
+                </div>
+                <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                  <button type="button" className="btn btn-outline" onClick={() => setIsEditModalOpen(false)} disabled={isSavingEdit}>Hủy</button>
+                  <button type="submit" className="btn btn-primary" disabled={isSavingEdit}>
+                    {isSavingEdit
+                      ? <><Loader2 className="animate-spin" size={15} /> Đang lưu...</>
+                      : <><CheckCircle2 size={15} /> Lưu bài</>}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
     </>
     );
   }
@@ -709,8 +835,20 @@ const Keywords = () => {
   if (selectedKeyword) {
     const company = getCompany(selectedKeyword.companyId);
     const titles = selectedKeyword.titles || [];
-    const unwrittenCount = titles.filter(t => !getArticleForTitle(t)).length;
+    const unwrittenTitles = titles.filter(t => !getArticleForTitle(t));
+    const unwrittenCount = unwrittenTitles.length;
     const writtenCount = titles.length - unwrittenCount;
+    // Tiêu đề eligible cho SSE: chưa viết + chưa nằm trong pending batch
+    const sseCandidates = unwrittenTitles.filter(t => !pendingBatchTitles.has(t));
+    const checkedUnwritten = sseCandidates.filter(t => checkedTitles.has(t));
+    const allUnwrittenChecked = sseCandidates.length > 0 && checkedUnwritten.length === sseCandidates.length;
+    const toggleSelectAll = () => {
+      if (allUnwrittenChecked) {
+        setCheckedTitles(new Set());
+      } else {
+        setCheckedTitles(new Set(sseCandidates));
+      }
+    };
 
     return (
       <div>
@@ -737,14 +875,30 @@ const Keywords = () => {
             </div>
 
             {/* NÚT VIẾT TẤT CẢ */}
-            {unwrittenCount > 0 && !hasPendingBatch && !isWritingAll && !writeQueueJob && (
+            {!isWritingAll && !writeQueueJob && (unwrittenCount > 0 || sseCandidates.length > 0) && (
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                <button onClick={() => setIsBatchModalOpen(true)} className="btn btn-primary" style={{ gap: '6px' }}>
-                  <Layers size={16} /> Batch API ({unwrittenCount} bài)
-                </button>
-                <button onClick={handleWriteAllQueue} className="btn btn-outline" style={{ gap: '6px', borderColor: 'var(--accent)', color: 'var(--accent)' }}>
-                  <ListOrdered size={16} /> Hàng Đợi SSE ({unwrittenCount} bài)
-                </button>
+                {unwrittenCount > 0 && (
+                  <button onClick={() => { setBatchCheckedTitles(new Set()); setIsBatchModalOpen(true); }} className="btn btn-primary" style={{ gap: '6px' }}>
+                    <Layers size={16} /> Batch API ({unwrittenCount} bài)
+                  </button>
+                )}
+                {sseCandidates.length > 0 && (
+                  <button
+                    onClick={handleWriteAllQueue}
+                    className="btn btn-outline"
+                    style={{
+                      gap: '6px',
+                      color: 'var(--accent)',
+                      background: checkedUnwritten.length > 0 ? 'rgba(99,102,241,0.08)' : 'transparent',
+                      fontWeight: checkedUnwritten.length > 0 ? 600 : undefined,
+                    }}
+                  >
+                    <ListOrdered size={16} />
+                    {checkedUnwritten.length > 0
+                      ? `Gửi Yêu Cầu · ${checkedUnwritten.length} đã chọn`
+                      : `Gửi Yêu Cầu (${sseCandidates.length} bài)`}
+                  </button>
+                )}
               </div>
             )}
             {hasPendingBatch && (
@@ -766,8 +920,7 @@ const Keywords = () => {
                     if (pendingBatchJob?.id) {
                       try { await apiClient.delete(`${API_BATCH_JOBS}/${pendingBatchJob.id}`); } catch (e) { /* ignore */ }
                     }
-                    setHasPendingBatch(false);
-                    setPendingBatchJob(null);
+                    fetchPendingBatchJob(selectedKeyword.keyword);
                   }}
                   title="Xóa batch job này và gửi lại"
                   style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 20, height: 20, borderRadius: '50%', background: 'none', border: '1px solid currentColor', cursor: 'pointer', opacity: 0.5, padding: 0, color: 'inherit' }}
@@ -839,6 +992,27 @@ const Keywords = () => {
             <Sparkles size={18} color="var(--accent)" />
             <span style={{ fontWeight: '600', fontSize: '15px' }}>Danh Sách Tiêu Đề SEO</span>
             {loadingArticles && <Loader2 size={14} className="animate-spin" color="var(--text-secondary)" />}
+            {sseCandidates.length > 0 && !writeQueueJob && (
+              <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+                {checkedUnwritten.length > 0 && (
+                  <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--accent)', background: 'rgba(99,102,241,0.1)', padding: '3px 9px', borderRadius: 20 }}>
+                    {checkedUnwritten.length}/{sseCandidates.length} đã chọn
+                  </span>
+                )}
+                <button
+                  onClick={toggleSelectAll}
+                  style={{
+                    fontSize: 12, fontWeight: 500,
+                    color: allUnwrittenChecked ? 'var(--danger)' : 'var(--accent)',
+                    background: allUnwrittenChecked ? 'rgba(239,68,68,0.07)' : 'rgba(99,102,241,0.07)',
+                    border: `1px solid ${allUnwrittenChecked ? 'rgba(239,68,68,0.2)' : 'rgba(99,102,241,0.2)'}`,
+                    cursor: 'pointer', padding: '4px 12px', borderRadius: 20,
+                  }}
+                >
+                  {allUnwrittenChecked ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}
+                </button>
+              </div>
+            )}
           </div>
 
           {/* QUEUE PROGRESS BAR */}
@@ -866,17 +1040,52 @@ const Keywords = () => {
               const queueResult = writeQueueJob?.results?.find(r => r?.title === title);
               const isQueueWritingThis = writeQueueJob?.status === 'running' && writeQueueJob?.currentTitle === title;
 
+              const isChecked = checkedTitles.has(title);
+              const isCheckable = !article && !writeQueueJob && !pendingBatchTitles.has(title);
               return (
-                <div key={idx} style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '12px',
-                  padding: '12px 16px',
-                  background: article ? 'rgba(34, 197, 94, 0.04)' : 'var(--bg-panel)',
-                  border: `1px solid ${article ? 'rgba(34,197,94,0.2)' : 'var(--border)'}`,
-                  borderRadius: 'var(--radius-md)',
-                  transition: 'all 0.2s',
-                }}>
+                <div
+                  key={idx}
+                  onClick={isCheckable ? () => setCheckedTitles(prev => { const next = new Set(prev); isChecked ? next.delete(title) : next.add(title); return next; }) : undefined}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    padding: '12px 16px',
+                    background: article
+                      ? 'rgba(34,197,94,0.04)'
+                      : isChecked
+                        ? 'rgba(99,102,241,0.05)'
+                        : 'var(--bg-panel)',
+                    border: `1px solid ${article
+                      ? 'rgba(34,197,94,0.2)'
+                      : isChecked
+                        ? 'rgba(99,102,241,0.35)'
+                        : 'var(--border)'}`,
+                    borderRadius: 'var(--radius-md)',
+                    transition: 'all 0.15s',
+                    cursor: isCheckable ? 'pointer' : 'default',
+                  }}>
+                  {/* Custom Checkbox - chỉ hiện cho tiêu đề chưa viết và khi không có queue */}
+                  {isCheckable && (
+                    <div
+                      onClick={e => e.stopPropagation()}
+                      style={{ flexShrink: 0 }}
+                    >
+                      <div
+                        onClick={() => setCheckedTitles(prev => { const next = new Set(prev); isChecked ? next.delete(title) : next.add(title); return next; })}
+                        style={{
+                          width: 18, height: 18, borderRadius: 5, cursor: 'pointer',
+                          border: `2px solid ${isChecked ? 'var(--accent)' : 'var(--border)'}`,
+                          background: isChecked ? 'var(--accent)' : 'transparent',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          transition: 'all 0.15s', flexShrink: 0,
+                        }}
+                      >
+                        {isChecked && <Check size={11} color="#fff" strokeWidth={3} />}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Index */}
                   <span style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-muted)', width: '20px', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
                     {String(idx + 1).padStart(2, '0')}
@@ -891,7 +1100,7 @@ const Keywords = () => {
                         ? <CheckCircle2 size={16} color="var(--success)" style={{ flexShrink: 0 }} />
                         : queueResult?.status === 'error'
                           ? <XCircle size={16} color="var(--danger)" style={{ flexShrink: 0 }} />
-                          : hasPendingBatch
+                          : pendingBatchTitles.has(title)
                             ? <Layers size={16} color="var(--accent)" style={{ flexShrink: 0 }} />
                             : <Clock size={16} color="var(--text-muted)" style={{ flexShrink: 0 }} />
                   }
@@ -909,7 +1118,7 @@ const Keywords = () => {
                   )}
 
                   {/* Actions */}
-                  <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                  <div onClick={e => e.stopPropagation()} style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
                     {article ? (
                       <>
                         <button
@@ -954,8 +1163,8 @@ const Keywords = () => {
                       >
                         <RefreshCw size={13} /> Thử lại
                       </button>
-                    ) : hasPendingBatch ? (
-                      // Đã gửi batch → hiện badge, không cho viết lẻ nữa
+                    ) : pendingBatchTitles.has(title) ? (
+                      // Tiêu đề này đang nằm trong batch job đang chờ
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '11px', fontWeight: '600', color: 'var(--accent)', background: 'var(--accent-subtle)', padding: '3px 9px', borderRadius: 20 }}>
                         <Layers size={11} /> Đã gửi Batch
                       </span>
@@ -1056,9 +1265,24 @@ const Keywords = () => {
 
         {/* BATCH MODAL */}
         {isBatchModalOpen && (() => {
-          const unwrittenTitles = (selectedKeyword.titles || []).filter(
-            t => !articlesOfKeyword.find(a => a.title === t)
+          const allTitles = selectedKeyword.titles || [];
+          // Tiêu đề chưa viết và CHƯA nằm trong pending batch nào
+          const allUnwritten = allTitles.filter(t =>
+            !articlesOfKeyword.find(a => a.title === t) && !pendingBatchTitles.has(t)
           );
+          const batchChecked = allUnwritten.filter(t => batchCheckedTitles.has(t));
+          const sendCount = batchChecked.length > 0 ? batchChecked.length : allUnwritten.length;
+          const allUnwrittenBatchChecked = allUnwritten.length > 0 && batchChecked.length === allUnwritten.length;
+
+          const toggleBatchTitle = (t) => setBatchCheckedTitles(prev => {
+            const next = new Set(prev);
+            next.has(t) ? next.delete(t) : next.add(t);
+            return next;
+          });
+          const toggleBatchSelectAll = () => setBatchCheckedTitles(
+            allUnwrittenBatchChecked ? new Set() : new Set(allUnwritten)
+          );
+
           const computeScheduledAt = () => {
             if (!batchModalTime) return null;
             const [hh, mm] = batchModalTime.split(':').map(Number);
@@ -1088,7 +1312,10 @@ const Keywords = () => {
                         {selectedKeyword.keyword}
                       </span>
                       <span>·</span>
-                      <span><strong style={{ color: 'var(--success)' }}>{unwrittenTitles.length}</strong> bài sẽ được gửi</span>
+                      <span>
+                        <strong style={{ color: 'var(--accent)' }}>{sendCount}</strong>
+                        {batchChecked.length > 0 ? ` / ${allUnwritten.length}` : ''} bài sẽ gửi
+                      </span>
                       <span>·</span>
                       <span style={{ color: 'var(--warning)', fontWeight: 600 }}>⚡ Tiết kiệm 50% chi phí</span>
                     </div>
@@ -1098,18 +1325,94 @@ const Keywords = () => {
 
                 <div className="modal-body" style={{ padding: '0 22px 18px' }}>
 
-                  {/* Article list */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 5, marginBottom: 10,marginTop:10, paddingRight: 2 }}>
-                    {unwrittenTitles.map((t, i) => (
-                      <div key={i} style={{
-                        fontSize: 11.5, color: 'var(--text-secondary)', padding: '5px 8px',
-                        background: 'var(--bg-page)', borderRadius: 'var(--radius-sm)',
-                        border: '1px solid var(--border)', display: 'flex', gap: 6, alignItems: 'flex-start',
-                      }}>
-                        <span style={{ color: 'var(--text-muted)', fontWeight: 700, fontSize: 10, flexShrink: 0, marginTop: 1 }}>{i + 1}</span>
-                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t}</span>
-                      </div>
-                    ))}
+                  {/* Title list with checkboxes */}
+                  <div style={{ marginTop: 10, marginBottom: 12 }}>
+                    {/* List header */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                      <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                        Danh sách tiêu đề ({allTitles.length})
+                      </span>
+                      {allUnwritten.length > 0 && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          {batchChecked.length > 0 && (
+                            <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--accent)', background: 'rgba(99,102,241,0.1)', padding: '2px 7px', borderRadius: 10 }}>
+                              {batchChecked.length}/{allUnwritten.length} đã chọn
+                            </span>
+                          )}
+                          <button
+                            onClick={toggleBatchSelectAll}
+                            style={{
+                              fontSize: 11, fontWeight: 500, cursor: 'pointer', padding: '3px 10px', borderRadius: 20,
+                              color: allUnwrittenBatchChecked ? 'var(--danger)' : 'var(--accent)',
+                              background: allUnwrittenBatchChecked ? 'rgba(239,68,68,0.07)' : 'rgba(99,102,241,0.07)',
+                              border: `1px solid ${allUnwrittenBatchChecked ? 'rgba(239,68,68,0.2)' : 'rgba(99,102,241,0.2)'}`,
+                            }}
+                          >
+                            {allUnwrittenBatchChecked ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Scrollable list */}
+                    <div style={{ maxHeight: 200, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 3, paddingRight: 2 }}>
+                      {allTitles.map((t, i) => {
+                        const isWritten = !!articlesOfKeyword.find(a => a.title === t);
+                        const isPending = pendingBatchTitles.has(t);
+                        const isDisabled = isWritten || isPending;
+                        const isChecked = batchCheckedTitles.has(t);
+                        return (
+                          <div
+                            key={i}
+                            onClick={!isDisabled ? () => toggleBatchTitle(t) : undefined}
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: 8,
+                              padding: '5px 8px', borderRadius: 'var(--radius-sm)',
+                              background: isDisabled ? 'transparent' : isChecked ? 'rgba(99,102,241,0.06)' : 'var(--bg-page)',
+                              border: `1px solid ${isDisabled ? 'transparent' : isChecked ? 'rgba(99,102,241,0.3)' : 'var(--border)'}`,
+                              cursor: isDisabled ? 'default' : 'pointer',
+                              opacity: isDisabled ? 0.55 : 1,
+                              transition: 'all 0.12s',
+                            }}
+                          >
+                            {isWritten ? (
+                              <CheckCircle2 size={13} color="var(--success)" style={{ flexShrink: 0 }} />
+                            ) : isPending ? (
+                              <Layers size={13} color="var(--accent)" style={{ flexShrink: 0 }} />
+                            ) : (
+                              <div style={{
+                                width: 15, height: 15, borderRadius: 4, flexShrink: 0,
+                                border: `2px solid ${isChecked ? 'var(--accent)' : 'var(--border)'}`,
+                                background: isChecked ? 'var(--accent)' : 'transparent',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                transition: 'all 0.12s',
+                              }}>
+                                {isChecked && <Check size={9} color="#fff" strokeWidth={3} />}
+                              </div>
+                            )}
+                            <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', flexShrink: 0, width: 16, textAlign: 'right' }}>
+                              {i + 1}
+                            </span>
+                            <span style={{
+                              fontSize: 11.5, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                              color: isDisabled ? 'var(--text-muted)' : 'var(--text-secondary)',
+                            }}>
+                              {t}
+                            </span>
+                            {isWritten && (
+                              <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--success)', background: 'rgba(34,197,94,0.1)', padding: '1px 6px', borderRadius: 10, flexShrink: 0 }}>
+                                Đã viết
+                              </span>
+                            )}
+                            {isPending && (
+                              <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--accent)', background: 'rgba(99,102,241,0.1)', padding: '1px 6px', borderRadius: 10, flexShrink: 0 }}>
+                                Đang batch
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
 
                   {/* Mode selector */}
@@ -1199,16 +1502,18 @@ const Keywords = () => {
                   </div>
                 </div>
 
-                <div className="modal-footer" style={{ padding: '14px 22px',display: 'flex', justifyContent: 'flex-end', gap: 10, background: 'var(--bg-panel)' }}>
+                <div className="modal-footer" style={{ padding: '14px 22px', display: 'flex', justifyContent: 'flex-end', gap: 10, background: 'var(--bg-panel)' }}>
                   <button className="btn btn-outline" onClick={() => setIsBatchModalOpen(false)}>Hủy</button>
                   <button
                     className="btn btn-primary"
                     style={{ gap: 7, minWidth: 150 }}
-                    disabled={batchModalScheduleEnabled && !batchModalTime}
+                    disabled={(batchModalScheduleEnabled && !batchModalTime) || sendCount === 0}
                     onClick={() => handleWriteAll(scheduledDate ? scheduledDate.toISOString() : null)}
                   >
                     {batchModalScheduleEnabled ? <Clock size={14} /> : <Zap size={14} />}
-                    {batchModalScheduleEnabled && batchModalTime ? `Hẹn lúc ${batchModalTime}` : 'Gửi ngay'}
+                    {batchModalScheduleEnabled && batchModalTime
+                      ? `Hẹn lúc ${batchModalTime} · ${sendCount} bài`
+                      : `Gửi ngay · ${sendCount} bài`}
                   </button>
                 </div>
               </div>
@@ -1369,7 +1674,7 @@ const Keywords = () => {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div>
               <div className="stat-card-label">Tổng Tiêu Đề</div>
-              <div className="stat-card-value">{totalTitles}</div>
+              <div className="stat-card-value">{kwTotalTitles}</div>
             </div>
             <div className="stat-card-icon" style={{ background: 'var(--info-subtle)' }}>
               <BarChart2 size={18} color="var(--info)" />
@@ -1380,7 +1685,7 @@ const Keywords = () => {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div>
               <div className="stat-card-label">Bài đã Viết</div>
-              <div className="stat-card-value">{totalArticles}</div>
+              <div className="stat-card-value">{kwTotalArticles}</div>
             </div>
             <div className="stat-card-icon" style={{ background: 'var(--success-subtle)' }}>
               <FileText size={18} color="var(--success)" />

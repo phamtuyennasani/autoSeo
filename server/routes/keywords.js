@@ -25,12 +25,23 @@ router.get('/', async (req, res) => {
       args.push(user.id);
     }
 
-    // Đếm tổng để tính totalPages
+    // Đếm tổng để tính totalPages + thống kê toàn bộ
     const countResult = await db.execute({
       sql: `SELECT COUNT(DISTINCT k.id) as total FROM keywords k${whereClause}`,
       args: [...args],
     });
     const total = Number(countResult.rows[0]?.total || 0);
+
+    // Tổng số tiêu đề và bài viết (toàn bộ, không theo trang)
+    const statsResult = await db.execute({
+      sql: `SELECT SUM(json_array_length(k.titles)) as totalTitles, COUNT(a.id) as totalArticles
+            FROM keywords k
+            LEFT JOIN articles a ON k.keyword = a.keyword
+            ${whereClause}`,
+      args: [...args],
+    });
+    const totalTitles   = Number(statsResult.rows[0]?.totalTitles  || 0);
+    const totalArticles = Number(statsResult.rows[0]?.totalArticles || 0);
 
     const sql = `
       SELECT k.*, COUNT(a.id) as articleCount
@@ -48,7 +59,7 @@ router.get('/', async (req, res) => {
       return { ...k, titles: parsedTitles, titleCount: parsedTitles.length };
     });
 
-    res.json({ data, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } });
+    res.json({ data, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) }, stats: { totalTitles, totalArticles } });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Lỗi khi đọc danh sách từ khóa' });
