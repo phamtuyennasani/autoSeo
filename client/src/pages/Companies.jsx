@@ -162,9 +162,8 @@ const Companies = () => {
       ) : (
         <div className="table-container">
           {/* Header */}
-          <div className="table-header" style={{ gridTemplateColumns: showMultiUser ? '2fr 2fr 3fr 120px auto' : '2fr 2fr 3fr auto' }}>
+          <div className="table-header" style={{ gridTemplateColumns: showMultiUser ? '1fr 2fr 130px 72px' : '1fr 2fr 72px' }}>
             <div>Tên Công Ty</div>
-            <div>Website URL</div>
             <div>Mô tả</div>
             {showMultiUser && <div>Người tạo</div>}
             <div></div>
@@ -172,29 +171,41 @@ const Companies = () => {
           {companies.map(company => {
             const creator = showMultiUser ? userList.find(u => u.id === company.createdBy) : null;
             return (
-            <div key={company.id} className="table-row" style={{ gridTemplateColumns: showMultiUser ? '2fr 2fr 3fr 120px auto' : '2fr 2fr 3fr auto' }}>
-              {/* Name */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <div className="company-avatar">
-                  <span style={{ fontSize: '14px', fontWeight: '700', color: 'var(--accent)' }}>
-                    {getInitials(company.name)}
+            <div key={company.id} className="table-row" style={{ gridTemplateColumns: showMultiUser ? '1fr 2fr 130px 72px' : '1fr 2fr 72px' }}>
+              {/* Tên + URL + lĩnh vực */}
+              <div style={{ minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+                  <div className="company-avatar" style={{ flexShrink: 0 }}>
+                    <span style={{ fontSize: '13px', fontWeight: '700', color: 'var(--accent)' }}>
+                      {getInitials(company.name)}
+                    </span>
+                  </div>
+                  <span style={{ fontWeight: '600', fontSize: '14px', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {company.name}
                   </span>
                 </div>
-                <span style={{ fontWeight: '600', fontSize: '14px', color: 'var(--text-primary)' }}>
-                  {company.name}
-                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingLeft: 2 }}>
+                  <a href={company.url} target="_blank" rel="noreferrer" style={{
+                    display: 'flex', alignItems: 'center', gap: 4,
+                    fontSize: '12px', color: 'var(--info)', textDecoration: 'none',
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '60%',
+                  }}>
+                    <Globe size={11} style={{ flexShrink: 0 }} />
+                    {company.url.replace(/^https?:\/\//, '')}
+                  </a>
+                  {company.industry && (
+                    <span style={{
+                      fontSize: '10px', fontWeight: 600, padding: '1px 7px', borderRadius: 99,
+                      background: 'rgba(99,102,241,0.08)', color: 'var(--accent)',
+                      border: '1px solid rgba(99,102,241,0.2)', whiteSpace: 'nowrap', flexShrink: 0,
+                    }}>
+                      {company.industry}
+                    </span>
+                  )}
+                </div>
               </div>
 
-              {/* URL */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px' }}>
-                <Globe size={13} color="var(--info)" style={{ flexShrink: 0 }} />
-                <a href={company.url} target="_blank" rel="noreferrer"
-                  style={{ color: 'var(--info)', textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {company.url}
-                </a>
-              </div>
-
-              {/* Info */}
+              {/* Mô tả */}
               <div style={{ fontSize: '13px', color: 'var(--text-secondary)', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
                 {company.info || <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Chưa có mô tả</span>}
               </div>
@@ -207,9 +218,10 @@ const Companies = () => {
                       display: 'inline-flex', alignItems: 'center', gap: 4,
                       padding: '2px 8px', borderRadius: 99, fontSize: 11, fontWeight: 600,
                       background: 'var(--bg-hover)', border: '1px solid var(--border)',
-                      color: 'var(--text-secondary)',
+                      color: 'var(--text-secondary)', maxWidth: '100%',
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                     }}>
-                      <User size={9} />
+                      <User size={9} style={{ flexShrink: 0 }} />
                       {creator.full_name || creator.username}
                     </span>
                   ) : (
@@ -219,19 +231,11 @@ const Companies = () => {
               )}
 
               {/* Actions */}
-              <div style={{ display: 'flex', gap: '6px' }}>
-                <button
-                  onClick={() => openEdit(company)}
-                  className="btn btn-ghost btn-icon"
-                  title="Chỉnh sửa"
-                >
+              <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+                <button onClick={() => openEdit(company)} className="btn btn-ghost btn-icon" title="Chỉnh sửa">
                   <Pencil size={15} />
                 </button>
-                <button
-                  onClick={() => handleDelete(company.id, company.name)}
-                  className="btn btn-danger-ghost btn-icon"
-                  title="Xóa"
-                >
+                <button onClick={() => handleDelete(company.id, company.name)} className="btn btn-danger-ghost btn-icon" title="Xóa">
                   <Trash2 size={15} />
                 </button>
               </div>

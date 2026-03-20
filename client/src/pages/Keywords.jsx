@@ -507,7 +507,7 @@ const Keywords = () => {
                   <Tag size={11} /> SEO Title <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>({viewingArticle.seo_title.length} ký tự)</span>
                   <CopyBtn field="seo_title" />
                 </div>
-                <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-primary)', background: 'var(--bg-panel)', padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
+                <div id="seo-title" style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-primary)', background: 'var(--bg-panel)', padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
                   {viewingArticle.seo_title}
                 </div>
               </div>
@@ -518,7 +518,7 @@ const Keywords = () => {
                   <AlignLeft size={11} /> Meta Description <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>({viewingArticle.seo_description.length} ký tự)</span>
                   <CopyBtn field="seo_description" />
                 </div>
-                <div style={{ fontSize: '13px', color: 'var(--text-secondary)', background: 'var(--bg-panel)', padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', lineHeight: '1.6' }}>
+                <div id="seo-description" style={{ fontSize: '13px', color: 'var(--text-secondary)', background: 'var(--bg-panel)', padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', lineHeight: '1.6' }}>
                   {viewingArticle.seo_description}
                 </div>
               </div>
@@ -529,7 +529,7 @@ const Keywords = () => {
                   <Hash size={11} /> Từ khóa
                   <CopyBtn field="keyword" />
                 </div>
-                <div style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)', background: 'var(--bg-panel)', padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
+                <div id="seo-keyword" style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)', background: 'var(--bg-panel)', padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
                   {viewingArticle.keyword}
                 </div>
               </div>
@@ -544,6 +544,7 @@ const Keywords = () => {
           <div
             ref={articleContentRef}
             className="article-html-content"
+            id='seo-html-content'
             dangerouslySetInnerHTML={{ __html: marked.parse(viewingArticle.content || '') }}
           />
         </div>
@@ -1023,9 +1024,8 @@ const Keywords = () => {
           </div>
         ) : (
           <div className="table-container">
-            <div className="table-header" style={{ gridTemplateColumns: showMultiUser ? '3fr 2fr 1.5fr 1fr 100px 120px' : '3fr 2fr 1.5fr 1fr 120px' }}>
+            <div className="table-header" style={{ gridTemplateColumns: showMultiUser ? '1fr 130px 110px 130px 110px' : '1fr 130px 110px 110px' }}>
               <div>Từ Khóa</div>
-              <div>Website</div>
               <div>Thống Kê</div>
               <div>Ngày Tạo</div>
               {showMultiUser && <div>Người Tạo</div>}
@@ -1035,49 +1035,62 @@ const Keywords = () => {
               const company = getCompany(item.companyId);
               const creator = showMultiUser ? userList.find(u => u.id === item.createdBy) : null;
               return (
-                <div key={item.id} className="table-row" style={{ gridTemplateColumns: showMultiUser ? '3fr 2fr 1.5fr 1fr 100px 120px' : '3fr 2fr 1.5fr 1fr 120px' }}>
-                <div>
-                  <div style={{ fontWeight: '600', fontSize: '14px', color: 'var(--text-primary)', marginBottom: '3px' }}>{item.keyword}</div>
-                  <div className="badge badge-purple" style={{ fontSize: '10.5px', padding: '2px 7px' }}>SEO Keyword</div>
-                </div>
-                <div style={{ fontSize: '13px', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  {company ? (
-                    <>
-                      <div style={{ width: 24, height: 24, borderRadius: 5, background: 'var(--accent-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: '700', color: 'var(--accent)', flexShrink: 0 }}>
-                        {(company.name || 'C')[0].toUpperCase()}
+                <div key={item.id} className="table-row" style={{ gridTemplateColumns: showMultiUser ? '1fr 130px 110px 130px 110px' : '1fr 130px 110px 110px' }}>
+                  {/* Từ khóa + công ty */}
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: '600', fontSize: '14px', color: 'var(--text-primary)', marginBottom: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {item.keyword}
+                    </div>
+                    {company ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                        <div style={{ width: 16, height: 16, borderRadius: 3, background: 'var(--accent-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '9px', fontWeight: '700', color: 'var(--accent)', flexShrink: 0 }}>
+                          {(company.name || 'C')[0].toUpperCase()}
+                        </div>
+                        <span style={{ fontSize: '12px', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {company.name}
+                        </span>
                       </div>
-                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{company.name}</span>
-                    </>
-                  ) : <span style={{ color: 'var(--text-muted)' }}>—</span>}
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <div className="badge badge-blue" style={{ width: 'fit-content' }}><Hash size={10} /> {item.titleCount || 0} tiêu đề</div>
-                  <div className="badge badge-green" style={{ width: 'fit-content' }}><FileText size={10} /> {item.articleCount || 0} bài</div>
-                </div>
-                <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{formatDate(item.createdAt)}</div>
-                {showMultiUser && (
-                  <div>
-                    {creator ? (
-                      <span style={{
-                        display: 'inline-flex', alignItems: 'center', gap: 4,
-                        padding: '2px 8px', borderRadius: 99, fontSize: 11, fontWeight: 600,
-                        background: 'var(--bg-hover)', border: '1px solid var(--border)',
-                        color: 'var(--text-secondary)',
-                      }}>
-                        {creator.full_name || creator.username}
-                      </span>
                     ) : (
-                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>—</span>
+                      <div className="badge badge-purple" style={{ fontSize: '10px', padding: '1px 6px', width: 'fit-content' }}>SEO Keyword</div>
                     )}
                   </div>
-                )}
-                <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
-                  <button onClick={() => handleSelectKeyword(item)} className="btn btn-highlight btn-sm"><Eye size={14} /> Chi tiết</button>
-                  <button onClick={(e) => handleDeleteKeyword(item.id, e)} className="btn btn-danger-ghost btn-icon" title="Xóa"><Trash2 size={14} /></button>
+
+                  {/* Thống kê */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <div className="badge badge-blue" style={{ width: 'fit-content' }}><Hash size={10} /> {item.titleCount || 0} tiêu đề</div>
+                    <div className="badge badge-green" style={{ width: 'fit-content' }}><FileText size={10} /> {item.articleCount || 0} bài</div>
+                  </div>
+
+                  {/* Ngày tạo */}
+                  <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{formatDate(item.createdAt)}</div>
+
+                  {/* Người tạo */}
+                  {showMultiUser && (
+                    <div>
+                      {creator ? (
+                        <span style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 4,
+                          padding: '2px 8px', borderRadius: 99, fontSize: 11, fontWeight: 600,
+                          background: 'var(--bg-hover)', border: '1px solid var(--border)',
+                          color: 'var(--text-secondary)', maxWidth: '100%',
+                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        }}>
+                          {creator.full_name || creator.username}
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>—</span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Hành động */}
+                  <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+                    <button onClick={() => handleSelectKeyword(item)} className="btn btn-highlight btn-sm"><Eye size={14} /> Chi tiết</button>
+                    <button onClick={(e) => handleDeleteKeyword(item.id, e)} className="btn btn-danger-ghost btn-icon" title="Xóa"><Trash2 size={14} /></button>
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
           </div>
         )}
 

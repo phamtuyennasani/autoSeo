@@ -94,11 +94,16 @@ router.delete('/:id', async (req, res) => {
       return res.status(403).json({ error: 'Bạn không có quyền xóa công ty này.' });
     }
 
-    await db.execute({ sql: 'DELETE FROM companies WHERE id = ?', args: [id] });
+    // Cascade xóa dữ liệu liên quan trước (tránh FK constraint)
+    await db.execute({ sql: 'DELETE FROM articles   WHERE companyId = ?', args: [id] });
+    await db.execute({ sql: 'DELETE FROM batch_jobs WHERE companyId = ?', args: [id] });
+    await db.execute({ sql: 'DELETE FROM keywords   WHERE companyId = ?', args: [id] });
+    await db.execute({ sql: 'DELETE FROM companies  WHERE id = ?',        args: [id] });
+
     res.json({ success: true });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error('[companies] DELETE/:id', err.message);
+    res.status(500).json({ error: err.message || 'Internal server error' });
   }
 });
 
