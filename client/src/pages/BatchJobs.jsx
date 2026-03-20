@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { toast } from 'sonner';
 import apiClient from '../config/api';
 import {
   Layers, RefreshCw, Trash2, CheckCircle2, Clock, XCircle,
@@ -91,7 +92,7 @@ export default function BatchJobs() {
         refreshStats();
       }, 3000);
     } catch (err) {
-      alert('Lỗi: ' + (err.response?.data?.error || err.message));
+      toast.error('Lỗi: ' + (err.response?.data?.error || err.message));
     } finally {
       setTimeout(() => setTriggering(false), 3000);
     }
@@ -124,7 +125,7 @@ export default function BatchJobs() {
       await apiClient.post(`${API_ENDPOINT}/${job.id}/submit-now`);
       fetchJobs();
     } catch (err) {
-      alert('Lỗi: ' + (err.response?.data?.error || err.message));
+      toast.error('Lỗi: ' + (err.response?.data?.error || err.message));
     } finally {
       setSubmittingId(null);
     }
@@ -137,7 +138,7 @@ export default function BatchJobs() {
       await apiClient.delete(`${API_ENDPOINT}/${id}`);
       setJobs(prev => prev.filter(j => j.id !== id));
     } catch (err) {
-      alert('Lỗi xóa job: ' + (err.response?.data?.error || err.message));
+      toast.error('Lỗi xóa job: ' + (err.response?.data?.error || err.message));
     } finally {
       setDeletingId(null);
     }

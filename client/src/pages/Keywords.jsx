@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { toast } from 'sonner';
 import apiClient from '../config/api';
 import { marked } from 'marked';
 import { useNavigate } from 'react-router-dom';
@@ -270,7 +271,7 @@ const Keywords = () => {
       t => !articlesOfKeyword.find(a => a.title === t)
     );
     if (unwrittenTitles.length === 0) {
-      alert('Tất cả tiêu đề đã có bài viết rồi!');
+      toast.info('Tất cả tiêu đề đã có bài viết rồi!');
       return;
     }
     try {
@@ -286,9 +287,9 @@ const Keywords = () => {
     } catch (err) {
       const data = err.response?.data;
       if (data?.type === 'article_limit') {
-        alert(`⚠️ Vượt giới hạn bài viết hôm nay!\n\n${data.error}\n\nĐã dùng: ${data.used}/${data.limit} bài\nCòn lại: ${data.remaining ?? 0} bài`);
+        toast.error('Vượt giới hạn bài viết hôm nay!', { description: `Đã dùng: ${data.used}/${data.limit} bài • Còn lại: ${data.remaining ?? 0} bài` });
       } else {
-        alert('Có lỗi: ' + (data?.error || err.message));
+        toast.error('Có lỗi: ' + (data?.error || err.message));
       }
     }
   };
@@ -314,7 +315,7 @@ const Keywords = () => {
       fetchData();
     } catch (error) {
       console.error(error);
-      alert('Có lỗi xảy ra. Vui lòng kiểm tra lại cấu hình API hoặc thử lại sau.');
+      toast.error('Có lỗi xảy ra. Vui lòng kiểm tra lại cấu hình API hoặc thử lại sau.');
     } finally {
       setIsGenerating(false);
     }
@@ -328,7 +329,7 @@ const Keywords = () => {
       fetchData();
       if (selectedKeyword?.id === id) setSelectedKeyword(null);
     } catch (error) {
-      alert("Xóa thất bại!");
+      toast.error('Xóa thất bại!');
     }
   };
 
@@ -346,7 +347,7 @@ const Keywords = () => {
       await apiClient.delete(`${API_ARTICLE}/${article.id}`);
       handleArticleWritten();
     } catch (err) {
-      alert('Xóa bài cũ thất bại!');
+      toast.error('Xóa bài cũ thất bại!');
     }
     setWriteModalTitle(article.title);
     setIsWriteModalOpen(true);
@@ -374,7 +375,7 @@ const Keywords = () => {
       setIsEditModalOpen(false);
       setEditingArticle(null);
     } catch (err) {
-      alert('Lưu thất bại: ' + (err.response?.data?.error || err.message));
+      toast.error('Lưu thất bại: ' + (err.response?.data?.error || err.message));
     } finally {
       setIsSavingEdit(false);
     }
@@ -388,7 +389,7 @@ const Keywords = () => {
       const res = await apiClient.get(`${API_ARTICLE}/${article.id}/versions`);
       setArticleVersions(res.data);
     } catch (err) {
-      alert('Không tải được lịch sử: ' + (err.response?.data?.error || err.message));
+      toast.error('Không tải được lịch sử: ' + (err.response?.data?.error || err.message));
     } finally {
       setLoadingVersions(false);
     }
@@ -408,7 +409,7 @@ const Keywords = () => {
       const vRes = await apiClient.get(`${API_ARTICLE}/${res.data.id}/versions`);
       setArticleVersions(vRes.data);
     } catch (err) {
-      alert('Khôi phục thất bại: ' + (err.response?.data?.error || err.message));
+      toast.error('Khôi phục thất bại: ' + (err.response?.data?.error || err.message));
     } finally {
       setRestoringVersionId(null);
     }
@@ -421,7 +422,7 @@ const Keywords = () => {
       t => !articlesOfKeyword.find(a => a.title === t)
     );
     if (unwrittenTitles.length === 0) {
-      alert('Tất cả tiêu đề đã có bài viết rồi!');
+      toast.info('Tất cả tiêu đề đã có bài viết rồi!');
       return;
     }
 
@@ -438,9 +439,9 @@ const Keywords = () => {
       console.error('Lỗi gửi batch job:', err.message);
       const data = err.response?.data;
       if (data?.type === 'article_limit') {
-        alert(`⚠️ Vượt giới hạn bài viết hôm nay!\n\n${data.error}\n\nĐã dùng: ${data.used}/${data.limit} bài\nCòn lại: ${data.remaining ?? 0} bài`);
+        toast.error('Vượt giới hạn bài viết hôm nay!', { description: `Đã dùng: ${data.used}/${data.limit} bài • Còn lại: ${data.remaining ?? 0} bài` });
       } else {
-        alert('Có lỗi: ' + (data?.error || err.message));
+        toast.error('Có lỗi: ' + (data?.error || err.message));
       }
     } finally {
       setIsWritingAll(false);

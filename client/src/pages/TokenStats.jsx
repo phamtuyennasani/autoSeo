@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { toast } from 'sonner';
 import api from '../config/api';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -198,7 +199,7 @@ const TokenStats = () => {
       await api.delete('/api/stats/tokens');
       await load();
     } catch (e) {
-      alert('Lỗi khi reset: ' + (e.response?.data?.error || e.message));
+      toast.error('Lỗi khi reset: ' + (e.response?.data?.error || e.message));
     } finally {
       setResetting(false);
     }

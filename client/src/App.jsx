@@ -9,6 +9,7 @@ import Help from './pages/Help';
 import Login from './pages/Login';
 import Users from './pages/Users';
 import TokenStats from './pages/TokenStats';
+import { Toaster } from 'sonner';
 import { ThemeProvider } from './context/ThemeContext';
 import { TokenProvider } from './context/TokenContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -64,6 +65,7 @@ function App() {
         <AuthProvider>
           <BrowserRouter>
             <AppRoutes />
+            <Toaster richColors position="top-right" />
           </BrowserRouter>
         </AuthProvider>
       </TokenProvider>

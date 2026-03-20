@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { toast } from 'sonner';
 import apiClient from '../config/api';
 import { Plus, Trash2, Building2, Globe, Pencil, X, Save, User } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -72,7 +73,7 @@ const Companies = () => {
       setIsAddOpen(false);
       fetchCompanies();
     } catch (error) {
-      alert('Có lỗi xảy ra khi thêm công ty');
+      toast.error('Có lỗi xảy ra khi thêm công ty');
     } finally {
       setSubmitting(false);
     }
@@ -93,7 +94,7 @@ const Companies = () => {
       setEditingCompany(null);
       fetchCompanies();
     } catch (error) {
-      alert('Có lỗi khi cập nhật!');
+      toast.error('Có lỗi khi cập nhật!');
     } finally {
       setSaving(false);
     }
@@ -106,7 +107,7 @@ const Companies = () => {
       await apiClient.delete(`${API_URL}/${id}`);
       fetchCompanies();
     } catch (error) {
-      alert('Xóa thất bại!');
+      toast.error('Xóa thất bại!');
     }
   };
 
