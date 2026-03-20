@@ -134,6 +134,9 @@ async function initDb() {
     { table: 'users', col: 'gemini_model',    ddl: 'ALTER TABLE users ADD COLUMN gemini_model TEXT' },
     { table: 'users', col: 'serpapi_api_key', ddl: 'ALTER TABLE users ADD COLUMN serpapi_api_key TEXT' },
     { table: 'users', col: 'use_system_key',  ddl: 'ALTER TABLE users ADD COLUMN use_system_key INTEGER NOT NULL DEFAULT 0' },
+    { table: 'users', col: 'full_name',       ddl: 'ALTER TABLE users ADD COLUMN full_name TEXT' },
+    { table: 'users', col: 'email',           ddl: 'ALTER TABLE users ADD COLUMN email TEXT' },
+    { table: 'users', col: 'phone',           ddl: 'ALTER TABLE users ADD COLUMN phone TEXT' },
   ];
 
   for (const m of migrations) {

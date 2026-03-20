@@ -496,7 +496,7 @@ const Keywords = () => {
           </div>
         </div>
         {/* SEO META */}
-        {(viewingArticle.seo_title || viewingArticle.seo_description) && (
+        {(viewingArticle.seo_title || viewingArticle.seo_description || viewingArticle.keyword) && (
           <div className="panel" style={{ padding: '18px 24px', marginBottom: '16px', borderLeft: '3px solid var(--accent)' }}>
             <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '14px' }}>
               SEO Meta
@@ -513,13 +513,24 @@ const Keywords = () => {
               </div>
             )}
             {viewingArticle.seo_description && (
-              <div>
+              <div style={{ marginBottom: '12px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)', marginBottom: '5px' }}>
                   <AlignLeft size={11} /> Meta Description <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>({viewingArticle.seo_description.length} ký tự)</span>
                   <CopyBtn field="seo_description" />
                 </div>
                 <div style={{ fontSize: '13px', color: 'var(--text-secondary)', background: 'var(--bg-panel)', padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', lineHeight: '1.6' }}>
                   {viewingArticle.seo_description}
+                </div>
+              </div>
+            )}
+            {viewingArticle.keyword && (
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)', marginBottom: '5px' }}>
+                  <Hash size={11} /> Từ khóa
+                  <CopyBtn field="keyword" />
+                </div>
+                <div style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)', background: 'var(--bg-panel)', padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
+                  {viewingArticle.keyword}
                 </div>
               </div>
             )}
@@ -1053,7 +1064,7 @@ const Keywords = () => {
                         background: 'var(--bg-hover)', border: '1px solid var(--border)',
                         color: 'var(--text-secondary)',
                       }}>
-                        {creator.username}
+                        {creator.full_name || creator.username}
                       </span>
                     ) : (
                       <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>—</span>

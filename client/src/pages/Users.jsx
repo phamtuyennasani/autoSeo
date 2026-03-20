@@ -8,7 +8,7 @@ import {
   UserPlus, Trash2, Lock, Unlock, Edit2, X,
   RefreshCw, Shield, User, Crown, Loader2,
   Eye, EyeOff, Zap, FileText, AlertCircle, Activity,
-  KeyRound, Server
+  KeyRound, Server, Mail, Phone, Contact
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import apiClient from '../config/api';
@@ -167,6 +167,9 @@ const StatusBadge = ({ active }) => (
 function UserModal({ mode, user, onClose, onSave }) {
   const [form, setForm] = useState({
     username:            user?.username            || '',
+    full_name:           user?.full_name           || '',
+    email:               user?.email               || '',
+    phone:               user?.phone               || '',
     password:            '',
     role:                user?.role                || 'user',
     daily_token_limit:   String(user?.daily_token_limit   ?? 0),
@@ -290,6 +293,59 @@ function UserModal({ mode, user, onClose, onSave }) {
                 />
               </div>
             )}
+
+            {/* Họ tên */}
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>
+                Họ tên
+              </label>
+              <div style={{ position: 'relative' }}>
+                <Contact size={14} color="var(--text-muted)" style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+                <input
+                  className="input-field"
+                  value={form.full_name}
+                  onChange={e => set('full_name')(e.target.value)}
+                  placeholder="Ví dụ: Nguyễn Văn A"
+                  style={{ width: '100%', boxSizing: 'border-box', paddingLeft: 34 }}
+                />
+              </div>
+            </div>
+
+            {/* Email & Phone */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>
+                  Email <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>(tùy chọn)</span>
+                </label>
+                <div style={{ position: 'relative' }}>
+                  <Mail size={14} color="var(--text-muted)" style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+                  <input
+                    className="input-field"
+                    type="email"
+                    value={form.email}
+                    onChange={e => set('email')(e.target.value)}
+                    placeholder="email@example.com"
+                    style={{ width: '100%', boxSizing: 'border-box', paddingLeft: 34 }}
+                  />
+                </div>
+              </div>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>
+                  Số điện thoại <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>(tùy chọn)</span>
+                </label>
+                <div style={{ position: 'relative' }}>
+                  <Phone size={14} color="var(--text-muted)" style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+                  <input
+                    className="input-field"
+                    type="tel"
+                    value={form.phone}
+                    onChange={e => set('phone')(e.target.value)}
+                    placeholder="0912 345 678"
+                    style={{ width: '100%', boxSizing: 'border-box', paddingLeft: 34 }}
+                  />
+                </div>
+              </div>
+            </div>
 
             {/* Password */}
             <div>
@@ -474,6 +530,9 @@ const Users = () => {
       daily_token_limit:   parseInt(form.daily_token_limit,   10) || 0,
       daily_article_limit: parseInt(form.daily_article_limit, 10) || 0,
       use_system_key:      form.use_system_key,
+      full_name:           form.full_name  || null,
+      email:               form.email      || null,
+      phone:               form.phone      || null,
     });
     await load();
   };
@@ -484,6 +543,9 @@ const Users = () => {
       daily_token_limit:   parseInt(form.daily_token_limit,   10) || 0,
       daily_article_limit: parseInt(form.daily_article_limit, 10) || 0,
       use_system_key:      form.use_system_key,
+      full_name:           form.full_name  || null,
+      email:               form.email      || null,
+      phone:               form.phone      || null,
     };
     if (form.password) payload.password = form.password;
     await apiClient.put(`/api/users/${modal.user.id}`, payload);
@@ -524,12 +586,12 @@ const Users = () => {
   return (
     <div>
       {/* HEADER */}
-      <div className="page-header">
+      <div className="page-header" style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
         <div>
           <h1 className="page-title">Quản lý Users</h1>
           <p className="page-subtitle">{users.length} tài khoản · {activeCount} hoạt động · {adminCount} admin · {sysKeyCount} dùng key hệ thống</p>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8}}>
           <button className="btn btn-outline" onClick={load} disabled={loading} title="Làm mới">
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
           </button>
@@ -624,6 +686,12 @@ const Users = () => {
                         <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--accent)', background: 'var(--accent-subtle)', padding: '1px 6px', borderRadius: 99, fontWeight: 600 }}>bạn</span>
                       )}
                     </div>
+                    {u.full_name && (
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{u.full_name}</div>
+                    )}
+                    {u.email && (
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{u.email}</div>
+                    )}
                   </div>
                 </div>
 

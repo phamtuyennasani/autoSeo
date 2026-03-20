@@ -37,9 +37,8 @@ const Layout = () => {
   };
 
   const isAdmin = user?.role === 'admin';
-  const displayName = user?.username || 'Admin';
+  const displayName = user?.full_name || user?.username || 'Admin';
   const avatarChar = displayName.charAt(0).toUpperCase();
-
   return (
     <div className="app-container">
       {/* SIDEBAR */}

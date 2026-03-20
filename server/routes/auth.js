@@ -71,7 +71,7 @@ router.get('/me', authenticate, async (req, res) => {
     }
 
     const result = await db.execute({
-      sql: 'SELECT id, username, role, is_active, daily_token_limit, daily_article_limit, createdAt, lastLoginAt FROM users WHERE id = ?',
+      sql: 'SELECT id, username, full_name, email, phone, role, is_active, daily_token_limit, daily_article_limit, createdAt, lastLoginAt FROM users WHERE id = ?',
       args: [req.user.id],
     });
     const user = result.rows[0];

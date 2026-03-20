@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import apiClient from '../config/api';
-import { Plus, Trash2, Building2, Globe, Pencil, X, Save } from 'lucide-react';
+import { Plus, Trash2, Building2, Globe, Pencil, X, Save, User } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 import { API } from '../config/api';
 const API_URL = API.companies;
@@ -25,7 +26,12 @@ const INDUSTRIES = [
 ];
 
 const Companies = () => {
+  const { user: currentUser, authEnabled } = useAuth();
+  const isAdmin = currentUser?.role === 'admin' || !currentUser;
+  const showMultiUser = authEnabled && isAdmin;
+
   const [companies, setCompanies] = useState([]);
+  const [userList, setUserList] = useState([]);
   const [loading, setLoading] = useState(true);
 
   // Add modal
@@ -39,6 +45,11 @@ const Companies = () => {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => { fetchCompanies(); }, []);
+  useEffect(() => {
+    if (showMultiUser) {
+      apiClient.get('/api/users').then(r => setUserList(r.data)).catch(() => {});
+    }
+  }, [showMultiUser]);
 
   const fetchCompanies = async () => {
     try {
@@ -151,14 +162,17 @@ const Companies = () => {
       ) : (
         <div className="table-container">
           {/* Header */}
-          <div className="table-header" style={{ gridTemplateColumns: '2fr 2fr 3fr auto' }}>
+          <div className="table-header" style={{ gridTemplateColumns: showMultiUser ? '2fr 2fr 3fr 120px auto' : '2fr 2fr 3fr auto' }}>
             <div>Tên Công Ty</div>
             <div>Website URL</div>
             <div>Mô tả</div>
+            {showMultiUser && <div>Người tạo</div>}
             <div></div>
           </div>
-          {companies.map(company => (
-            <div key={company.id} className="table-row" style={{ gridTemplateColumns: '2fr 2fr 3fr auto' }}>
+          {companies.map(company => {
+            const creator = showMultiUser ? userList.find(u => u.id === company.createdBy) : null;
+            return (
+            <div key={company.id} className="table-row" style={{ gridTemplateColumns: showMultiUser ? '2fr 2fr 3fr 120px auto' : '2fr 2fr 3fr auto' }}>
               {/* Name */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                 <div className="company-avatar">
@@ -185,6 +199,25 @@ const Companies = () => {
                 {company.info || <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Chưa có mô tả</span>}
               </div>
 
+              {/* Người tạo */}
+              {showMultiUser && (
+                <div>
+                  {creator ? (
+                    <span style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 4,
+                      padding: '2px 8px', borderRadius: 99, fontSize: 11, fontWeight: 600,
+                      background: 'var(--bg-hover)', border: '1px solid var(--border)',
+                      color: 'var(--text-secondary)',
+                    }}>
+                      <User size={9} />
+                      {creator.full_name || creator.username}
+                    </span>
+                  ) : (
+                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>—</span>
+                  )}
+                </div>
+              )}
+
               {/* Actions */}
               <div style={{ display: 'flex', gap: '6px' }}>
                 <button
@@ -203,7 +236,8 @@ const Companies = () => {
                 </button>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
