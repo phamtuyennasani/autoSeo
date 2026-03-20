@@ -143,9 +143,7 @@ const Layout = () => {
                 <span className="topbar-token-value">{tokenStats.total_calls || 0}</span>
               </div>
             </div>
-
             <div className="topbar-badge">Server Online</div>
-
             {/* THEME TOGGLE */}
             <button
               onClick={toggleTheme}

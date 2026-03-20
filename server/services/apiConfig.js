@@ -37,11 +37,16 @@ async function getEffectiveApiConfig(userId) {
 
     // User có API key riêng → dùng key đó, không bị giới hạn
     if (row.gemini_api_key) {
+      // Nếu admin cũng bật use_system_key → gộp key hệ thống vào rotation
+      let apiKey = row.gemini_api_key;
+      if (row.use_system_key && systemConfig.apiKey) {
+        apiKey = [systemConfig.apiKey, row.gemini_api_key].filter(Boolean).join(',');
+      }
       return {
-        apiKey:         row.gemini_api_key,
+        apiKey,
         modelName:      row.gemini_model     || systemConfig.modelName,
         serpApiKey:     row.serpapi_api_key  || systemConfig.serpApiKey,
-        usingSystemKey: false,
+        usingSystemKey: false, // có key riêng → không tính giới hạn bài/ngày
         blocked:        false,
       };
     }

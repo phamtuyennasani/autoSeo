@@ -13,7 +13,8 @@ const FEATURES = [
   { icon: BarChart3, text: 'Báo cáo hiệu suất chi tiết' },
   { icon: Globe, text: 'Hỗ trợ đa ngôn ngữ & thị trường' },
 ];
-
+const version = import.meta.env.VITE_APP_VERSION || 'version 0.0.1';
+const environment = import.meta.env.VITE_APP_ENVONMENT || 'development';
 const Login = () => {
   const { login } = useAuth();
   const navigate = useNavigate();
@@ -113,6 +114,11 @@ const Login = () => {
           </div>
           <span style={{ fontSize: '22px', fontWeight: 800, color: '#f1f5f9', letterSpacing: '-0.5px' }}>
             Auto<span style={{ color: 'var(--accent)' }}>SEO</span>
+            {environment !== 'production' && (
+              <span style={{ fontSize: '10px', color: '#ffffff',opacity: 0.5, marginLeft: '5px',fontWeight: 'normal' }}>
+                (Demo Version)
+              </span>
+            )}
           </span>
         </div>
 
@@ -130,7 +136,7 @@ const Login = () => {
             marginBottom: '24px',
           }}>
             <div style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#6366f1', boxShadow: '0 0 8px #6366f1' }} />
-            <span style={{ fontSize: '12px', color: '#a5b4fc', fontWeight: 500 }}>Nền tảng SEO thế hệ mới</span>
+            <span style={{ fontSize: '12px', color: '#a5b4fc', fontWeight: 500 }}>Nền tảng viết SEO thế hệ mới</span>
           </div>
 
           <h1 style={{
@@ -138,7 +144,7 @@ const Login = () => {
             color: '#f1f5f9', margin: '0 0 16px',
             letterSpacing: '-1px',
           }}>
-            Tăng hạng Google<br />
+            Tối ưu thời gian<br />
             <span style={{
               background: 'linear-gradient(135deg, #6366f1, #a78bfa)',
               WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
@@ -146,7 +152,7 @@ const Login = () => {
           </h1>
 
           <p style={{ fontSize: '15px', color: '#64748b', lineHeight: 1.7, margin: 0, maxWidth: '380px' }}>
-            Hệ thống AI phân tích, tối ưu và theo dõi SEO toàn diện — giúp website bạn vượt đối thủ một cách bền vững.
+            Hệ thống AI phân tích, tối ưu và viết bài SEO toàn diện — giúp website bạn vượt đối thủ một cách bền vững.
           </p>
 
           {/* Features */}
@@ -178,7 +184,7 @@ const Login = () => {
           fontSize: '12px', color: '#334155',
           opacity: mounted ? 1 : 0, transition: 'opacity 0.5s ease 0.5s',
         }}>
-          © 2025 AutoSEO. All rights reserved.
+          © 2026 AutoSEO. All rights reserved. <span style={{fontSize:'10px'}}>{version}</span>
         </div>
       </div>
 
@@ -209,7 +215,7 @@ const Login = () => {
               Chào mừng trở lại
             </h2>
             <p style={{ fontSize: '14px', color: '#64748b', margin: 0 }}>
-              Đăng nhập để tiếp tục quản lý SEO của bạn
+              Đăng nhập để tiếp tục quản lý bài viết SEO của bạn
             </p>
           </div>
 

@@ -12,7 +12,7 @@
 const { GoogleGenAI } = require('@google/genai');
 const { jsonrepair } = require('jsonrepair');
 const { ARTICLE_SYSTEM_INSTRUCTION, buildArticlePrompt } = require('./prompts');
-const { pickKey } = require('./keyRotation');
+const { withKeyFallback } = require('./keyRotation');
 require('dotenv').config();
 
 const MODEL_NAME = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
@@ -57,10 +57,8 @@ function parseResponse(raw, titleFallback) {
  * @returns {{ geminiJobName: string, total: number }}
  */
 async function submitBatchJob(keyword, titles, companyInfo, apiKey) {
-  const resolvedKey = pickKey(apiKey || process.env.GEMINI_API_KEY);
-  if (!resolvedKey) throw new Error('GEMINI_API_KEY is not configured.');
-
-  const ai = new GoogleGenAI({ apiKey: resolvedKey });
+  const keysStr = apiKey || process.env.GEMINI_API_KEY;
+  if (!keysStr) throw new Error('GEMINI_API_KEY is not configured.');
 
   const inlinedRequests = titles.map((title) => ({
     contents: [{ parts: [{ text: buildArticlePrompt(keyword, title, companyInfo) }], role: 'user' }],
@@ -69,14 +67,16 @@ async function submitBatchJob(keyword, titles, companyInfo, apiKey) {
 
   console.log(`[batch] Submitting ${titles.length} requests, model: ${MODEL_NAME}`);
 
-  const job = await ai.batches.create({
-    model: MODEL_NAME,
-    src: inlinedRequests,
-    config: { displayName: `autoseo-${keyword.slice(0, 30)}-${Date.now()}` },
+  return withKeyFallback(keysStr, async (key) => {
+    const ai = new GoogleGenAI({ apiKey: key });
+    const job = await ai.batches.create({
+      model: MODEL_NAME,
+      src: inlinedRequests,
+      config: { displayName: `autoseo-${keyword.slice(0, 30)}-${Date.now()}` },
+    });
+    console.log(`[batch] Job created: ${job.name}, state: ${job.state}`);
+    return { geminiJobName: job.name, total: titles.length, state: job.state };
   });
-
-  console.log(`[batch] Job created: ${job.name}, state: ${job.state}`);
-  return { geminiJobName: job.name, total: titles.length, state: job.state };
 }
 
 // ─── 2. PROCESS: Kiểm tra + lấy kết quả khi job xong ─────────────────────────
@@ -89,11 +89,13 @@ async function submitBatchJob(keyword, titles, companyInfo, apiKey) {
  * @returns {{ done: boolean, state: string, results?: Array }}
  */
 async function processBatchJob(geminiJobName, titles, apiKey) {
-  const resolvedKey = pickKey(apiKey || process.env.GEMINI_API_KEY);
-  if (!resolvedKey) throw new Error('GEMINI_API_KEY is not configured.');
+  const keysStr = apiKey || process.env.GEMINI_API_KEY;
+  if (!keysStr) throw new Error('GEMINI_API_KEY is not configured.');
 
-  const ai = new GoogleGenAI({ apiKey: resolvedKey });
-  const job = await ai.batches.get({ name: geminiJobName });
+  const job = await withKeyFallback(keysStr, async (key) => {
+    const ai = new GoogleGenAI({ apiKey: key });
+    return ai.batches.get({ name: geminiJobName });
+  });
 
   console.log(`[batch] Check job ${geminiJobName}: ${job.state}`);
 
