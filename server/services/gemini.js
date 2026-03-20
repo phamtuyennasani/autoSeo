@@ -2,11 +2,13 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { jsonrepair } = require('jsonrepair');
 const { marked } = require('marked');
 const { ARTICLE_SYSTEM_INSTRUCTION, buildArticlePrompt, buildTitlesPrompt } = require('./prompts');
+const { pickKey } = require('./keyRotation');
 require('dotenv').config();
 
 // Client và model được tạo động mỗi lần gọi để phản ánh config mới nhất từ DB
+// Hỗ trợ nhiều key cách nhau dấu phẩy — pickKey() sẽ xoay vòng round-robin
 function getGenAI(apiKey) {
-  const key = apiKey || process.env.GEMINI_API_KEY;
+  const key = pickKey(apiKey || process.env.GEMINI_API_KEY);
   if (!key) return null;
   return new GoogleGenerativeAI(key);
 }

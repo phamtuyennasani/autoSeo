@@ -12,6 +12,7 @@
 const { GoogleGenAI } = require('@google/genai');
 const { jsonrepair } = require('jsonrepair');
 const { ARTICLE_SYSTEM_INSTRUCTION, buildArticlePrompt } = require('./prompts');
+const { pickKey } = require('./keyRotation');
 require('dotenv').config();
 
 const MODEL_NAME = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
@@ -56,7 +57,7 @@ function parseResponse(raw, titleFallback) {
  * @returns {{ geminiJobName: string, total: number }}
  */
 async function submitBatchJob(keyword, titles, companyInfo, apiKey) {
-  const resolvedKey = apiKey || process.env.GEMINI_API_KEY;
+  const resolvedKey = pickKey(apiKey || process.env.GEMINI_API_KEY);
   if (!resolvedKey) throw new Error('GEMINI_API_KEY is not configured.');
 
   const ai = new GoogleGenAI({ apiKey: resolvedKey });
@@ -88,7 +89,7 @@ async function submitBatchJob(keyword, titles, companyInfo, apiKey) {
  * @returns {{ done: boolean, state: string, results?: Array }}
  */
 async function processBatchJob(geminiJobName, titles, apiKey) {
-  const resolvedKey = apiKey || process.env.GEMINI_API_KEY;
+  const resolvedKey = pickKey(apiKey || process.env.GEMINI_API_KEY);
   if (!resolvedKey) throw new Error('GEMINI_API_KEY is not configured.');
 
   const ai = new GoogleGenAI({ apiKey: resolvedKey });

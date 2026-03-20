@@ -237,6 +237,79 @@ function KeyField({ label, sub, color = 'var(--accent)', value, onChange, show, 
   );
 }
 
+// Component đặc biệt cho Gemini API Key — hỗ trợ nhiều key cách nhau dấu phẩy
+function GeminiKeyField({ value, onChange, show, onToggleShow }) {
+  const keys = value ? value.split(',').map(k => k.trim()).filter(Boolean) : [];
+  const keyCount = keys.length;
+
+  return (
+    <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 18px', borderBottom: '1px solid var(--border)', background: 'var(--bg-panel)' }}>
+        <div style={{ width: 34, height: 34, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(99,102,241,0.12)', flexShrink: 0 }}>
+          <KeyRound size={16} color="var(--accent)" />
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontWeight: 700, fontSize: 14 }}>Gemini API Key</div>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+            Lấy tại <strong>aistudio.google.com</strong> → Get API Key — nhập nhiều key cách nhau dấu <strong>,</strong> để xoay vòng
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          {keyCount > 1 && (
+            <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: 'rgba(99,102,241,0.12)', color: 'var(--accent)' }}>
+              {keyCount} keys
+            </span>
+          )}
+          {keyCount > 0
+            ? <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: 'var(--success-subtle)', color: 'var(--success)' }}>Đã cấu hình</span>
+            : <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: 'var(--bg-panel)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>Chưa cấu hình</span>
+          }
+        </div>
+      </div>
+
+      {/* Input */}
+      <div style={{ padding: '14px 18px', position: 'relative' }}>
+        <textarea
+          className="input-field"
+          rows={keyCount > 1 ? Math.min(keyCount + 1, 5) : 2}
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          placeholder={'AIza... (1 key)\nhoặc: AIza..., AIza..., AIza... (nhiều key xoay vòng)'}
+          style={{
+            resize: 'vertical',
+            fontFamily: 'monospace',
+            fontSize: 13,
+            paddingRight: 42,
+            filter: show ? 'none' : 'blur(4px)',
+            transition: 'filter 0.2s',
+            userSelect: show ? 'auto' : 'none',
+          }}
+        />
+        <button
+          onClick={onToggleShow}
+          style={{ position: 'absolute', right: 28, top: 24, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex' }}
+          title={show ? 'Ẩn key' : 'Hiện key'}
+        >
+          {show ? <EyeOff size={16} /> : <Eye size={16} />}
+        </button>
+      </div>
+
+      {/* Key list preview khi show */}
+      {show && keyCount > 1 && (
+        <div style={{ padding: '0 18px 14px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {keys.map((k, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-secondary)' }}>
+              <span style={{ width: 18, height: 18, borderRadius: '50%', background: 'var(--accent-subtle)', color: 'var(--accent)', fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{i + 1}</span>
+              <span style={{ fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{k.slice(0, 12)}...{k.slice(-4)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ApiConfigTab() {
   const { user, authEnabled } = useAuth();
   const isAdmin = user?.role === 'admin';
@@ -296,16 +369,12 @@ function ApiConfigTab() {
         </div>
       )}
 
-      {/* Gemini API Key */}
-      <KeyField
-        label="Gemini API Key"
-        sub={<>Lấy tại <strong>aistudio.google.com</strong> → Get API Key</>}
-        color="var(--accent)"
+      {/* Gemini API Key — hỗ trợ nhiều key xoay vòng */}
+      <GeminiKeyField
         value={form.gemini_api_key}
         onChange={v => setForm({ ...form, gemini_api_key: v })}
         show={showGemini}
         onToggleShow={() => setShowGemini(v => !v)}
-        placeholder="AIza..."
       />
 
       {/* Gemini Model */}
