@@ -175,9 +175,17 @@ router.post('/google', async (req, res) => {
     let user = result.rows[0];
 
     if (!user) {
-      return res.status(403).json({
-        error: `Tài khoản Google "${email}" chưa được cấp quyền truy cập. Liên hệ quản trị viên.`,
+      // Tự động tạo tài khoản mới từ Google
+      const { name } = googleRes.data;
+      const newId = `google_${googleId}`;
+      const username = email.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '_') + '_' + Date.now().toString().slice(-4);
+      await db.execute({
+        sql: `INSERT INTO users (id, username, password_hash, role, is_active, google_id, email, full_name, createdAt)
+              VALUES (?, ?, '', 'user', 1, ?, ?, ?, ?)`,
+        args: [newId, username, googleId, email, name || null, new Date().toISOString()],
       });
+      const newResult = await db.execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [newId] });
+      user = newResult.rows[0];
     }
 
     if (!user.is_active) {
