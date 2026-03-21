@@ -150,6 +150,8 @@ async function initDb() {
     { table: 'users', col: 'full_name',       ddl: 'ALTER TABLE users ADD COLUMN full_name TEXT' },
     { table: 'users', col: 'email',           ddl: 'ALTER TABLE users ADD COLUMN email TEXT' },
     { table: 'users', col: 'phone',           ddl: 'ALTER TABLE users ADD COLUMN phone TEXT' },
+    // users — google oauth
+    { table: 'users', col: 'google_id',    ddl: 'ALTER TABLE users ADD COLUMN google_id TEXT' },
     // companies — publish API
     { table: 'companies', col: 'publish_api_url', ddl: 'ALTER TABLE companies ADD COLUMN publish_api_url TEXT' },
     { table: 'companies', col: 'auto_publish',    ddl: 'ALTER TABLE companies ADD COLUMN auto_publish INTEGER NOT NULL DEFAULT 0' },

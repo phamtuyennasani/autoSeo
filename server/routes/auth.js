@@ -11,6 +11,7 @@ const router = express.Router();
 const { db } = require('../data/store');
 const { comparePassword, signToken, hashPassword } = require('../services/auth');
 const authenticate = require('../middleware/authenticate');
+const axios = require('axios');
 
 // POST /login
 router.post('/login', async (req, res) => {
@@ -142,6 +143,79 @@ router.get('/status', (req, res) => {
 // POST /logout — Client sẽ xóa token, server chỉ trả 200
 router.post('/logout', (req, res) => {
   res.json({ success: true, message: 'Đã đăng xuất.' });
+});
+
+// POST /google — Đăng nhập bằng Google access token
+router.post('/google', async (req, res) => {
+  if (process.env.AUTH_ENABLED !== 'true') {
+    return res.status(400).json({ error: 'Chức năng này chỉ khả dụng khi bật xác thực.' });
+  }
+
+  const { access_token } = req.body;
+  if (!access_token) {
+    return res.status(400).json({ error: 'Thiếu Google access token.' });
+  }
+
+  try {
+    // Lấy thông tin user từ Google userinfo API
+    const googleRes = await axios.get('https://www.googleapis.com/oauth2/v3/userinfo', {
+      headers: { Authorization: `Bearer ${access_token}` },
+    });
+    const { sub: googleId, email } = googleRes.data;
+
+    if (!email) {
+      return res.status(400).json({ error: 'Tài khoản Google không có email.' });
+    }
+
+    // Tìm user theo google_id hoặc email
+    let result = await db.execute({
+      sql: 'SELECT * FROM users WHERE google_id = ? OR email = ?',
+      args: [googleId, email],
+    });
+    let user = result.rows[0];
+
+    if (!user) {
+      return res.status(403).json({
+        error: `Tài khoản Google "${email}" chưa được cấp quyền truy cập. Liên hệ quản trị viên.`,
+      });
+    }
+
+    if (!user.is_active) {
+      return res.status(403).json({ error: 'Tài khoản đã bị khóa. Liên hệ admin để được hỗ trợ.' });
+    }
+
+    // Gắn google_id nếu chưa có
+    if (!user.google_id) {
+      await db.execute({
+        sql: 'UPDATE users SET google_id = ? WHERE id = ?',
+        args: [googleId, user.id],
+      });
+    }
+
+    // Cập nhật lastLoginAt
+    await db.execute({
+      sql: 'UPDATE users SET lastLoginAt = ? WHERE id = ?',
+      args: [new Date().toISOString(), user.id],
+    });
+
+    const token = signToken(user.id, user.role);
+    res.json({
+      token,
+      user: {
+        id: user.id,
+        username: user.username,
+        role: user.role,
+        daily_token_limit: user.daily_token_limit,
+        daily_article_limit: user.daily_article_limit,
+      },
+    });
+  } catch (err) {
+    console.error('[auth/google]', err.message);
+    if (err.response?.status === 401) {
+      return res.status(401).json({ error: 'Google token không hợp lệ hoặc đã hết hạn.' });
+    }
+    res.status(500).json({ error: 'Lỗi xác thực Google.' });
+  }
 });
 
 module.exports = router;

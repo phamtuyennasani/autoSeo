@@ -11,7 +11,7 @@
 const { verifyToken } = require('../services/auth');
 
 // Các path không cần xác thực (public)
-const PUBLIC_PATHS = ['/api/auth/login', '/api/auth/logout', '/api/auth/status'];
+const PUBLIC_PATHS = ['/api/auth/login', '/api/auth/logout', '/api/auth/status', '/api/auth/google'];
 
 async function authenticate(req, res, next) {
   // Bypass hoàn toàn nếu AUTH_ENABLED tắt
