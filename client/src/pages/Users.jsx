@@ -9,7 +9,6 @@ import {
   RefreshCw, Shield, User, Crown, Loader2,
   Eye, EyeOff, Zap, FileText, AlertCircle, Activity,
   KeyRound, Server, Mail, Phone, Contact, Users as UsersIcon,
-  ChevronDown,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import apiClient from '../config/api';
@@ -245,8 +244,9 @@ function UserModal({ mode, user, onClose, onSave, currentUser, allUsers }) {
         position: 'fixed', inset: 0,
         background: 'rgba(0,0,0,0.6)',
         backdropFilter: 'blur(4px)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
         zIndex: 9999, padding: '20px',
+        overflowY: 'auto',
       }}
     >
       <div
@@ -258,8 +258,7 @@ function UserModal({ mode, user, onClose, onSave, currentUser, allUsers }) {
           borderRadius: '16px',
           boxShadow: '0 24px 80px rgba(0,0,0,0.45)',
           overflow: 'hidden',
-          maxHeight: '95vh',
-          display: 'flex', flexDirection: 'column',
+          margin: 'auto',
         }}
       >
         {/* HEADER */}
@@ -301,8 +300,8 @@ function UserModal({ mode, user, onClose, onSave, currentUser, allUsers }) {
         </div>
 
         {/* BODY — scrollable */}
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
-          <div style={{ padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: 16, overflowY: 'auto' }}>
+        <form onSubmit={handleSubmit}>
+          <div style={{ padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: 16 }}>
 
             {/* Error */}
             {err && (
