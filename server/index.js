@@ -11,6 +11,7 @@ app.use(express.json());
 // ── Middleware xác thực (global, trước tất cả routes) ─────────────────────────
 const authenticate = require('./middleware/authenticate');
 const requireAdmin = require('./middleware/requireAdmin');
+const requireManager = require('./middleware/requireManager');
 const checkDailyLimits = require('./middleware/checkLimits');
 
 app.use(authenticate);
@@ -18,8 +19,8 @@ app.use(authenticate);
 // ── Auth routes (không cần authenticate thêm — /login không cần, nhưng /me tự check bên trong) ──
 app.use('/api/auth', require('./routes/auth'));
 
-// ── User management routes (admin only) ──────────────────────────────────────
-app.use('/api/users', requireAdmin, require('./routes/users'));
+// ── User management routes (manager trở lên) ─────────────────────────────────
+app.use('/api/users', requireManager, require('./routes/users'));
 
 // ── Các routes chính ──────────────────────────────────────────────────────────
 app.use('/api/keywords',   require('./routes/keywords'));

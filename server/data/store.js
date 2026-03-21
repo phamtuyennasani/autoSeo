@@ -160,6 +160,11 @@ async function initDb() {
     { table: 'articles', col: 'publish_status',      ddl: "ALTER TABLE articles ADD COLUMN publish_status TEXT NOT NULL DEFAULT 'unpublished'" },
     { table: 'articles', col: 'published_at',         ddl: 'ALTER TABLE articles ADD COLUMN published_at TEXT' },
     { table: 'articles', col: 'publish_external_id',  ddl: 'ALTER TABLE articles ADD COLUMN publish_external_id TEXT' },
+    // users — hierarchy
+    { table: 'users', col: 'manager_id', ddl: 'ALTER TABLE users ADD COLUMN manager_id TEXT' },
+    // articles — audit trail (ai viết thay)
+    { table: 'articles', col: 'writtenBy', ddl: 'ALTER TABLE articles ADD COLUMN writtenBy TEXT' },
+    { table: 'batch_jobs', col: 'writtenBy', ddl: 'ALTER TABLE batch_jobs ADD COLUMN writtenBy TEXT' },
   ];
 
   for (const m of migrations) {
@@ -175,15 +180,17 @@ async function initDb() {
     }
   }
 
-  // ── Seed admin mặc định ──
+  // ── Seed admin mặc định (role = 'root') ──
   try {
     const bcrypt = require('bcryptjs');
     const adminHash = await bcrypt.hash('admin123', 10);
     await db.execute({
       sql: `INSERT OR IGNORE INTO users (id, username, password_hash, role, is_active, createdAt)
-            VALUES ('admin', 'admin', ?, 'admin', 1, ?)`,
+            VALUES ('admin', 'admin', ?, 'root', 1, ?)`,
       args: [adminHash, new Date().toISOString()],
     });
+    // One-time migration: đổi role 'admin' → 'root' cho các user cũ
+    await db.execute(`UPDATE users SET role = 'root' WHERE role = 'admin'`);
   } catch (e) {
     console.warn('[store] Seed admin:', e.message);
   }

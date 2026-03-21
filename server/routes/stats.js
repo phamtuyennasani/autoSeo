@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { db } = require('../data/store');
+const { isRoot: checkIsRoot, getVisibleUserIds } = require('../services/permissions');
 
 // Giá Gemini theo model (USD per 1M tokens) — nguồn: https://ai.google.dev/gemini-api/docs/pricing
 // Cập nhật: 2025-03
@@ -38,8 +39,8 @@ function calcCost(inputTokens, outputTokens, modelName) {
 // GET /api/stats/tokens?period=today|week|month|all&userId=...
 router.get('/tokens', async (req, res) => {
   try {
-    const user   = req.user || { id: 'admin', role: 'admin' };
-    const isAdmin = user.role === 'admin';
+    const user   = req.user || { id: 'admin', role: 'root' };
+    const isAdmin = user.role === 'root' || user.role === 'admin' || user.role === 'senior_manager' || user.role === 'manager';
     const { period = 'all', userId } = req.query;
 
     // Xác định điều kiện lọc thời gian
@@ -135,10 +136,17 @@ router.get('/tokens', async (req, res) => {
       args: dailyArgs,
     });
 
-    // 5. Danh sách users (chỉ admin và khi AUTH bật)
+    // 5. Danh sách users (manager trở lên và khi AUTH bật)
     const authEnabled = process.env.AUTH_ENABLED === 'true';
     let users = [];
     if (isAdmin && authEnabled) {
+      const visibleIds = await getVisibleUserIds(user.id, user.role); // null = tất cả
+      let userWhere = '';
+      let userArgs = [];
+      if (visibleIds !== null) {
+        userWhere = `WHERE u.id IN (${visibleIds.map(() => '?').join(',')})`;
+        userArgs = visibleIds;
+      }
       const usersResult = await db.execute({
         sql: `SELECT u.id, u.username, u.full_name, u.role,
                 COALESCE(SUM(tu.total_tokens), 0) AS total_tokens,
@@ -147,9 +155,10 @@ router.get('/tokens', async (req, res) => {
                 COUNT(tu.id) AS calls
               FROM users u
               LEFT JOIN token_usage tu ON u.id = tu.createdBy
+              ${userWhere}
               GROUP BY u.id
               ORDER BY total_tokens DESC`,
-        args: [],
+        args: userArgs,
       });
       users = usersResult.rows;
     }
@@ -214,8 +223,8 @@ router.get('/tokens', async (req, res) => {
 // Reset thống kê (admin reset tất cả, user chỉ reset của mình)
 router.delete('/tokens', async (req, res) => {
   try {
-    const user = req.user || { id: 'admin', role: 'admin' };
-    if (user.role === 'admin') {
+    const user = req.user || { id: 'admin', role: 'root' };
+    if (user.role === 'root' || user.role === 'admin') {
       await db.execute('DELETE FROM token_usage');
     } else {
       await db.execute({ sql: 'DELETE FROM token_usage WHERE createdBy = ?', args: [user.id] });

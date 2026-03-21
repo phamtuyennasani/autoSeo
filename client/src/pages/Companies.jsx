@@ -30,10 +30,9 @@ const INDUSTRIES = [
 const INDUSTRY_OPTIONS = INDUSTRIES.map(ind => ({ value: ind, label: ind }));
 
 const Companies = () => {
-  const { user: currentUser, authEnabled } = useAuth();
+  const { user: currentUser, authEnabled, canManageUsers } = useAuth();
   const confirm = useConfirm();
-  const isAdmin = currentUser?.role === 'admin' || !currentUser;
-  const showMultiUser = authEnabled && isAdmin;
+  const showMultiUser = authEnabled && canManageUsers;
 
   const [companies, setCompanies] = useState([]);
   const [userList, setUserList] = useState([]);

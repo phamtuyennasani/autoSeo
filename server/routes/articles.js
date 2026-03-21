@@ -5,6 +5,7 @@ const { generateArticle } = require('../services/gemini');
 const { getEffectiveApiConfig } = require('../services/apiConfig');
 const { getSetting } = require('./settings');
 const { applyInlineStyles } = require('../services/htmlUtils');
+const { isRoot, getVisibleUserIds, canManageUsers } = require('../services/permissions');
 
 // ─── Helper: slugify title thành URL slug (hỗ trợ tiếng Việt) ────────────────
 function slugify(text) {
@@ -80,7 +81,7 @@ async function publishArticle(articleId, article, company, apiUrl, email = '') {
 
 // ─── Helper: kiểm tra giới hạn bài/ngày (chỉ áp dụng khi dùng key hệ thống) ──
 async function checkArticleLimit(user) {
-  if (user.role === 'admin') return null;
+  if (isRoot(user)) return null;
   try {
     const today = new Date().toISOString().slice(0, 10);
 
@@ -117,7 +118,7 @@ async function checkArticleLimit(user) {
 }
 
 // ─── Helper: gọi AI + lưu token + lưu DB ─────────────────────────────────────
-async function generateAndSave(keyword, title, companyId, company, createdBy = null, userConfig = {}, keywordId = null) {
+async function generateAndSave(keyword, title, companyId, company, createdBy = null, userConfig = {}, keywordId = null, writtenBy = null) {
   const result = await generateArticle(keyword, title, company, userConfig);
 
   if (result.usage) {
@@ -148,10 +149,10 @@ async function generateAndSave(keyword, title, companyId, company, createdBy = n
   const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   const createdAt = new Date().toISOString();
   await db.execute({
-    sql: 'INSERT INTO articles (id, keyword, title, companyId, content, seo_title, seo_description, image_prompts, createdAt, createdBy, keywordId) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    args: [id, keyword, title, companyId, content, seo_title, seo_description, JSON.stringify(image_prompts), createdAt, createdBy, keywordId],
+    sql: 'INSERT INTO articles (id, keyword, title, companyId, content, seo_title, seo_description, image_prompts, createdAt, createdBy, keywordId, writtenBy) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    args: [id, keyword, title, companyId, content, seo_title, seo_description, JSON.stringify(image_prompts), createdAt, createdBy, keywordId, writtenBy],
   });
-  const newArticle = { id, keyword, title, companyId, content, seo_title, seo_description, image_prompts, createdAt, createdBy, keywordId, publish_status: 'unpublished' };
+  const newArticle = { id, keyword, title, companyId, content, seo_title, seo_description, image_prompts, createdAt, createdBy, writtenBy, keywordId, publish_status: 'unpublished' };
 
   // Auto-publish nếu công ty bật tính năng này
   if (company.auto_publish) {
@@ -178,8 +179,7 @@ async function generateAndSave(keyword, title, companyId, company, createdBy = n
 // ─── GET danh sách bài viết (có phân trang) ──────────────────────────────────
 router.get('/', async (req, res) => {
   try {
-    const user = req.user || { id: 'admin', role: 'admin' };
-    const isAdmin = user.role === 'admin';
+    const user = req.user || { id: 'admin', role: 'root' };
     const { keyword, companyId } = req.query;
     const page  = Math.max(1, parseInt(req.query.page)  || 1);
     const limit = Math.max(1, Math.min(200, parseInt(req.query.limit) || 50));
@@ -190,9 +190,13 @@ router.get('/', async (req, res) => {
 
     if (keyword)   { conditions.push('a.keyword = ?');   args.push(keyword); }
     if (companyId) { conditions.push('a.companyId = ?'); args.push(companyId); }
-    if (!isAdmin && !(keyword && companyId)) {
-      conditions.push('a.createdBy = ?');
-      args.push(user.id);
+
+    // Lọc theo phân cấp (root = xem tất cả, manager/senior_manager = xem cấp dưới)
+    const visibleIds = await getVisibleUserIds(user.id, user.role);
+    if (visibleIds !== null) {
+      const placeholders = visibleIds.map(() => '?').join(',');
+      conditions.push(`a.createdBy IN (${placeholders})`);
+      args.push(...visibleIds);
     }
 
     const whereClause = conditions.length > 0 ? ' WHERE ' + conditions.join(' AND ') : '';
@@ -241,8 +245,16 @@ router.put('/:id', async (req, res) => {
     const check = await db.execute({ sql: 'SELECT * FROM articles WHERE id = ?', args: [id] });
     if (!check.rows[0]) return res.status(404).json({ error: 'Không tìm thấy bài viết' });
 
-    if (user.role !== 'admin' && check.rows[0].createdBy !== user.id) {
-      return res.status(403).json({ error: 'Bạn không có quyền chỉnh sửa bài viết này.' });
+    if (!isRoot(user) && check.rows[0].createdBy !== user.id) {
+      // Manager/senior_manager có thể sửa bài của cấp dưới
+      if (canManageUsers(user)) {
+        const visibleIds = await getVisibleUserIds(user.id, user.role);
+        if (visibleIds && !visibleIds.includes(check.rows[0].createdBy)) {
+          return res.status(403).json({ error: 'Bạn không có quyền chỉnh sửa bài viết này.' });
+        }
+      } else {
+        return res.status(403).json({ error: 'Bạn không có quyền chỉnh sửa bài viết này.' });
+      }
     }
 
     // Lưu phiên bản cũ trước khi ghi đè
@@ -295,8 +307,15 @@ router.post('/:id/restore/:versionId', async (req, res) => {
 
     const check = await db.execute({ sql: 'SELECT * FROM articles WHERE id = ?', args: [id] });
     if (!check.rows[0]) return res.status(404).json({ error: 'Không tìm thấy bài viết' });
-    if (user.role !== 'admin' && check.rows[0].createdBy !== user.id) {
-      return res.status(403).json({ error: 'Bạn không có quyền khôi phục bài viết này.' });
+    if (!isRoot(user) && check.rows[0].createdBy !== user.id) {
+      if (canManageUsers(user)) {
+        const visibleIds = await getVisibleUserIds(user.id, user.role);
+        if (visibleIds && !visibleIds.includes(check.rows[0].createdBy)) {
+          return res.status(403).json({ error: 'Bạn không có quyền khôi phục bài viết này.' });
+        }
+      } else {
+        return res.status(403).json({ error: 'Bạn không có quyền khôi phục bài viết này.' });
+      }
     }
 
     // Xóa phiên bản vừa restore trước (tránh bị pruning xóa nhầm sau này)
@@ -331,8 +350,15 @@ router.delete('/:id', async (req, res) => {
     const check = await db.execute({ sql: 'SELECT createdBy FROM articles WHERE id = ?', args: [id] });
     if (!check.rows[0]) return res.status(404).json({ error: 'Không tìm thấy' });
 
-    if (user.role !== 'admin' && check.rows[0].createdBy !== user.id) {
-      return res.status(403).json({ error: 'Bạn không có quyền xóa bài viết này.' });
+    if (!isRoot(user) && check.rows[0].createdBy !== user.id) {
+      if (canManageUsers(user)) {
+        const visibleIds = await getVisibleUserIds(user.id, user.role);
+        if (visibleIds && !visibleIds.includes(check.rows[0].createdBy)) {
+          return res.status(403).json({ error: 'Bạn không có quyền xóa bài viết này.' });
+        }
+      } else {
+        return res.status(403).json({ error: 'Bạn không có quyền xóa bài viết này.' });
+      }
     }
 
     await db.execute({ sql: 'DELETE FROM articles WHERE id = ?', args: [id] });
@@ -346,10 +372,23 @@ router.delete('/:id', async (req, res) => {
 // ─── POST / — Sinh 1 bài viết đơn lẻ ────────────────────────────────────────
 router.post('/', async (req, res) => {
   try {
-    const user = req.user || { id: 'admin', role: 'admin' };
-    const { keyword, title, companyId, keywordId = null } = req.body;
+    const user = req.user || { id: 'admin', role: 'root' };
+    const { keyword, title, companyId, keywordId = null, onBehalfOf = null } = req.body;
     if (!keyword || !title || !companyId)
       return res.status(400).json({ error: 'Thiếu thông tin bắt buộc' });
+
+    // Xác định người tạo thực sự (on behalf of)
+    let effectiveCreatedBy = user.id;
+    let writtenBy = null;
+    if (onBehalfOf && onBehalfOf !== user.id) {
+      if (!canManageUsers(user)) return res.status(403).json({ error: 'Bạn không có quyền viết thay user khác.' });
+      const visibleIds = await getVisibleUserIds(user.id, user.role);
+      if (visibleIds && !visibleIds.includes(onBehalfOf)) {
+        return res.status(403).json({ error: 'Bạn không có quyền viết thay user này.' });
+      }
+      effectiveCreatedBy = onBehalfOf;
+      writtenBy = user.id;
+    }
 
     const compResult = await db.execute({ sql: 'SELECT * FROM companies WHERE id = ?', args: [companyId] });
     const company = compResult.rows[0];
@@ -361,12 +400,12 @@ router.post('/', async (req, res) => {
     }
 
     // Chỉ kiểm tra giới hạn khi dùng key hệ thống
-    if (apiConfig.usingSystemKey && user.role !== 'admin') {
+    if (apiConfig.usingSystemKey && !isRoot(user)) {
       const limitErr = await checkArticleLimit(user);
       if (limitErr) return res.status(429).json(limitErr);
     }
 
-    const article = await generateAndSave(keyword, title, companyId, company, user.id, apiConfig, keywordId);
+    const article = await generateAndSave(keyword, title, companyId, company, effectiveCreatedBy, apiConfig, keywordId, writtenBy);
     res.json(article);
   } catch (error) {
     console.error('[single] Lỗi:', error.message);
@@ -376,10 +415,23 @@ router.post('/', async (req, res) => {
 
 // ─── POST /batch — Viết tuần tự nhiều bài, stream SSE ────────────────────────
 router.post('/batch', async (req, res) => {
-  const user = req.user || { id: 'admin', role: 'admin' };
-  const { keyword, titles, companyId, keywordId = null } = req.body;
+  const user = req.user || { id: 'admin', role: 'root' };
+  const { keyword, titles, companyId, keywordId = null, onBehalfOf = null } = req.body;
   if (!keyword || !Array.isArray(titles) || titles.length === 0 || !companyId)
     return res.status(400).json({ error: 'Thiếu thông tin bắt buộc' });
+
+  // Xác định người tạo thực sự (on behalf of)
+  let effectiveCreatedBy = user.id;
+  let writtenBy = null;
+  if (onBehalfOf && onBehalfOf !== user.id) {
+    if (!canManageUsers(user)) return res.status(403).json({ error: 'Bạn không có quyền viết thay user khác.' });
+    const visibleIds = await getVisibleUserIds(user.id, user.role);
+    if (visibleIds && !visibleIds.includes(onBehalfOf)) {
+      return res.status(403).json({ error: 'Bạn không có quyền viết thay user này.' });
+    }
+    effectiveCreatedBy = onBehalfOf;
+    writtenBy = user.id;
+  }
 
   const compResult = await db.execute({ sql: 'SELECT * FROM companies WHERE id = ?', args: [companyId] });
   const company = compResult.rows[0];
@@ -391,7 +443,7 @@ router.post('/batch', async (req, res) => {
   }
 
   // Chỉ kiểm tra giới hạn khi dùng key hệ thống
-  if (apiConfig.usingSystemKey && user.role !== 'admin') {
+  if (apiConfig.usingSystemKey && !isRoot(user)) {
     const limitErr = await checkArticleLimit(user);
     if (limitErr) return res.status(429).json(limitErr);
   }
@@ -414,7 +466,7 @@ router.post('/batch', async (req, res) => {
   for (let i = 0; i < titles.length; i++) {
     const title = titles[i];
     try {
-      const article = await generateAndSave(keyword, title, companyId, company, user.id, apiConfig, keywordId);
+      const article = await generateAndSave(keyword, title, companyId, company, effectiveCreatedBy, apiConfig, keywordId, writtenBy);
       succeededCount++;
       send({ type: 'progress', done: i + 1, total: titles.length, title, article });
     } catch (err) {
@@ -495,8 +547,7 @@ router.post('/:id/publish', async (req, res) => {
       const uRes = await db.execute({ sql: 'SELECT publish_api_url FROM users WHERE id = ?', args: [req.user.id] });
       userApiUrl = uRes.rows[0]?.publish_api_url || '';
     }
-    const isAdmin = req.user?.role === 'admin' || req.user?.id === 'admin';
-    const apiUrl = article.publish_api_url || userApiUrl || (isAdmin ? await getSetting('publish_api_url') : '');
+    const apiUrl = article.publish_api_url || userApiUrl || (isRoot(req.user) ? await getSetting('publish_api_url') : '');
     if (!apiUrl) return res.status(400).json({ error: 'Bạn chưa cấu hình URL API đăng bài. Vui lòng cập nhật trong phần Cài Đặt → Cấu Hình API.' });
 
     const company = {
@@ -537,8 +588,7 @@ router.post('/publish-batch', async (req, res) => {
       const uRes = await db.execute({ sql: 'SELECT publish_api_url FROM users WHERE id = ?', args: [req.user.id] });
       userApiUrl = uRes.rows[0]?.publish_api_url || '';
     }
-    const isAdminBatch = req.user?.role === 'admin' || req.user?.id === 'admin';
-    const defaultApiUrl = userApiUrl || (isAdminBatch ? await getSetting('publish_api_url') : '');
+    const defaultApiUrl = userApiUrl || (isRoot(req.user) ? await getSetting('publish_api_url') : '');
     const results = [];
 
     for (const id of ids) {

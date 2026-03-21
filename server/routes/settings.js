@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { db } = require('../data/store');
 const requireAdmin = require('../middleware/requireAdmin');
+const { isRoot } = require('../services/permissions');
 
 // ─── Helper: đọc 1 setting ────────────────────────────────────────────────────
 async function getSetting(key) {
@@ -96,7 +97,7 @@ router.get('/api-config', async (req, res) => {
     const authEnabled = process.env.AUTH_ENABLED === 'true';
 
     // User thường khi AUTH bật → đọc key cá nhân từ bảng users
-    if (authEnabled && user.role !== 'admin') {
+    if (authEnabled && !isRoot(user)) {
       const result = await db.execute({
         sql: 'SELECT gemini_api_key, gemini_model, serpapi_api_key, publish_api_url FROM users WHERE id = ?',
         args: [user.id],
@@ -138,7 +139,7 @@ router.put('/api-config', async (req, res) => {
     const { gemini_api_key, gemini_model, serpapi_api_key, publish_api_url } = req.body;
 
     // User thường khi AUTH bật → lưu vào users table
-    if (authEnabled && user.role !== 'admin') {
+    if (authEnabled && !isRoot(user)) {
       const updates = [];
       const args    = [];
       if (gemini_api_key  !== undefined) { updates.push('gemini_api_key = ?');  args.push(String(gemini_api_key).trim()); }
@@ -156,9 +157,9 @@ router.put('/api-config', async (req, res) => {
       return res.json({ success: true, scope: 'user' });
     }
 
-    // Admin hoặc AUTH tắt → chỉ admin được lưu system key
-    if (user.role !== 'admin') {
-      return res.status(403).json({ error: 'Chỉ admin mới được chỉnh sửa cấu hình hệ thống.' });
+    // Root hoặc AUTH tắt → chỉ root được lưu system key
+    if (!isRoot(user)) {
+      return res.status(403).json({ error: 'Chỉ root mới được chỉnh sửa cấu hình hệ thống.' });
     }
 
     const updatedAt = new Date().toISOString();

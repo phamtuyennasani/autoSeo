@@ -4,12 +4,12 @@ const { db } = require('../data/store');
 const { getSearchContext } = require('../services/serp');
 const { generateTitles } = require('../services/gemini');
 const { getEffectiveApiConfig } = require('../services/apiConfig');
+const { isRoot, getVisibleUserIds, canManageUsers } = require('../services/permissions');
 
 // Lấy danh sách từ khóa kèm thống kê (có phân trang)
 router.get('/', async (req, res) => {
   try {
-    const user = req.user || { id: 'admin', role: 'admin' };
-    const isAdmin = user.role === 'admin';
+    const user = req.user || { id: 'admin', role: 'root' };
     const page  = Math.max(1, parseInt(req.query.page)  || 1);
     const limit = Math.max(1, Math.min(100, parseInt(req.query.limit) || 20));
     const offset = (page - 1) * limit;
@@ -17,12 +17,18 @@ router.get('/', async (req, res) => {
     const conditions = [];
     const args = [];
 
-    if (isAdmin && req.query.userId) {
+    // Lọc theo userId (chỉ cho manager trở lên)
+    if (req.query.userId && canManageUsers(user)) {
       conditions.push('k.createdBy = ?');
       args.push(req.query.userId);
-    } else if (!isAdmin) {
-      conditions.push('k.createdBy = ?');
-      args.push(user.id);
+    } else {
+      // Lọc theo phân cấp
+      const visibleIds = await getVisibleUserIds(user.id, user.role);
+      if (visibleIds !== null) {
+        const placeholders = visibleIds.map(() => '?').join(',');
+        conditions.push(`k.createdBy IN (${placeholders})`);
+        args.push(...visibleIds);
+      }
     }
 
     if (req.query.search) {
@@ -148,9 +154,16 @@ router.delete('/:id', async (req, res) => {
     const check = await db.execute({ sql: 'SELECT createdBy FROM keywords WHERE id = ?', args: [id] });
     if (!check.rows[0]) return res.status(404).json({ error: 'Không tìm thấy từ khóa' });
 
-    // Kiểm tra ownership (admin bypass)
-    if (user.role !== 'admin' && check.rows[0].createdBy !== user.id) {
-      return res.status(403).json({ error: 'Bạn không có quyền xóa từ khóa này.' });
+    // Kiểm tra ownership
+    if (!isRoot(user) && check.rows[0].createdBy !== user.id) {
+      if (canManageUsers(user)) {
+        const visibleIds = await getVisibleUserIds(user.id, user.role);
+        if (visibleIds && !visibleIds.includes(check.rows[0].createdBy)) {
+          return res.status(403).json({ error: 'Bạn không có quyền xóa từ khóa này.' });
+        }
+      } else {
+        return res.status(403).json({ error: 'Bạn không có quyền xóa từ khóa này.' });
+      }
     }
 
     await db.execute({ sql: 'DELETE FROM keywords WHERE id = ?', args: [id] });

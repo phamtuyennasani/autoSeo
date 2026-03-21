@@ -28,12 +28,11 @@ const Keywords = () => {
   const [companies, setCompanies] = useState([]);
   const [loading, setLoading] = useState(true);
   const { refreshStats } = useToken();
-  const { user: currentUser, authEnabled } = useAuth();
+  const { user: currentUser, authEnabled, isRoot, canManageUsers } = useAuth();
   const confirm = useConfirm();
   const navigate = useNavigate();
-  const isAdmin = currentUser?.role === 'admin' || !currentUser;
-  // Chỉ hiển thị UI phân quyền user khi AUTH bật (tránh hiện filter/cột thừa khi dùng đơn lẻ)
-  const showMultiUser = authEnabled && isAdmin;
+  // Chỉ hiển thị UI phân quyền user khi AUTH bật và là manager trở lên
+  const showMultiUser = authEnabled && canManageUsers;
 
   // Filter theo user (chỉ admin)
   const [filterUserId, setFilterUserId] = useState(''); // '' = tất cả
@@ -1041,7 +1040,7 @@ const Keywords = () => {
               )}
               {/* PUBLISH HÀNG LOẠT */}
               {articlesOfKeyword.filter(a => a.publish_status !== 'published').length > 0 && !isWritingAll && writeQueueJob?.status !== 'running' &&
-               (currentUser?.role === 'admin' || currentUser?.publish_api_url || articlesOfKeyword.some(a => a.company_publish_api_url)) && (
+               (isRoot || currentUser?.publish_api_url || articlesOfKeyword.some(a => a.company_publish_api_url)) && (
                 <button
                   onClick={handlePublishBatch}
                   className="btn btn-outline"
@@ -1225,7 +1224,7 @@ const Keywords = () => {
                           <Edit3 size={13} /> Sửa
                         </button>
                         {article.publish_status !== 'published' &&
-                         (currentUser?.role === 'admin' || article.company_publish_api_url || currentUser?.publish_api_url) && (
+                         (isRoot || article.company_publish_api_url || currentUser?.publish_api_url) && (
                           <button
                             onClick={() => handlePublishArticle(article)}
                             className="btn btn-sm btn-outline"
@@ -1700,7 +1699,7 @@ const Keywords = () => {
                   { value: '', label: 'Tất cả Tài Khoản' },
                   ...userList.map(u => ({
                     value: String(u.id),
-                    label: `${u.full_name || u.username}${u.role === 'admin' ? ' (admin)' : ''}`,
+                    label: `${u.full_name || u.username}${u.role === 'root' || u.role === 'admin' ? ' (root)' : u.role === 'senior_manager' ? ' (QL Cấp Cao)' : u.role === 'manager' ? ' (Quản Lý)' : ''}`,
                   })),
                 ]}
               />

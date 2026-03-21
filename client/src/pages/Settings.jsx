@@ -387,9 +387,8 @@ function SerpKeyField({ value, onChange, show, onToggleShow }) {
 }
 
 function ApiConfigTab() {
-  const { user, authEnabled, updateUser } = useAuth();
-  const isAdmin = user?.role === 'admin';
-  const isUserScope = authEnabled && !isAdmin; // user thường khi AUTH bật
+  const { user, authEnabled, updateUser, isRoot } = useAuth();
+  const isUserScope = authEnabled && !isRoot; // user thường khi AUTH bật
 
   const [form, setForm] = useState({ gemini_api_key: '', gemini_model: 'gemini-2.5-flash', serpapi_api_key: '', publish_api_url: '' });
   const [loading, setLoading] = useState(true);
@@ -773,8 +772,8 @@ function CostCalculatorTab() {
 // ── Main Component ─────────────────────────────────────────────────────────────
 export default function SettingsPage() {
   const { user, updateUser } = useAuth();
-  const isAdmin = user?.role === 'admin' || !user; // bypass mode (AUTH disabled) → hiện đủ
-  const [activeTab, setActiveTab] = useState(isAdmin ? 'limits' : 'api');
+  const { isRoot: isAdmin } = useAuth(); // root hoặc bypass mode → hiện đủ
+  const [activeTab, setActiveTab] = useState((isAdmin || !user) ? 'limits' : 'api');
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);

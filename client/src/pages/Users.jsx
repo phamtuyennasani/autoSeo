@@ -1,5 +1,5 @@
 /**
- * Users.jsx — Quản lý users (Admin only)
+ * Users.jsx — Quản lý users (Manager trở lên)
  * Danh sách dạng table + modal thêm/sửa với LimitInput giống Settings
  */
 
@@ -8,10 +8,28 @@ import {
   UserPlus, Trash2, Lock, Unlock, Edit2, X,
   RefreshCw, Shield, User, Crown, Loader2,
   Eye, EyeOff, Zap, FileText, AlertCircle, Activity,
-  KeyRound, Server, Mail, Phone, Contact
+  KeyRound, Server, Mail, Phone, Contact, Users as UsersIcon,
+  ChevronDown,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import apiClient from '../config/api';
+
+// ── Role config ────────────────────────────────────────────────────────────────
+const ROLE_CONFIG = {
+  root:            { label: 'Root',        color: '#818cf8', icon: <Crown size={9} /> },
+  admin:           { label: 'Root',        color: '#818cf8', icon: <Crown size={9} /> },
+  senior_manager:  { label: 'QL Cấp Cao', color: '#f59e0b', icon: <Shield size={9} /> },
+  manager:         { label: 'Quản Lý',    color: '#06b6d4', icon: <UsersIcon size={9} /> },
+  employee:        { label: 'Nhân Viên',  color: '#10b981', icon: <User size={9} /> },
+  user:            { label: 'Nhân Viên',  color: '#10b981', icon: <User size={9} /> },
+};
+
+function roleLevelOf(role) {
+  if (role === 'root' || role === 'admin') return 4;
+  if (role === 'senior_manager') return 3;
+  if (role === 'manager') return 2;
+  return 1;
+}
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 const fmt = (n) => {
@@ -137,18 +155,20 @@ function LimitInput({ label, description, icon, color, value, onChange, presets 
 }
 
 // ── Badge Components ──────────────────────────────────────────────────────────
-const RoleBadge = ({ role }) => (
-  <span style={{
-    display: 'inline-flex', alignItems: 'center', gap: 4,
-    padding: '2px 9px', borderRadius: 99, fontSize: 11, fontWeight: 600,
-    background: role === 'admin' ? 'rgba(99,102,241,0.12)' : 'rgba(16,185,129,0.1)',
-    color: role === 'admin' ? '#818cf8' : '#34d399',
-    border: `1px solid ${role === 'admin' ? 'rgba(99,102,241,0.25)' : 'rgba(16,185,129,0.2)'}`,
-  }}>
-    {role === 'admin' ? <Crown size={9} /> : <User size={9} />}
-    {role === 'admin' ? 'Admin' : 'User'}
-  </span>
-);
+const RoleBadge = ({ role }) => {
+  const cfg = ROLE_CONFIG[role] || ROLE_CONFIG.user;
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 4,
+      padding: '2px 9px', borderRadius: 99, fontSize: 11, fontWeight: 600,
+      background: `${cfg.color}18`,
+      color: cfg.color,
+      border: `1px solid ${cfg.color}40`,
+    }}>
+      {cfg.icon}{cfg.label}
+    </span>
+  );
+};
 
 const StatusBadge = ({ active }) => (
   <span style={{
@@ -164,18 +184,39 @@ const StatusBadge = ({ active }) => (
 );
 
 // ── User Modal ────────────────────────────────────────────────────────────────
-function UserModal({ mode, user, onClose, onSave }) {
+function UserModal({ mode, user, onClose, onSave, currentUser, allUsers }) {
+  const isCurrentRoot    = roleLevelOf(currentUser?.role) >= 4;
+  const isCurrentManager = currentUser?.role === 'manager';
+  const myLevel = roleLevelOf(currentUser?.role);
+
   const [form, setForm] = useState({
     username:            user?.username            || '',
     full_name:           user?.full_name           || '',
     email:               user?.email               || '',
     phone:               user?.phone               || '',
     password:            '',
-    role:                user?.role                || 'user',
+    role:                user?.role === 'admin' ? 'root' : (user?.role || 'employee'),
+    // Nếu người tạo là QL, tự động gán manager_id = chính họ (trừ khi đang edit và đã có giá trị khác)
+    manager_id:          user?.manager_id || (mode === 'create' && isCurrentManager ? currentUser.id : ''),
     daily_token_limit:   String(user?.daily_token_limit   ?? 0),
     daily_article_limit: String(user?.daily_article_limit ?? 0),
     use_system_key:      user?.use_system_key      ?? false,
   });
+
+  // Roles mà người đang đăng nhập có thể gán (chỉ cấp thấp hơn mình)
+  const assignableRoles = [
+    { val: 'employee',       label: 'Nhân Viên',   icon: <User size={14} />,   clr: '#10b981' },
+    { val: 'manager',        label: 'Quản Lý',     icon: <UsersIcon size={14} />, clr: '#06b6d4' },
+    { val: 'senior_manager', label: 'QL Cấp Cao',  icon: <Shield size={14} />, clr: '#f59e0b' },
+    { val: 'root',           label: 'Root',        icon: <Crown size={14} />,  clr: '#818cf8' },
+  ].filter(r => roleLevelOf(r.val) < myLevel);
+
+  // Manager dropdown: chỉ hiện với Root/Senior Manager khi tạo nhân viên
+  // QL (manager) tạo nhân viên thì tự động là QL của họ, không cần chọn
+  const showManagerDropdown = form.role === 'employee' && !isCurrentManager;
+  const managerOptions = showManagerDropdown
+    ? allUsers.filter(u => u.id !== user?.id && u.role === 'manager' && roleLevelOf(u.role) < myLevel)
+    : [];
   const [showPw,  setShowPw]  = useState(false);
   const [loading, setLoading] = useState(false);
   const [err,     setErr]     = useState('');
@@ -376,106 +417,135 @@ function UserModal({ mode, user, onClose, onSave }) {
               </div>
             </div>
 
-            {/* Role */}
-            <div>
-              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 8 }}>
-                Phân quyền
-              </label>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                {[
-                  { val: 'user',  label: 'User',  icon: <User size={14} />,  clr: '#10b981' },
-                  { val: 'admin', label: 'Admin', icon: <Crown size={14} />, clr: '#818cf8' },
-                ].map(opt => (
-                  <button
-                    key={opt.val} type="button"
-                    onClick={() => set('role')(opt.val)}
-                    style={{
-                      padding: '10px 14px', borderRadius: 10, cursor: 'pointer',
-                      border: `1.5px solid ${form.role === opt.val ? opt.clr + '90' : 'var(--border)'}`,
-                      background: form.role === opt.val ? `${opt.clr}12` : 'var(--bg-elevated)',
-                      color: form.role === opt.val ? opt.clr : 'var(--text-secondary)',
-                      display: 'flex', alignItems: 'center', gap: 8,
-                      fontSize: 13, fontWeight: 600, transition: 'all 0.15s',
-                    }}
-                  >
-                    {opt.icon} {opt.label}
-                    {form.role === opt.val && (
-                      <span style={{ marginLeft: 'auto', width: 6, height: 6, borderRadius: '50%', background: opt.clr }} />
-                    )}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Key hệ thống */}
-            <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: 'var(--bg-elevated)', borderBottom: '1px solid var(--border)' }}>
-                <div style={{ width: 30, height: 30, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(99,102,241,0.12)', flexShrink: 0 }}>
-                  <Server size={14} color="var(--accent)" />
+            {/* Role — QL tạo nhân viên thì mặc định employee, không cần chọn */}
+            {assignableRoles.length > 0 && !isCurrentManager && (
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 8 }}>
+                  Phân quyền
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: assignableRoles.length <= 2 ? '1fr 1fr' : 'repeat(auto-fit, minmax(130px, 1fr))', gap: 8 }}>
+                  {assignableRoles.map(opt => (
+                    <button
+                      key={opt.val} type="button"
+                      onClick={() => {
+                        set('role')(opt.val);
+                        if (opt.val !== 'employee') set('manager_id')('');
+                      }}
+                      style={{
+                        padding: '10px 14px', borderRadius: 10, cursor: 'pointer',
+                        border: `1.5px solid ${form.role === opt.val ? opt.clr + '90' : 'var(--border)'}`,
+                        background: form.role === opt.val ? `${opt.clr}12` : 'var(--bg-elevated)',
+                        color: form.role === opt.val ? opt.clr : 'var(--text-secondary)',
+                        display: 'flex', alignItems: 'center', gap: 8,
+                        fontSize: 13, fontWeight: 600, transition: 'all 0.15s',
+                      }}
+                    >
+                      {opt.icon} {opt.label}
+                      {form.role === opt.val && (
+                        <span style={{ marginLeft: 'auto', width: 6, height: 6, borderRadius: '50%', background: opt.clr }} />
+                      )}
+                    </button>
+                  ))}
                 </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 700, fontSize: 13 }}>Dùng key hệ thống</div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>
-                    Cho phép user này dùng API key của hệ thống khi chưa cấu hình key cá nhân. Sẽ bị giới hạn token/bài.
+              </div>
+            )}
+
+            {/* Manager — hiện khi role là employee và người tạo không phải QL */}
+            {showManagerDropdown && (
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>
+                  Quản lý trực tiếp <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>(tùy chọn)</span>
+                </label>
+                <select
+                  className="input-field"
+                  value={form.manager_id}
+                  onChange={e => set('manager_id')(e.target.value)}
+                  style={{ width: '100%', boxSizing: 'border-box' }}
+                  disabled={managerOptions.length === 0}
+                >
+                  <option value="">— {managerOptions.length === 0 ? 'Chưa có Quản Lý nào' : 'Không có'} —</option>
+                  {managerOptions.map(m => (
+                    <option key={m.id} value={m.id}>
+                      {m.full_name || m.username} ({ROLE_CONFIG[m.role]?.label || m.role})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Key hệ thống — chỉ root mới thấy */}
+            {isCurrentRoot && (
+              <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: 'var(--bg-elevated)', borderBottom: '1px solid var(--border)' }}>
+                  <div style={{ width: 30, height: 30, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(99,102,241,0.12)', flexShrink: 0 }}>
+                    <Server size={14} color="var(--accent)" />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 700, fontSize: 13 }}>Dùng key hệ thống</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>
+                      Cho phép user này dùng API key của hệ thống khi chưa cấu hình key cá nhân. Sẽ bị giới hạn token/bài.
+                    </div>
                   </div>
                 </div>
+                <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <button
+                    type="button"
+                    onClick={() => set('use_system_key')(!form.use_system_key)}
+                    style={{
+                      width: 44, height: 24, borderRadius: 12,
+                      background: form.use_system_key ? 'var(--accent)' : 'var(--border)',
+                      border: 'none', cursor: 'pointer', position: 'relative',
+                      transition: 'background 0.2s', flexShrink: 0,
+                    }}
+                  >
+                    <div style={{
+                      position: 'absolute', top: 2,
+                      left: form.use_system_key ? 22 : 2,
+                      width: 20, height: 20, borderRadius: '50%',
+                      background: '#fff', transition: 'left 0.2s',
+                      boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+                    }} />
+                  </button>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: form.use_system_key ? 'var(--accent)' : 'var(--text-secondary)' }}>
+                    {form.use_system_key ? 'Được phép dùng key hệ thống' : 'Không được dùng key hệ thống'}
+                  </span>
+                </div>
               </div>
-              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
-                <button
-                  type="button"
-                  onClick={() => set('use_system_key')(!form.use_system_key)}
-                  style={{
-                    width: 44, height: 24, borderRadius: 12,
-                    background: form.use_system_key ? 'var(--accent)' : 'var(--border)',
-                    border: 'none', cursor: 'pointer', position: 'relative',
-                    transition: 'background 0.2s', flexShrink: 0,
-                  }}
-                >
-                  <div style={{
-                    position: 'absolute', top: 2,
-                    left: form.use_system_key ? 22 : 2,
-                    width: 20, height: 20, borderRadius: '50%',
-                    background: '#fff', transition: 'left 0.2s',
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
-                  }} />
-                </button>
-                <span style={{ fontSize: 13, fontWeight: 600, color: form.use_system_key ? 'var(--accent)' : 'var(--text-secondary)' }}>
-                  {form.use_system_key ? 'Được phép dùng key hệ thống' : 'Không được dùng key hệ thống'}
+            )}
+
+            {/* DIVIDER + Limits — chỉ root mới thấy */}
+            {isCurrentRoot && (<>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                  Giới hạn / ngày {!form.use_system_key && <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>· chỉ áp dụng khi dùng key hệ thống</span>}
                 </span>
+                <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
               </div>
-            </div>
 
-            {/* DIVIDER */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
-              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                Giới hạn / ngày {!form.use_system_key && <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>· chỉ áp dụng khi dùng key hệ thống</span>}
-              </span>
-              <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
-            </div>
+              {/* Token Limit */}
+              <LimitInput
+                label="Giới hạn Token / Ngày"
+                description="0 = không giới hạn · Flash ≈ 2–4K tokens/bài"
+                icon={<Zap />}
+                color="var(--accent)"
+                value={form.daily_token_limit}
+                onChange={set('daily_token_limit')}
+                presets={[0, 50000, 100000, 200000, 500000]}
+              />
 
-            {/* Token Limit */}
-            <LimitInput
-              label="Giới hạn Token / Ngày"
-              description="0 = không giới hạn · Flash ≈ 2–4K tokens/bài"
-              icon={<Zap />}
-              color="var(--accent)"
-              value={form.daily_token_limit}
-              onChange={set('daily_token_limit')}
-              presets={[0, 50000, 100000, 200000, 500000]}
-            />
-
-            {/* Article Limit */}
-            <LimitInput
-              label="Giới hạn Bài Viết / Ngày"
-              description="0 = không giới hạn · Chỉ áp dụng viết lẻ realtime"
-              icon={<FileText />}
-              color="var(--success)"
-              value={form.daily_article_limit}
-              onChange={set('daily_article_limit')}
-              presets={[0, 5, 10, 20, 50, 100]}
-              unit="bài"
-            />
+              {/* Article Limit */}
+              <LimitInput
+                label="Giới hạn Bài Viết / Ngày"
+                description="0 = không giới hạn · Chỉ áp dụng viết lẻ realtime"
+                icon={<FileText />}
+                color="var(--success)"
+                value={form.daily_article_limit}
+                onChange={set('daily_article_limit')}
+                presets={[0, 5, 10, 20, 50, 100]}
+                unit="bài"
+              />
+            </>)}
           </div>
 
           {/* FOOTER */}
@@ -507,7 +577,7 @@ function UserModal({ mode, user, onClose, onSave }) {
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 const Users = () => {
-  const { user: currentUser } = useAuth();
+  const { user: currentUser, canManageUsers } = useAuth();
   const [users, setUsers]               = useState([]);
   const [loading, setLoading]           = useState(true);
   const [modal, setModal]               = useState(null);
@@ -530,9 +600,10 @@ const Users = () => {
       daily_token_limit:   parseInt(form.daily_token_limit,   10) || 0,
       daily_article_limit: parseInt(form.daily_article_limit, 10) || 0,
       use_system_key:      form.use_system_key,
-      full_name:           form.full_name  || null,
-      email:               form.email      || null,
-      phone:               form.phone      || null,
+      full_name:           form.full_name   || null,
+      email:               form.email       || null,
+      phone:               form.phone       || null,
+      manager_id:          form.manager_id  || null,
     });
     await load();
   };
@@ -543,9 +614,10 @@ const Users = () => {
       daily_token_limit:   parseInt(form.daily_token_limit,   10) || 0,
       daily_article_limit: parseInt(form.daily_article_limit, 10) || 0,
       use_system_key:      form.use_system_key,
-      full_name:           form.full_name  || null,
-      email:               form.email      || null,
-      phone:               form.phone      || null,
+      full_name:           form.full_name   || null,
+      email:               form.email       || null,
+      phone:               form.phone       || null,
+      manager_id:          form.manager_id  || null,
     };
     if (form.password) payload.password = form.password;
     await apiClient.put(`/api/users/${modal.user.id}`, payload);
@@ -568,31 +640,38 @@ const Users = () => {
       await load();
     } finally { setActionLoading(null); }
   };
-  if (currentUser?.role !== 'admin') {
+  if (!canManageUsers) {
     return (
       <div style={{ padding: '60px', textAlign: 'center', color: 'var(--text-secondary)' }}>
         <Shield size={44} style={{ opacity: 0.2, marginBottom: 16 }} />
         <div style={{ fontSize: 16, fontWeight: 600 }}>Không có quyền truy cập</div>
-        <div style={{ fontSize: 13, marginTop: 4, color: 'var(--text-muted)' }}>Trang này chỉ dành cho Admin.</div>
+        <div style={{ fontSize: 13, marginTop: 4, color: 'var(--text-muted)' }}>Trang này chỉ dành cho Manager trở lên.</div>
       </div>
     );
   }
+
+  const myLevel        = roleLevelOf(currentUser?.role);
   const activeCount    = users.filter(u => u.is_active).length;
-  const adminCount     = users.filter(u => u.role === 'admin').length;
+  const rootCount      = users.filter(u => u.role === 'root' || u.role === 'admin').length;
+  const managerCount   = users.filter(u => u.role === 'manager' || u.role === 'senior_manager').length;
   const sysKeyCount    = users.filter(u => !u.has_own_key && u.use_system_key).length;
+
+  // Một user có thể bị quản lý bởi currentUser không
+  const canActOn = (u) => u.id !== currentUser?.id && roleLevelOf(u.role) < myLevel;
+
   return (
     <div>
       {/* HEADER */}
       <div className="page-header" style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
         <div>
           <h1 className="page-title">Quản lý Users</h1>
-          <p className="page-subtitle">{users.length} tài khoản · {activeCount} hoạt động · {adminCount} admin · {sysKeyCount} dùng key hệ thống</p>
+          <p className="page-subtitle">{users.length} tài khoản · {activeCount} hoạt động · {rootCount} root · {managerCount} quản lý · {sysKeyCount} dùng key hệ thống</p>
         </div>
         <div style={{ display: 'flex', gap: 8}}>
           <button className="btn btn-outline" onClick={load} disabled={loading} title="Làm mới">
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
           </button>
-          <button className="btn btn-primary" onClick={() => setModal({ mode: 'create' })}>
+          <button className="btn btn-primary" onClick={() => setModal({ mode: 'create', user: null })}>
             <UserPlus size={15} /> Thêm user
           </button>
         </div>
@@ -642,6 +721,7 @@ const Users = () => {
         ) : (
           users.map(u => {
             const isSelf     = u.id === currentUser?.id;
+            const canAct     = canActOn(u);
             const isToggling = actionLoading === u.id + '-toggle';
             const isDeleting = actionLoading === u.id + '-delete';
             const initial    = (u.full_name?.trim() || u.username || '?').charAt(0).toUpperCase();
@@ -735,18 +815,20 @@ const Users = () => {
 
                 {/* Actions */}
                 <div style={{ display: 'flex', gap: 6 }}>
-                  {/* Sửa */}
-                  <button
-                    onClick={() => setModal({ mode: 'edit', user: u })}
-                    title="Chỉnh sửa"
-                    className="btn btn-ghost btn-icon"
-                    style={{ width: 30, height: 30, padding: 0, borderRadius: 7 }}
-                  >
-                    <Edit2 size={13} />
-                  </button>
+                  {/* Sửa — chỉ hiện nếu có thể quản lý user này */}
+                  {canAct && (
+                    <button
+                      onClick={() => setModal({ mode: 'edit', user: u })}
+                      title="Chỉnh sửa"
+                      className="btn btn-ghost btn-icon"
+                      style={{ width: 30, height: 30, padding: 0, borderRadius: 7 }}
+                    >
+                      <Edit2 size={13} />
+                    </button>
+                  )}
 
                   {/* Khóa / Mở khóa */}
-                  {!isSelf && (
+                  {canAct && (
                     <button
                       onClick={() => toggleActive(u)}
                       disabled={isToggling}
@@ -768,7 +850,7 @@ const Users = () => {
                   )}
 
                   {/* Xóa */}
-                  {!isSelf && (
+                  {canAct && (
                     <button
                       onClick={() => deleteUser(u)}
                       disabled={isDeleting}
@@ -798,6 +880,8 @@ const Users = () => {
           user={modal.user}
           onClose={() => setModal(null)}
           onSave={modal.mode === 'create' ? handleCreate : handleEdit}
+          currentUser={currentUser}
+          allUsers={users}
         />
       )}
     </div>

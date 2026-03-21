@@ -103,8 +103,19 @@ export function AuthProvider({ children }) {
     localStorage.removeItem('autoseo_user');
   };
 
+  // ── Role helpers ──────────────────────────────────────────────────────────
+  const isRoot          = ['root', 'admin'].includes(user?.role);
+  const isSeniorManager = user?.role === 'senior_manager';
+  const isManager       = user?.role === 'manager';
+  const isEmployee      = ['employee', 'user'].includes(user?.role);
+  const canManageUsers  = isRoot || isSeniorManager || isManager;
+
   return (
-    <AuthContext.Provider value={{ user, token, loading, authEnabled, login, loginWithGoogle, logout, updateUser }}>
+    <AuthContext.Provider value={{
+      user, token, loading, authEnabled,
+      login, loginWithGoogle, logout, updateUser,
+      isRoot, isSeniorManager, isManager, isEmployee, canManageUsers,
+    }}>
       {children}
     </AuthContext.Provider>
   );

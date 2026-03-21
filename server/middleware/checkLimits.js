@@ -6,6 +6,7 @@
 
 const { db } = require('../data/store');
 const { getSetting } = require('../routes/settings');
+const { isRoot } = require('../services/permissions');
 
 async function checkDailyLimits(req, res, next) {
   try {
@@ -16,7 +17,7 @@ async function checkDailyLimits(req, res, next) {
     let userArticleLimit = 0;
     let userTokenLimit = 0;
 
-    if (userId && userId !== 'admin' && process.env.AUTH_ENABLED === 'true') {
+    if (userId && !isRoot(req.user) && process.env.AUTH_ENABLED === 'true') {
       const userResult = await db.execute({
         sql: 'SELECT daily_token_limit, daily_article_limit FROM users WHERE id = ?',
         args: [userId],
@@ -35,7 +36,7 @@ async function checkDailyLimits(req, res, next) {
       // Filter thêm theo userId nếu là per-user limit
       let sql = `SELECT COUNT(*) AS cnt FROM token_usage WHERE (type = 'article' OR type = 'article-batch') AND createdAt LIKE ?`;
       let args = [`${today}%`];
-      if (userArticleLimit > 0 && userId && userId !== 'admin') {
+      if (userArticleLimit > 0 && userId && !isRoot(req.user)) {
         sql += ' AND createdBy = ?';
         args.push(userId);
       }
@@ -60,7 +61,7 @@ async function checkDailyLimits(req, res, next) {
     if (tokenLimit > 0) {
       let sql = 'SELECT COALESCE(SUM(total_tokens), 0) AS total FROM token_usage WHERE createdAt LIKE ?';
       let args = [`${today}%`];
-      if (userTokenLimit > 0 && userId && userId !== 'admin') {
+      if (userTokenLimit > 0 && userId && !isRoot(req.user)) {
         sql += ' AND createdBy = ?';
         args.push(userId);
       }

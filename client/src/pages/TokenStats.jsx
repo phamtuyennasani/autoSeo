@@ -165,8 +165,8 @@ function Section({ title, icon: Icon, children, action }) {
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 const TokenStats = () => {
-  const { user, authEnabled } = useAuth();
-  const isAdmin = user?.role === 'admin';
+  const { authEnabled, isRoot, canManageUsers } = useAuth();
+  const isAdmin = isRoot || canManageUsers;
 
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -512,9 +512,9 @@ const TokenStats = () => {
                         <td style={{ padding: '9px 10px' }}>
                           <span style={{
                             padding: '2px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 500,
-                            background: u.role === 'admin' ? 'rgba(99,102,241,0.12)' : 'rgba(34,197,94,0.1)',
-                            color: u.role === 'admin' ? '#818cf8' : '#4ade80',
-                          }}>{u.role === 'admin' ? 'Admin' : 'User'}</span>
+                            background: (u.role === 'root' || u.role === 'admin') ? 'rgba(99,102,241,0.12)' : u.role === 'senior_manager' ? 'rgba(245,158,11,0.12)' : u.role === 'manager' ? 'rgba(6,182,212,0.12)' : 'rgba(34,197,94,0.1)',
+                            color: (u.role === 'root' || u.role === 'admin') ? '#818cf8' : u.role === 'senior_manager' ? '#fbbf24' : u.role === 'manager' ? '#22d3ee' : '#4ade80',
+                          }}>{u.role === 'root' || u.role === 'admin' ? 'Root' : u.role === 'senior_manager' ? 'QL Cấp Cao' : u.role === 'manager' ? 'Quản Lý' : 'Nhân Viên'}</span>
                         </td>
                         <td style={{ padding: '9px 10px', color: 'var(--text-secondary)' }}>{u.calls.toLocaleString()}</td>
                         <td style={{ padding: '9px 10px', color: 'var(--text-secondary)' }}>{fmt(u.input_tokens)}</td>

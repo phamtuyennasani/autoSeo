@@ -32,8 +32,8 @@ async function getEffectiveApiConfig(userId) {
     const row = result.rows[0];
     if (!row) return systemConfig;
 
-    // Admin luôn dùng system key, không bị chặn hay giới hạn
-    if (row.role === 'admin') return systemConfig;
+    // Root luôn dùng system key, không bị chặn hay giới hạn
+    if (row.role === 'root' || row.role === 'admin') return systemConfig;
 
     // User có API key riêng → dùng key đó, không bị giới hạn
     if (row.gemini_api_key) {

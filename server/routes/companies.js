@@ -1,24 +1,27 @@
 const express = require('express');
 const router = express.Router();
 const { db } = require('../data/store');
+const { isRoot, getVisibleUserIds, canManageUsers } = require('../services/permissions');
 
 // Lấy danh sách website/công ty
 router.get('/', async (req, res) => {
   try {
-    const user    = req.user || { id: 'admin', role: 'admin' };
-    const isAdmin = user.role === 'admin';
+    const user = req.user || { id: 'admin', role: 'root' };
 
     let sql  = 'SELECT * FROM companies';
     const args = [];
 
-    // Admin thấy tất cả (hoặc filter theo ?userId=)
-    if (isAdmin && req.query.userId) {
+    // Filter theo userId (chỉ cho manager trở lên)
+    if (req.query.userId && canManageUsers(user)) {
       sql += ' WHERE createdBy = ?';
       args.push(req.query.userId);
-    } else if (!isAdmin) {
-      // User thường chỉ thấy công ty của mình
-      sql += ' WHERE createdBy = ?';
-      args.push(user.id);
+    } else {
+      const visibleIds = await getVisibleUserIds(user.id, user.role);
+      if (visibleIds !== null) {
+        const placeholders = visibleIds.map(() => '?').join(',');
+        sql += ` WHERE createdBy IN (${placeholders})`;
+        args.push(...visibleIds);
+      }
     }
 
     sql += ' ORDER BY createdAt DESC';
@@ -65,8 +68,15 @@ router.put('/:id', async (req, res) => {
     // Kiểm tra ownership (admin bypass)
     const check = await db.execute({ sql: 'SELECT createdBy FROM companies WHERE id = ?', args: [id] });
     if (!check.rows[0]) return res.status(404).json({ error: 'Không tìm thấy công ty' });
-    if (user.role !== 'admin' && check.rows[0].createdBy !== user.id) {
-      return res.status(403).json({ error: 'Bạn không có quyền chỉnh sửa công ty này.' });
+    if (!isRoot(user) && check.rows[0].createdBy !== user.id) {
+      if (canManageUsers(user)) {
+        const visibleIds = await getVisibleUserIds(user.id, user.role);
+        if (visibleIds && !visibleIds.includes(check.rows[0].createdBy)) {
+          return res.status(403).json({ error: 'Bạn không có quyền chỉnh sửa công ty này.' });
+        }
+      } else {
+        return res.status(403).json({ error: 'Bạn không có quyền chỉnh sửa công ty này.' });
+      }
     }
 
     await db.execute({
@@ -90,8 +100,15 @@ router.delete('/:id', async (req, res) => {
     // Kiểm tra ownership (admin bypass)
     const check = await db.execute({ sql: 'SELECT createdBy FROM companies WHERE id = ?', args: [id] });
     if (!check.rows[0]) return res.status(404).json({ error: 'Không tìm thấy công ty' });
-    if (user.role !== 'admin' && check.rows[0].createdBy !== user.id) {
-      return res.status(403).json({ error: 'Bạn không có quyền xóa công ty này.' });
+    if (!isRoot(user) && check.rows[0].createdBy !== user.id) {
+      if (canManageUsers(user)) {
+        const visibleIds = await getVisibleUserIds(user.id, user.role);
+        if (visibleIds && !visibleIds.includes(check.rows[0].createdBy)) {
+          return res.status(403).json({ error: 'Bạn không có quyền xóa công ty này.' });
+        }
+      } else {
+        return res.status(403).json({ error: 'Bạn không có quyền xóa công ty này.' });
+      }
     }
 
     // Cascade xóa dữ liệu liên quan trước (tránh FK constraint)

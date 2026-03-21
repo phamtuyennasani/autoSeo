@@ -28,7 +28,7 @@ const Layout = () => {
   const navigate = useNavigate();
   const { theme, toggleTheme } = useTheme();
   const { tokenStats } = useToken();
-  const { user, logout, authEnabled } = useAuth();
+  const { user, logout, authEnabled, canManageUsers } = useAuth();
   const currentTitle = pageTitles[location.pathname] || 'Dashboard';
 
   const handleLogout = async () => {
@@ -36,8 +36,13 @@ const Layout = () => {
     navigate('/login');
   };
 
-  const isAdmin = user?.role === 'admin';
   const displayName = user?.full_name || user?.username || 'Admin';
+  const roleLabel = {
+    root: 'Root', admin: 'Root',
+    senior_manager: 'QL Cấp Cao',
+    manager: 'Quản Lý',
+    employee: 'Nhân Viên', user: 'Nhân Viên',
+  }[user?.role] || user?.role || 'User';
   const avatarChar = displayName.charAt(0).toUpperCase();
   return (
     <div className="app-container">
@@ -71,8 +76,8 @@ const Layout = () => {
 
         <div style={{ marginTop: 'auto' }}>
           <div className="sidebar-section">
-            {/* Menu Users — chỉ admin và khi AUTH bật */}
-            {authEnabled && isAdmin && (
+            {/* Menu Users — manager trở lên và khi AUTH bật */}
+            {authEnabled && canManageUsers && (
               <NavLink to="/users" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
                 <Users size={17} className="nav-icon" /> Quản lý Users
               </NavLink>
@@ -89,7 +94,7 @@ const Layout = () => {
             <div className="sidebar-footer-avatar">{avatarChar}</div>
             <div className="sidebar-footer-info">
               <div className="sidebar-footer-name">{displayName}</div>
-              <div className="sidebar-footer-role">{isAdmin ? 'Admin' : 'User'}</div>
+              <div className="sidebar-footer-role">{roleLabel}</div>
             </div>
             {/* Nút Logout — chỉ hiện khi AUTH bật */}
             {authEnabled && (
