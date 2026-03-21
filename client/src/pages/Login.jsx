@@ -2,8 +2,9 @@
  * Login.jsx — Trang đăng nhập. Modern split-screen design.
  */
 
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useGoogleLogin } from '@react-oauth/google';
 import { useAuth } from '../context/AuthContext';
 import { Zap, Eye, EyeOff, ArrowRight, AlertCircle, TrendingUp, Search, BarChart3, Globe } from 'lucide-react';
 
@@ -15,14 +16,17 @@ const FEATURES = [
 ];
 const version = import.meta.env.VITE_APP_VERSION || 'version 0.0.1';
 const environment = import.meta.env.VITE_APP_ENVONMENT || 'development';
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
+
 const Login = () => {
-  const { login } = useAuth();
+  const { login, loginWithGoogle } = useAuth();
   const navigate = useNavigate();
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState('');
   const [focusedField, setFocusedField] = useState(null);
   const [mounted, setMounted] = useState(false);
@@ -31,6 +35,36 @@ const Login = () => {
     const t = setTimeout(() => setMounted(true), 60);
     return () => clearTimeout(t);
   }, []);
+
+  const googleLogin = useGoogleLogin({
+    onSuccess: async (tokenResponse) => {
+      setError('');
+      setGoogleLoading(true);
+      try {
+        await loginWithGoogle(tokenResponse.access_token);
+        navigate('/');
+      } catch (err) {
+        setError(err.response?.data?.error || 'Đăng nhập Google thất bại.');
+      } finally {
+        setGoogleLoading(false);
+      }
+    },
+    onError: () => {
+      setError('Đăng nhập Google thất bại hoặc bị huỷ.');
+      setGoogleLoading(false);
+    },
+    flow: 'implicit',
+    scope: 'openid email profile',
+  });
+
+  const handleGoogleClick = () => {
+    if (!GOOGLE_CLIENT_ID) {
+      setError('Chưa cấu hình Google Client ID. Liên hệ quản trị viên.');
+      return;
+    }
+    setError('');
+    googleLogin();
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -358,9 +392,73 @@ const Login = () => {
             </button>
           </form>
 
-          {/* Divider & hint */}
+          {/* Google Sign-In */}
           <div style={{
-            marginTop: '32px',
+            display: 'flex', alignItems: 'center', gap: '12px',
+            margin: '24px 0 0',
+          }}>
+            <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.07)' }} />
+            <span style={{ fontSize: '12px', color: '#475569', whiteSpace: 'nowrap' }}>hoặc đăng nhập bằng</span>
+            <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.07)' }} />
+          </div>
+
+          <button
+            type="button"
+            onClick={handleGoogleClick}
+            disabled={googleLoading}
+            style={{
+              marginTop: '16px',
+              width: '100%',
+              padding: '13px 16px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '10px',
+              fontSize: '14px',
+              fontWeight: 500,
+              color: '#e2e8f0',
+              background: 'rgba(255,255,255,0.04)',
+              border: '1.5px solid rgba(255,255,255,0.1)',
+              borderRadius: '12px',
+              cursor: googleLoading ? 'not-allowed' : 'pointer',
+              transition: 'all 0.2s ease',
+              fontFamily: 'Inter, sans-serif',
+              opacity: googleLoading ? 0.6 : 1,
+            }}
+            onMouseEnter={e => {
+              if (!googleLoading) {
+                e.currentTarget.style.background = 'rgba(255,255,255,0.08)';
+                e.currentTarget.style.borderColor = 'rgba(255,255,255,0.2)';
+              }
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.background = 'rgba(255,255,255,0.04)';
+              e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)';
+            }}
+          >
+            {googleLoading ? (
+              <div style={{
+                width: '16px', height: '16px',
+                border: '2px solid rgba(255,255,255,0.2)',
+                borderTopColor: 'white',
+                borderRadius: '50%',
+                animation: 'spin 0.75s linear infinite',
+              }} />
+            ) : (
+              <svg width="18" height="18" viewBox="0 0 48 48">
+                <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+                <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+                <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+                <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+                <path fill="none" d="M0 0h48v48H0z"/>
+              </svg>
+            )}
+            Đăng nhập bằng Google
+          </button>
+
+          {/* Hint */}
+          <div style={{
+            marginTop: '24px',
             padding: '18px',
             background: 'rgba(255,255,255,0.02)',
             border: '1px solid rgba(255,255,255,0.06)',

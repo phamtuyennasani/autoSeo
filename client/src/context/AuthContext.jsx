@@ -74,6 +74,17 @@ export function AuthProvider({ children }) {
     return newUser;
   };
 
+  const loginWithGoogle = async (accessToken) => {
+    const res = await apiClient.post('/api/auth/google', { access_token: accessToken });
+    const { token: newToken, user: newUser } = res.data;
+    setToken(newToken);
+    setUser(newUser);
+    setAuthEnabled(true);
+    localStorage.setItem('autoseo_token', newToken);
+    localStorage.setItem('autoseo_user', JSON.stringify(newUser));
+    return newUser;
+  };
+
   const updateUser = (data) => {
     setUser(prev => {
       const updated = { ...prev, ...data };
@@ -93,7 +104,7 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, authEnabled, login, logout, updateUser }}>
+    <AuthContext.Provider value={{ user, token, loading, authEnabled, login, loginWithGoogle, logout, updateUser }}>
       {children}
     </AuthContext.Provider>
   );

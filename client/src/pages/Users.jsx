@@ -651,7 +651,6 @@ const Users = () => {
               ['#8b5cf6','rgba(139,92,246,0.15)'], ['#06b6d4','rgba(6,182,212,0.15)'],
             ];
             const [clr, bg] = avatarColors[u.username.charCodeAt(0) % avatarColors.length];
-
             return (
               <div
                 key={u.id}
