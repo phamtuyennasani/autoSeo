@@ -98,7 +98,7 @@ router.get('/api-config', async (req, res) => {
     // User thường khi AUTH bật → đọc key cá nhân từ bảng users
     if (authEnabled && user.role !== 'admin') {
       const result = await db.execute({
-        sql: 'SELECT gemini_api_key, gemini_model, serpapi_api_key FROM users WHERE id = ?',
+        sql: 'SELECT gemini_api_key, gemini_model, serpapi_api_key, publish_api_url FROM users WHERE id = ?',
         args: [user.id],
       });
       const row = result.rows[0] || {};
@@ -106,6 +106,7 @@ router.get('/api-config', async (req, res) => {
         gemini_api_key:  row.gemini_api_key  || '',
         gemini_model:    row.gemini_model    || 'gemini-2.5-flash',
         serpapi_api_key: row.serpapi_api_key || '',
+        publish_api_url: row.publish_api_url || '',
         scope: 'user',
       });
     }
@@ -134,7 +135,7 @@ router.put('/api-config', async (req, res) => {
   try {
     const user        = req.user || { id: 'admin', role: 'admin' };
     const authEnabled = process.env.AUTH_ENABLED === 'true';
-    const { gemini_api_key, gemini_model, serpapi_api_key } = req.body;
+    const { gemini_api_key, gemini_model, serpapi_api_key, publish_api_url } = req.body;
 
     // User thường khi AUTH bật → lưu vào users table
     if (authEnabled && user.role !== 'admin') {
@@ -143,6 +144,7 @@ router.put('/api-config', async (req, res) => {
       if (gemini_api_key  !== undefined) { updates.push('gemini_api_key = ?');  args.push(String(gemini_api_key).trim()); }
       if (gemini_model    !== undefined) { updates.push('gemini_model = ?');    args.push(String(gemini_model).trim()); }
       if (serpapi_api_key !== undefined) { updates.push('serpapi_api_key = ?'); args.push(String(serpapi_api_key).trim()); }
+      if (publish_api_url !== undefined) { updates.push('publish_api_url = ?'); args.push(String(publish_api_url).trim()); }
 
       if (updates.length > 0) {
         args.push(user.id);

@@ -203,7 +203,7 @@ router.get('/', async (req, res) => {
     });
     const total = Number(countResult.rows[0]?.total || 0);
 
-    const sql = `SELECT a.*, c.name as companyName FROM articles a LEFT JOIN companies c ON a.companyId = c.id${whereClause} ORDER BY a.createdAt DESC LIMIT ? OFFSET ?`;
+    const sql = `SELECT a.*, c.name as companyName, c.publish_api_url as company_publish_api_url FROM articles a LEFT JOIN companies c ON a.companyId = c.id${whereClause} ORDER BY a.createdAt DESC LIMIT ? OFFSET ?`;
     const result = await db.execute({ sql, args: [...args, limit, offset] });
 
     res.json({ data: result.rows, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } });
@@ -489,8 +489,15 @@ router.post('/:id/publish', async (req, res) => {
     const article = aResult.rows[0];
     if (!article) return res.status(404).json({ error: 'Không tìm thấy bài viết' });
 
-    const apiUrl = article.publish_api_url || await getSetting('publish_api_url');
-    if (!apiUrl) return res.status(400).json({ error: 'Chưa cấu hình API URL. Vui lòng cài đặt trong phần Cài Đặt hoặc thông tin công ty.' });
+    // Ưu tiên: công ty → user. Admin mới dùng fallback hệ thống
+    let userApiUrl = '';
+    if (req.user?.id && req.user.id !== 'admin') {
+      const uRes = await db.execute({ sql: 'SELECT publish_api_url FROM users WHERE id = ?', args: [req.user.id] });
+      userApiUrl = uRes.rows[0]?.publish_api_url || '';
+    }
+    const isAdmin = req.user?.role === 'admin' || req.user?.id === 'admin';
+    const apiUrl = article.publish_api_url || userApiUrl || (isAdmin ? await getSetting('publish_api_url') : '');
+    if (!apiUrl) return res.status(400).json({ error: 'Bạn chưa cấu hình URL API đăng bài. Vui lòng cập nhật trong phần Cài Đặt → Cấu Hình API.' });
 
     const company = {
       url:           article.url,
@@ -525,7 +532,13 @@ router.post('/publish-batch', async (req, res) => {
     if (!Array.isArray(ids) || ids.length === 0)
       return res.status(400).json({ error: 'Thiếu danh sách bài viết cần publish' });
 
-    const defaultApiUrl = await getSetting('publish_api_url');
+    let userApiUrl = '';
+    if (req.user?.id && req.user.id !== 'admin') {
+      const uRes = await db.execute({ sql: 'SELECT publish_api_url FROM users WHERE id = ?', args: [req.user.id] });
+      userApiUrl = uRes.rows[0]?.publish_api_url || '';
+    }
+    const isAdminBatch = req.user?.role === 'admin' || req.user?.id === 'admin';
+    const defaultApiUrl = userApiUrl || (isAdminBatch ? await getSetting('publish_api_url') : '');
     const results = [];
 
     for (const id of ids) {
