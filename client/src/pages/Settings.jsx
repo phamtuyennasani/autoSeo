@@ -6,7 +6,7 @@ import {
   Save, RefreshCw, Loader2, CheckCircle2,
   Zap, FileText, AlertTriangle, Info, BarChart3,
   Shield, TrendingUp, Calendar, KeyRound, Eye, EyeOff, Cpu,
-  Calculator, DollarSign, ChevronDown, ChevronUp, Upload, User
+  Calculator, DollarSign, ChevronDown, ChevronUp, Upload, User, Globe
 } from 'lucide-react';
 
 import { API } from '../config/api';
@@ -391,7 +391,7 @@ function ApiConfigTab() {
   const isAdmin = user?.role === 'admin';
   const isUserScope = authEnabled && !isAdmin; // user thường khi AUTH bật
 
-  const [form, setForm] = useState({ gemini_api_key: '', gemini_model: 'gemini-2.5-flash', serpapi_api_key: '' });
+  const [form, setForm] = useState({ gemini_api_key: '', gemini_model: 'gemini-2.5-flash', serpapi_api_key: '', publish_api_url: '' });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -486,6 +486,37 @@ function ApiConfigTab() {
         show={showSerp}
         onToggleShow={() => setShowSerp(v => !v)}
       />
+
+      {/* Publish API URL — chỉ cho user scope */}
+      {isUserScope && (
+        <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 18px', borderBottom: '1px solid var(--border)', background: 'var(--bg-panel)' }}>
+            <div style={{ width: 34, height: 34, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(99,102,241,0.12)', flexShrink: 0 }}>
+              <Globe size={16} color="var(--accent)" />
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 700, fontSize: 14 }}>URL API Đăng Bài (Bên Thứ 3)</div>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                URL mặc định của bạn để publish bài viết. Thấp hơn URL riêng của từng công ty.
+              </div>
+            </div>
+          </div>
+          <div style={{ padding: '14px 18px' }}>
+            <input
+              type="url"
+              value={form.publish_api_url}
+              onChange={e => setForm({ ...form, publish_api_url: e.target.value })}
+              placeholder="https://your-site.com/api/publish"
+              style={{
+                width: '100%', padding: '10px 14px', borderRadius: 8,
+                border: '1px solid var(--border)', background: 'var(--bg-input)',
+                color: 'var(--text-primary)', fontSize: 13,
+                fontFamily: 'monospace', boxSizing: 'border-box',
+              }}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Save */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '16px 20px', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', background: 'var(--bg-panel)' }}>

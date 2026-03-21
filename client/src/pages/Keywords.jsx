@@ -1040,7 +1040,8 @@ const Keywords = () => {
                 </div>
               )}
               {/* PUBLISH HÀNG LOẠT */}
-              {articlesOfKeyword.filter(a => a.publish_status !== 'published').length > 0 && !isWritingAll && writeQueueJob?.status !== 'running' && (
+              {articlesOfKeyword.filter(a => a.publish_status !== 'published').length > 0 && !isWritingAll && writeQueueJob?.status !== 'running' &&
+               (currentUser?.role === 'admin' || currentUser?.publish_api_url || articlesOfKeyword.some(a => a.company_publish_api_url)) && (
                 <button
                   onClick={handlePublishBatch}
                   className="btn btn-outline"
@@ -1223,7 +1224,8 @@ const Keywords = () => {
                         >
                           <Edit3 size={13} /> Sửa
                         </button>
-                        {article.publish_status !== 'published' && (
+                        {article.publish_status !== 'published' &&
+                         (currentUser?.role === 'admin' || article.company_publish_api_url || currentUser?.publish_api_url) && (
                           <button
                             onClick={() => handlePublishArticle(article)}
                             className="btn btn-sm btn-outline"
