@@ -4,7 +4,8 @@
       "Bash(npm install:*)",
       "Bash(npm run:*)",
       "Bash(npm list:*)",
-      "Bash(npx vite:*)"
+      "Bash(npx vite:*)",
+      "Bash(find h:laragonwwwautoSeo -name .env* -o -name *.env)"
     ]
   }
 }

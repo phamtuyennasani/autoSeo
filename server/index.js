@@ -40,6 +40,9 @@ app.use('/api/webhooks', require('./routes/webhooks'));
 app.use('/api/hop-dong',       requireRoot, require('./routes/hopDong'));
 app.use('/api/webhook-events', requireRoot, require('./routes/webhookEvents'));
 
+// ── CRM Queue monitor (root-only) ─────────────────────────────────────────────
+app.use('/api/queue', requireRoot, require('./routes/queue'));
+
 // Articles — gắn middleware giới hạn cho các POST (viết bài tốn token)
 const articlesRouter = require('./routes/articles');
 app.use('/api/articles', (req, res, next) => {
@@ -60,6 +63,10 @@ initDb()
       // Khởi động background scheduler check Gemini Batch Jobs
       const { startBatchJobChecker } = require('./jobs/batchJobChecker');
       startBatchJobChecker();
+
+      // Khởi động CRM Queue Workers (keyword → title → article)
+      const { startQueueWorkers } = require('./services/crmQueueWorker');
+      startQueueWorkers();
     });
   })
   .catch((err) => {

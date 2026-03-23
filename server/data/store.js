@@ -138,6 +138,42 @@ async function initDb() {
       createdAt TEXT NOT NULL,
       processedAt TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS keyword_queue (
+      id         TEXT PRIMARY KEY,
+      keyword    TEXT NOT NULL,
+      so_tieude  INTEGER NOT NULL DEFAULT 10,
+      company_id TEXT NOT NULL,
+      hop_dong_id TEXT,
+      chuki      TEXT,
+      created_by TEXT,
+      status     TEXT NOT NULL DEFAULT 'pending',
+      retries    INTEGER NOT NULL DEFAULT 0,
+      worker_id  TEXT,
+      error      TEXT,
+      keyword_ref TEXT,
+      created_at TEXT NOT NULL,
+      started_at TEXT,
+      done_at    TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS title_queue (
+      id           TEXT PRIMARY KEY,
+      keyword_q_id TEXT NOT NULL,
+      keyword      TEXT NOT NULL,
+      titles_json  TEXT NOT NULL,
+      company_id   TEXT NOT NULL,
+      hop_dong_id  TEXT,
+      chuki        TEXT,
+      created_by   TEXT,
+      status       TEXT NOT NULL DEFAULT 'pending',
+      retries      INTEGER NOT NULL DEFAULT 0,
+      worker_id    TEXT,
+      error        TEXT,
+      created_at   TEXT NOT NULL,
+      started_at   TEXT,
+      done_at      TEXT
+    );
   `);
 
   // ── Migration: Thêm cột nếu thiếu ──
@@ -181,7 +217,8 @@ async function initDb() {
     { table: 'articles', col: 'published_at',         ddl: 'ALTER TABLE articles ADD COLUMN published_at TEXT' },
     { table: 'articles', col: 'publish_external_id',  ddl: 'ALTER TABLE articles ADD COLUMN publish_external_id TEXT' },
     // users — hierarchy
-    { table: 'users', col: 'manager_id', ddl: 'ALTER TABLE users ADD COLUMN manager_id TEXT' },
+    { table: 'users', col: 'manager_id',      ddl: 'ALTER TABLE users ADD COLUMN manager_id TEXT' },
+    { table: 'users', col: 'use_manager_key', ddl: 'ALTER TABLE users ADD COLUMN use_manager_key INTEGER NOT NULL DEFAULT 0' },
     // articles — audit trail (ai viết thay)
     { table: 'articles', col: 'writtenBy', ddl: 'ALTER TABLE articles ADD COLUMN writtenBy TEXT' },
     { table: 'batch_jobs', col: 'writtenBy', ddl: 'ALTER TABLE batch_jobs ADD COLUMN writtenBy TEXT' },

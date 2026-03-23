@@ -26,9 +26,10 @@ const {
 function normalizeUser(r) {
   return {
     ...r,
-    use_system_key: Number(r.use_system_key) === 1,
-    has_own_key:    Number(r.has_own_key)    === 1,
-    is_active:      Number(r.is_active)      === 1,
+    use_system_key:  Number(r.use_system_key)  === 1,
+    use_manager_key: Number(r.use_manager_key) === 1,
+    has_own_key:     Number(r.has_own_key)     === 1,
+    is_active:       Number(r.is_active)       === 1,
   };
 }
 
@@ -43,7 +44,8 @@ router.get('/', async (req, res) => {
       const result = await db.execute(
         `SELECT id, username, full_name, email, phone, role, manager_id, is_active,
                 daily_token_limit, daily_article_limit,
-                use_system_key, gemini_api_key IS NOT NULL AND gemini_api_key != '' AS has_own_key,
+                use_system_key, use_manager_key,
+                gemini_api_key IS NOT NULL AND gemini_api_key != '' AS has_own_key,
                 createdAt, lastLoginAt
          FROM users ORDER BY createdAt DESC`
       );
@@ -58,7 +60,8 @@ router.get('/', async (req, res) => {
       const result = await db.execute({
         sql: `SELECT id, username, full_name, email, phone, role, manager_id, is_active,
                      daily_token_limit, daily_article_limit,
-                     use_system_key, gemini_api_key IS NOT NULL AND gemini_api_key != '' AS has_own_key,
+                     use_system_key, use_manager_key,
+                     gemini_api_key IS NOT NULL AND gemini_api_key != '' AS has_own_key,
                      createdAt, lastLoginAt
               FROM users WHERE id IN (${placeholders}) ORDER BY createdAt DESC`,
         args: ids,
@@ -82,6 +85,7 @@ router.post('/', async (req, res) => {
     daily_token_limit = 0,
     daily_article_limit = 0,
     use_system_key = false,
+    share_manager_key = false,
     full_name, email, phone,
     manager_id = null,
   } = req.body;
@@ -105,6 +109,19 @@ router.post('/', async (req, res) => {
   // Chỉ root mới được gán use_system_key = true
   const effectiveSystemKey = isRoot(me) ? (use_system_key ? 1 : 0) : 0;
 
+  // Manager/senior_manager có thể chia sẻ key cá nhân của mình cho user mới
+  let effectiveManagerKey = 0;
+  if (!isRoot(me) && share_manager_key) {
+    const meData = await db.execute({
+      sql: 'SELECT gemini_api_key FROM users WHERE id = ?',
+      args: [me.id],
+    });
+    if (!meData.rows[0]?.gemini_api_key) {
+      return res.status(400).json({ error: 'Bạn chưa cấu hình API key cá nhân để chia sẻ.' });
+    }
+    effectiveManagerKey = 1;
+  }
+
   // Validate manager_id (nếu có)
   let effectiveManagerId = manager_id || null;
   if (effectiveManagerId) {
@@ -126,10 +143,11 @@ router.post('/', async (req, res) => {
 
     await db.execute({
       sql: `INSERT INTO users (id, username, password_hash, role, is_active, daily_token_limit, daily_article_limit,
-                               use_system_key, full_name, email, phone, manager_id, createdAt)
-            VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                               use_system_key, use_manager_key, full_name, email, phone, manager_id, createdAt)
+            VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [id, username, password_hash, normalizedRole, daily_token_limit, daily_article_limit,
-             effectiveSystemKey, full_name || null, email || null, phone || null, effectiveManagerId, createdAt],
+             effectiveSystemKey, effectiveManagerKey,
+             full_name || null, email || null, phone || null, effectiveManagerId, createdAt],
     });
 
     res.status(201).json({
@@ -137,7 +155,8 @@ router.post('/', async (req, res) => {
       full_name: full_name || null, email: email || null, phone: phone || null,
       role: normalizedRole, manager_id: effectiveManagerId,
       is_active: true, daily_token_limit, daily_article_limit,
-      use_system_key: !!effectiveSystemKey, has_own_key: false, createdAt,
+      use_system_key: !!effectiveSystemKey, use_manager_key: !!effectiveManagerKey,
+      has_own_key: false, createdAt,
     });
   } catch (err) {
     if (err.message && err.message.includes('UNIQUE constraint failed')) {
@@ -152,7 +171,7 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   const me = req.user;
   const { id } = req.params;
-  const { role, is_active, daily_token_limit, daily_article_limit, password, use_system_key, full_name, email, phone, manager_id } = req.body;
+  const { role, is_active, daily_token_limit, daily_article_limit, password, use_system_key, use_manager_key, full_name, email, phone, manager_id } = req.body;
 
   try {
     const existRes = await db.execute({ sql: 'SELECT id, role FROM users WHERE id = ?', args: [id] });
@@ -191,6 +210,19 @@ router.put('/:id', async (req, res) => {
       if (!isRoot(me)) return res.status(403).json({ error: 'Chỉ root mới được phép thay đổi quyền dùng key hệ thống.' });
       updates.push('use_system_key = ?'); args.push(use_system_key ? 1 : 0);
     }
+    // Manager/senior_manager có thể bật/tắt chia sẻ key cá nhân cho cấp dưới
+    if (use_manager_key !== undefined) {
+      if (use_manager_key && !isRoot(me)) {
+        const meData = await db.execute({
+          sql: 'SELECT gemini_api_key FROM users WHERE id = ?',
+          args: [me.id],
+        });
+        if (!meData.rows[0]?.gemini_api_key) {
+          return res.status(400).json({ error: 'Bạn chưa cấu hình API key cá nhân để chia sẻ.' });
+        }
+      }
+      updates.push('use_manager_key = ?'); args.push(use_manager_key ? 1 : 0);
+    }
     if (full_name !== undefined) { updates.push('full_name = ?'); args.push(full_name || null); }
     if (email !== undefined) { updates.push('email = ?'); args.push(email || null); }
     if (phone !== undefined) { updates.push('phone = ?'); args.push(phone || null); }
@@ -215,7 +247,8 @@ router.put('/:id', async (req, res) => {
     const updated = await db.execute({
       sql: `SELECT id, username, full_name, email, phone, role, manager_id, is_active,
                    daily_token_limit, daily_article_limit,
-                   use_system_key, gemini_api_key IS NOT NULL AND gemini_api_key != '' AS has_own_key,
+                   use_system_key, use_manager_key,
+                   gemini_api_key IS NOT NULL AND gemini_api_key != '' AS has_own_key,
                    createdAt, lastLoginAt
             FROM users WHERE id = ?`,
       args: [id],

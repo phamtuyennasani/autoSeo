@@ -1,14 +1,15 @@
 /**
  * crmIntegration.js — Orchestration pipeline cho CRM1 → AutoSEO → CRM2
  *
- * Luồng: webhook event → findOrCreateHopDong → findOrCreateCompany
- *        → autoGenerateTitles → autoQueueArticles → cập nhật event status
+ * Luồng mới (queue-based):
+ *   webhook event → findOrCreateHopDong → findOrCreateCompany
+ *   → enqueueKeyword (insert vào keyword_queue)
+ *   → crmQueueWorker sẽ xử lý tuần tự phía sau
  */
 
 const { db } = require('../data/store');
 
 const genId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-const { generateTitles } = require('./gemini');
 
 // ─── Tìm user theo email ──────────────────────────────────────────────────────
 async function findUserByEmail(email) {
@@ -24,7 +25,7 @@ async function findUserByEmail(email) {
   }
 }
 
-// ─── 4.2 findOrCreateHopDong ─────────────────────────────────────────────────
+// ─── findOrCreateHopDong ──────────────────────────────────────────────────────
 async function findOrCreateHopDong(thongtinHD) {
   const { MaHD, TenHD, tenmien } = thongtinHD;
   const now = new Date().toISOString();
@@ -35,7 +36,6 @@ async function findOrCreateHopDong(thongtinHD) {
   });
 
   if (existing.rows.length > 0) {
-    // Cập nhật thông tin nếu có thay đổi
     await db.execute({
       sql: 'UPDATE hop_dong SET ten_hd = ?, ten_mien = ?, updatedAt = ? WHERE ma_hd = ?',
       args: [TenHD || null, tenmien || null, now, MaHD],
@@ -52,12 +52,11 @@ async function findOrCreateHopDong(thongtinHD) {
   return id;
 }
 
-// ─── 4.3 findOrCreateCompany ─────────────────────────────────────────────────
+// ─── findOrCreateCompany ──────────────────────────────────────────────────────
 async function findOrCreateCompany(thongtincongtyvietbai, hopDongId) {
   const { TenCongTy, LinhVuc, MaHD, ThongtinMota } = thongtincongtyvietbai;
   const now = new Date().toISOString();
 
-  // Lookup theo MaHD (contract_code)
   const existing = await db.execute({
     sql: 'SELECT id FROM companies WHERE contract_code = ?',
     args: [MaHD],
@@ -81,54 +80,24 @@ async function findOrCreateCompany(thongtincongtyvietbai, hopDongId) {
   return companyId;
 }
 
-// ─── 4.4 autoGenerateTitles ──────────────────────────────────────────────────
-async function autoGenerateTitles(tukhoa, soluongtieude, companyId, createdBy) {
-  const count = soluongtieude || 10;
-  const { titles } = await generateTitles(tukhoa, '', count);
-
-  const keywordId = genId();
+// ─── enqueueKeyword — đẩy vào keyword_queue (thay thế autoGenerateTitles) ────
+async function enqueueKeyword({ keyword, soTieude, companyId, hopDongId, chuki, createdBy }) {
+  const id = genId();
   await db.execute({
-    sql: `INSERT INTO keywords (id, keyword, titles, companyId, createdAt, createdBy, source)
-          VALUES (?, ?, ?, ?, ?, ?, 'webhook')`,
-    args: [keywordId, tukhoa, JSON.stringify(titles), companyId, new Date().toISOString(), createdBy || 'system'],
+    sql: `INSERT INTO keyword_queue
+            (id, keyword, so_tieude, company_id, hop_dong_id, chuki, created_by, status, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
+    args: [id, keyword, soTieude || 10, companyId, hopDongId || null, chuki || null, createdBy || null, new Date().toISOString()],
   });
-
-  return { keywordId, titles };
+  return id;
 }
 
-// ─── 4.5 autoQueueArticles ───────────────────────────────────────────────────
-async function autoQueueArticles(keywordId, keyword, titles, companyId, chuki, createdBy) {
-  const now = new Date().toISOString();
-  const jobId = genId();
-
-  await db.execute({
-    sql: `INSERT INTO batch_jobs
-            (id, gemini_job_name, keyword, companyId, titles, status, total, createdAt, createdBy, keywordId, chuki, source)
-          VALUES (?, '', ?, ?, ?, 'pending', ?, ?, ?, ?, ?, 'webhook')`,
-    args: [
-      jobId,
-      keyword,
-      companyId,
-      JSON.stringify(titles),
-      titles.length,
-      now,
-      createdBy || 'system',
-      keywordId,
-      chuki || null,
-    ],
-  });
-
-  return jobId;
-}
-
-// ─── 4.6 processWebhookEvent ─────────────────────────────────────────────────
+// ─── processWebhookEvent ─────────────────────────────────────────────────────
 async function processWebhookEvent(eventId, payload) {
   const { tukhoa, soluongtieude, chuki, email, thongtinHD, thongtincongtyvietbai } = payload;
 
-  // Tìm user theo email CRM gửi lên
   const userId = await findUserByEmail(email);
 
-  // Đánh dấu đang xử lý + lưu email
   await db.execute({
     sql: `UPDATE webhook_events SET status = 'processing', email = ? WHERE id = ?`,
     args: [email || null, eventId],
@@ -137,15 +106,23 @@ async function processWebhookEvent(eventId, payload) {
   try {
     const hopDongId = await findOrCreateHopDong(thongtinHD);
     const companyId = await findOrCreateCompany(thongtincongtyvietbai, hopDongId);
-    const { keywordId, titles } = await autoGenerateTitles(tukhoa, soluongtieude, companyId, userId);
-    await autoQueueArticles(keywordId, tukhoa, titles, companyId, chuki, userId);
+
+    // Đẩy vào queue thay vì xử lý ngay
+    const queueId = await enqueueKeyword({
+      keyword:   tukhoa,
+      soTieude:  soluongtieude,
+      companyId,
+      hopDongId,
+      chuki,
+      createdBy: userId,
+    });
 
     await db.execute({
       sql: `UPDATE webhook_events SET status = 'done', processedAt = ? WHERE id = ?`,
       args: [new Date().toISOString(), eventId],
     });
 
-    console.log(`[crm] Event ${eventId} processed: HD=${thongtinHD.MaHD}, company=${thongtincongtyvietbai.TenCongTy}, user=${userId || 'system'}`);
+    console.log(`[crm] Event ${eventId} enqueued: keyword="${tukhoa}", queueId=${queueId}, user=${userId || 'system'}`);
   } catch (e) {
     console.error(`[crm] Event ${eventId} failed:`, e.message);
     await db.execute({

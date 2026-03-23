@@ -5,6 +5,7 @@ const { generateAndSave } = require('./articles');
 const { getSetting } = require('./settings');
 const { getJob, startJob, stopJob, emitter } = require('../services/writeQueue');
 const { getEffectiveApiConfig } = require('../services/apiConfig');
+const { isRoot, getVisibleUserIds } = require('../services/permissions');
 
 // ─── POST / — Bắt đầu write-queue job ────────────────────────────────────────
 router.post('/', async (req, res) => {
@@ -67,6 +68,14 @@ router.post('/', async (req, res) => {
   const compResult = await db.execute({ sql: 'SELECT * FROM companies WHERE id = ?', args: [companyId] });
   const company = compResult.rows[0];
   if (!company) return res.status(404).json({ error: 'Không tìm thấy công ty' });
+
+  // Kiểm tra quyền truy cập công ty
+  if (!isRoot(user)) {
+    const visibleIds = await getVisibleUserIds(user.id, user.role);
+    if (!visibleIds.includes(company.createdBy)) {
+      return res.status(403).json({ error: 'Bạn không có quyền viết bài cho công ty này.' });
+    }
+  }
 
   const jobId = `wq-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
   await startJob(jobId, keyword, companyId, titles, company, generateAndSave, user.id, apiConfig, keywordId);

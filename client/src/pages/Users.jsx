@@ -184,8 +184,10 @@ const StatusBadge = ({ active }) => (
 
 // ── User Modal ────────────────────────────────────────────────────────────────
 function UserModal({ mode, user, onClose, onSave, currentUser, allUsers }) {
-  const isCurrentRoot    = roleLevelOf(currentUser?.role) >= 4;
-  const isCurrentManager = currentUser?.role === 'manager';
+  const isCurrentRoot          = roleLevelOf(currentUser?.role) >= 4;
+  const isCurrentManager       = currentUser?.role === 'manager';
+  const isCurrentSeniorManager = currentUser?.role === 'senior_manager';
+  const canShareManagerKey     = !isCurrentRoot && (isCurrentManager || isCurrentSeniorManager);
   const myLevel = roleLevelOf(currentUser?.role);
 
   const [form, setForm] = useState({
@@ -200,6 +202,7 @@ function UserModal({ mode, user, onClose, onSave, currentUser, allUsers }) {
     daily_token_limit:   String(user?.daily_token_limit   ?? 0),
     daily_article_limit: String(user?.daily_article_limit ?? 0),
     use_system_key:      user?.use_system_key      ?? false,
+    use_manager_key:     user?.use_manager_key     ?? false,
   });
 
   // Roles mà người đang đăng nhập có thể gán (chỉ cấp thấp hơn mình)
@@ -512,6 +515,55 @@ function UserModal({ mode, user, onClose, onSave, currentUser, allUsers }) {
               </div>
             )}
 
+            {/* Chia sẻ key cá nhân — Manager / Senior Manager */}
+            {canShareManagerKey && (
+              <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: 'var(--bg-elevated)', borderBottom: '1px solid var(--border)' }}>
+                  <div style={{ width: 30, height: 30, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(16,185,129,0.12)', flexShrink: 0 }}>
+                    <KeyRound size={14} color="#10b981" />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 700, fontSize: 13 }}>Chia sẻ key cá nhân</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>
+                      Cho phép user này dùng Gemini API key của bạn khi không có key riêng. Không giới hạn token/bài.
+                    </div>
+                  </div>
+                </div>
+                <div style={{ padding: '12px 16px' }}>
+                  {!currentUser?.has_own_key ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--warning, #f59e0b)' }}>
+                      <AlertCircle size={13} />
+                      Bạn chưa cấu hình API key cá nhân trong Cài đặt → không thể chia sẻ.
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <button
+                        type="button"
+                        onClick={() => set('use_manager_key')(!form.use_manager_key)}
+                        style={{
+                          width: 44, height: 24, borderRadius: 12,
+                          background: form.use_manager_key ? '#10b981' : 'var(--border)',
+                          border: 'none', cursor: 'pointer', position: 'relative',
+                          transition: 'background 0.2s', flexShrink: 0,
+                        }}
+                      >
+                        <div style={{
+                          position: 'absolute', top: 2,
+                          left: form.use_manager_key ? 22 : 2,
+                          width: 20, height: 20, borderRadius: '50%',
+                          background: '#fff', transition: 'left 0.2s',
+                          boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+                        }} />
+                      </button>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: form.use_manager_key ? '#10b981' : 'var(--text-secondary)' }}>
+                        {form.use_manager_key ? 'Đang chia sẻ key của bạn' : 'Không chia sẻ key'}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* DIVIDER + Limits — chỉ root mới thấy */}
             {isCurrentRoot && (<>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -599,6 +651,7 @@ const Users = () => {
       daily_token_limit:   parseInt(form.daily_token_limit,   10) || 0,
       daily_article_limit: parseInt(form.daily_article_limit, 10) || 0,
       use_system_key:      form.use_system_key,
+      share_manager_key:   form.use_manager_key,
       full_name:           form.full_name   || null,
       email:               form.email       || null,
       phone:               form.phone       || null,
@@ -613,6 +666,7 @@ const Users = () => {
       daily_token_limit:   parseInt(form.daily_token_limit,   10) || 0,
       daily_article_limit: parseInt(form.daily_article_limit, 10) || 0,
       use_system_key:      form.use_system_key,
+      use_manager_key:     form.use_manager_key,
       full_name:           form.full_name   || null,
       email:               form.email       || null,
       phone:               form.phone       || null,
