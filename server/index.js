@@ -1,8 +1,10 @@
 const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
+const path = require('path');
 
-dotenv.config();
+// Dùng __dirname + override:true để đảm bảo .env luôn được load đúng
+dotenv.config({ path: path.join(__dirname, '.env'), override: true });
 
 const app = express();
 app.use(cors());
@@ -12,6 +14,7 @@ app.use(express.json());
 const authenticate = require('./middleware/authenticate');
 const requireAdmin = require('./middleware/requireAdmin');
 const requireManager = require('./middleware/requireManager');
+const requireRoot = require('./middleware/requireRoot');
 const checkDailyLimits = require('./middleware/checkLimits');
 
 app.use(authenticate);
@@ -29,6 +32,13 @@ app.use('/api/settings',   require('./routes/settings'));
 app.use('/api/stats',      require('./routes/stats'));
 app.use('/api/batch-jobs', require('./routes/batch-jobs'));
 app.use('/api/write-queue', require('./routes/write-queue'));
+
+// ── Webhook nhận từ CRM1 (không cần login, bảo mật bằng HMAC) ────────────────
+app.use('/api/webhooks', require('./routes/webhooks'));
+
+// ── Hợp Đồng & Webhook Events (root-only) ────────────────────────────────────
+app.use('/api/hop-dong',       requireRoot, require('./routes/hopDong'));
+app.use('/api/webhook-events', requireRoot, require('./routes/webhookEvents'));
 
 // Articles — gắn middleware giới hạn cho các POST (viết bài tốn token)
 const articlesRouter = require('./routes/articles');

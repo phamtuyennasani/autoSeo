@@ -46,6 +46,9 @@
   --radius-xl: 20px;
   --transition: 0.18s ease;
   
+  /* Elevated surface (modal headers, card headers, stepper buttons) */
+  --bg-elevated: rgba(255, 255, 255, 0.05);
+
   /* Sidebar */
   --sidebar-width: 240px;
   --header-height: 58px;
@@ -55,26 +58,97 @@
    DESIGN TOKENS — LIGHT MODE
 =========================== */
 [data-theme="light"] {
-  --bg-root: #f4f6fb;
+  --bg-root: #eef1f8;
   --bg-sidebar: #ffffff;
-  --bg-content: #f0f2f8;
+  --bg-content: #e4e8f2;
   --bg-modal: #ffffff;
-  --bg-panel: rgba(0, 0, 0, 0.025);
+  --bg-panel: #ffffff;
   --bg-panel-hover: rgba(0, 0, 0, 0.04);
-  --bg-input: rgba(0, 0, 0, 0.04);
-  
-  --border: rgba(0, 0, 0, 0.08);
-  --border-active: rgba(99, 102, 241, 0.4);
-  
+  --bg-input: rgba(0, 0, 0, 0.045);
+
+  --border: rgba(0, 0, 0, 0.1);
+  --border-active: rgba(99, 102, 241, 0.5);
+
   --text-primary: #1e293b;
-  --text-secondary: #64748b;
+  --text-secondary: #475569;
   --text-muted: #94a3b8;
 
-  --accent-subtle: rgba(99, 102, 241, 0.07);
-  --success-subtle: rgba(34, 197, 94, 0.1);
-  --warning-subtle: rgba(245, 158, 11, 0.1);
-  --danger-subtle: rgba(239, 68, 68, 0.1);
-  --info-subtle: rgba(14, 165, 233, 0.1);
+  --bg-elevated: #f5f7fc;
+
+  --accent-glow: rgba(99, 102, 241, 0.18);
+  --accent-subtle: rgba(99, 102, 241, 0.08);
+  --success-subtle: rgba(34, 197, 94, 0.12);
+  --warning-subtle: rgba(245, 158, 11, 0.12);
+  --danger-subtle: rgba(239, 68, 68, 0.12);
+  --info-subtle: rgba(14, 165, 233, 0.12);
+}
+
+/* ===========================
+   LIGHT MODE OVERRIDES
+   (fix hardcoded dark-mode values)
+=========================== */
+[data-theme="light"] ::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+}
+[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.25);
+}
+
+[data-theme="light"] .table-container {
+  background: #ffffff;
+}
+
+[data-theme="light"] .table-header {
+  background: #f5f7fc;
+}
+
+[data-theme="light"] .table-row {
+  border-bottom-color: rgba(0, 0, 0, 0.05);
+  background: #ffffff;
+}
+
+[data-theme="light"] .table-row:hover {
+  background: #f5f7fc;
+}
+
+[data-theme="light"] .close-btn:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--text-primary);
+}
+
+[data-theme="light"] .article-output {
+  color: #334155;
+}
+
+[data-theme="light"] .info-box-blue {
+  color: #0369a1;
+}
+
+[data-theme="light"] .info-box-green {
+  color: #15803d;
+}
+
+[data-theme="light"] .info-box-yellow {
+  color: #92400e;
+}
+
+[data-theme="light"] .spinner {
+  border-color: rgba(0, 0, 0, 0.12);
+  border-top-color: var(--accent);
+}
+
+[data-theme="light"] .skeleton {
+  background: linear-gradient(90deg, rgba(0,0,0,0.04) 25%, rgba(0,0,0,0.08) 50%, rgba(0,0,0,0.04) 75%);
+  background-size: 400% 100%;
+}
+
+[data-theme="light"] .btn-outline:hover {
+  border-color: rgba(0, 0, 0, 0.18);
+  background: var(--bg-panel-hover);
+}
+
+[data-theme="light"] .modal-dialog {
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.15);
 }
 
 /* Smooth theme transition */

@@ -15,7 +15,7 @@ require('dotenv').config();
 const { createClient } = require('@libsql/client');
 
 const db = createClient({
-  url:       process.env.TURSO_DATABASE_URL || 'file:./database.db',
+  url:       process.env.TURSO_DATABASE_URL,
   authToken: process.env.TURSO_AUTH_TOKEN  || undefined,
 });
 
@@ -118,6 +118,26 @@ async function initDb() {
       createdAt TEXT NOT NULL,
       lastLoginAt TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS hop_dong (
+      id TEXT PRIMARY KEY,
+      ma_hd TEXT UNIQUE NOT NULL,
+      ten_hd TEXT,
+      ten_mien TEXT,
+      status TEXT NOT NULL DEFAULT 'active',
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS webhook_events (
+      id TEXT PRIMARY KEY,
+      ma_hd TEXT,
+      payload TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      error TEXT,
+      createdAt TEXT NOT NULL,
+      processedAt TEXT
+    );
   `);
 
   // ── Migration: Thêm cột nếu thiếu ──
@@ -165,6 +185,16 @@ async function initDb() {
     // articles — audit trail (ai viết thay)
     { table: 'articles', col: 'writtenBy', ddl: 'ALTER TABLE articles ADD COLUMN writtenBy TEXT' },
     { table: 'batch_jobs', col: 'writtenBy', ddl: 'ALTER TABLE batch_jobs ADD COLUMN writtenBy TEXT' },
+    // companies — liên kết hợp đồng
+    { table: 'companies', col: 'hop_dong_id', ddl: 'ALTER TABLE companies ADD COLUMN hop_dong_id TEXT' },
+    // chuki — chu kỳ từ CRM1, dùng để gửi lại CRM2 khi publish
+    { table: 'batch_jobs', col: 'chuki', ddl: 'ALTER TABLE batch_jobs ADD COLUMN chuki TEXT' },
+    { table: 'articles',   col: 'chuki', ddl: 'ALTER TABLE articles ADD COLUMN chuki TEXT' },
+    // source — 'webhook' nếu tạo từ CRM1, null nếu tạo thủ công
+    { table: 'batch_jobs',     col: 'source', ddl: "ALTER TABLE batch_jobs ADD COLUMN source TEXT" },
+    { table: 'keywords',       col: 'source', ddl: "ALTER TABLE keywords ADD COLUMN source TEXT" },
+    // webhook_events — lưu email CRM1 gửi lên để tìm user
+    { table: 'webhook_events', col: 'email',  ddl: 'ALTER TABLE webhook_events ADD COLUMN email TEXT' },
   ];
 
   for (const m of migrations) {
@@ -222,7 +252,6 @@ async function initDb() {
   for (const row of apiCfg.rows) {
     if (row.value) process.env[envMap[row.key]] = row.value;
   }
-
   console.log('[store] DB initialized ✅');
 }
 

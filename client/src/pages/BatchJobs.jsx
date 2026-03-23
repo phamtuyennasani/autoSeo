@@ -3,7 +3,8 @@ import { toast } from 'sonner';
 import apiClient from '../config/api';
 import {
   Layers, RefreshCw, Trash2, CheckCircle2, Clock, XCircle,
-  ChevronDown, ChevronUp, Loader2, Send, AlertTriangle, FileText, Zap
+  ChevronDown, ChevronUp, Loader2, Send, AlertTriangle, FileText, Zap,
+  User, Webhook,
 } from 'lucide-react';
 import { useToken } from '../context/TokenContext';
 import { useConfirm } from '../context/ConfirmContext';
@@ -273,11 +274,25 @@ export default function BatchJobs() {
                       <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {job.keyword}
                       </div>
-                      <div style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                      <div style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
                         <span>{job.companyName || job.companyId}</span>
                         <span>{job.total} bài</span>
                         {job.status === 'done' && <span style={{ color: 'var(--success)' }}>✓ {job.succeeded} thành công</span>}
                         {job.gemini_state && job.status !== 'done' && <span style={{ fontFamily: 'monospace', opacity: 0.7 }}>{GEMINI_STATE_LABEL[job.gemini_state] || job.gemini_state}</span>}
+                        {/* Người tạo */}
+                        {job.source === 'webhook' ? (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, background: 'rgba(99,102,241,0.1)', color: 'var(--accent)', borderRadius: 999, padding: '1px 7px', fontWeight: 600 }}>
+                            <Webhook size={10} /> CRM Webhook
+                          </span>
+                        ) : null}
+                        {job.creatorFullName || job.creatorUsername ? (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, color: 'var(--text-muted)' }}>
+                            <User size={11} />
+                            {job.creatorFullName || job.creatorUsername}
+                          </span>
+                        ) : job.source !== 'webhook' ? (
+                          <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>{job.createdBy}</span>
+                        ) : null}
                       </div>
                     </div>
 

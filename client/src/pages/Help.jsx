@@ -26,7 +26,7 @@ function Section({ icon, title, color = 'var(--accent)', children, defaultOpen =
         <span style={{ fontWeight: 700, fontSize: 15, color: 'var(--text-primary)', flex: 1 }}>{title}</span>
         {open ? <ChevronDown size={16} color="var(--text-muted)" /> : <ChevronRight size={16} color="var(--text-muted)" />}
       </button>
-      {open && <div style={{ padding: '20px 24px', background: 'var(--bg-content)' }}>{children}</div>}
+      {open && <div style={{ padding: '20px 24px', background: 'var(--bg-panel)' }}>{children}</div>}
     </div>
   );
 }
@@ -75,7 +75,7 @@ function SubHead({ children }) {
 
 function CodeBox({ children }) {
   return (
-    <div style={{ margin: '8px 0', padding: '8px 12px', borderRadius: 'var(--radius-sm)', background: 'var(--bg-content)', border: '1px solid var(--border)', fontFamily: 'monospace', fontSize: 12, color: 'var(--accent)', wordBreak: 'break-all' }}>
+    <div style={{ margin: '8px 0', padding: '8px 12px', borderRadius: 'var(--radius-sm)', background: 'var(--bg-elevated)', border: '1px solid var(--border)', fontFamily: 'monospace', fontSize: 12, color: 'var(--accent)', wordBreak: 'break-all' }}>
       {children}
     </div>
   );
@@ -137,15 +137,15 @@ export default function Help() {
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 12 }}>Quy trình hoạt động</div>
           <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
             {[
-              { icon: <Building2 size={13} />, label: 'Thêm Công ty', color: 'var(--info)' },
-              { icon: <Search size={13} />, label: 'Thêm Từ khóa', color: 'var(--accent)' },
-              { icon: <Hash size={13} />, label: 'AI sinh Tiêu đề', color: 'var(--accent)' },
-              { icon: <FileText size={13} />, label: 'Viết Bài', color: 'var(--success)' },
-              { icon: <Layers size={13} />, label: 'Batch (tùy chọn)', color: 'var(--warning)' },
-              { icon: <Upload size={13} />, label: 'Đăng API', color: '#a78bfa' },
-            ].map(({ icon, label, color }, i) => (
+              { icon: <Building2 size={13} />, label: 'Thêm Công ty', color: '#0ea5e9', bg: 'rgba(14,165,233,0.12)', border: 'rgba(14,165,233,0.35)' },
+              { icon: <Search size={13} />, label: 'Thêm Từ khóa', color: '#6366f1', bg: 'rgba(99,102,241,0.12)', border: 'rgba(99,102,241,0.35)' },
+              { icon: <Hash size={13} />, label: 'AI sinh Tiêu đề', color: '#6366f1', bg: 'rgba(99,102,241,0.12)', border: 'rgba(99,102,241,0.35)' },
+              { icon: <FileText size={13} />, label: 'Viết Bài', color: '#16a34a', bg: 'rgba(22,163,74,0.12)', border: 'rgba(22,163,74,0.35)' },
+              { icon: <Layers size={13} />, label: 'Batch (tùy chọn)', color: '#b45309', bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.35)' },
+              { icon: <Upload size={13} />, label: 'Đăng API', color: '#7c3aed', bg: 'rgba(124,58,237,0.12)', border: 'rgba(124,58,237,0.35)' },
+            ].map(({ icon, label, color, bg, border }, i) => (
               <React.Fragment key={label}>
-                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 20, background: `${color}12`, border: `1px solid ${color}30`, fontSize: 13, fontWeight: 600, color }}>
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 20, background: bg, border: `1px solid ${border}`, fontSize: 13, fontWeight: 600, color }}>
                   {icon} {label}
                 </div>
                 {i < 5 && <ArrowRight size={14} color="var(--text-muted)" />}

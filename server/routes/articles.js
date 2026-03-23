@@ -46,14 +46,15 @@ async function callPublishApi(article, company, apiUrl, email = '') {
   const slug    = slugify(article.title || '');
   const baseUrl = (company.url || '').replace(/\/$/, '');
   const payload = {
-    title_seo:   article.seo_title        || article.title || '',
-    description_seo:     article.seo_description  || '',
-    link_seo:    `${baseUrl}/${slug}`,
-    tukhoa_seo:  article.keyword          || '',
-    content_seo: article.content          || '',
-    ma_hd:       company.contract_code    || '',
-    linh_vuc:    company.industry         || '',
-    email:       email,
+    title_seo:       article.seo_title        || article.title || '',
+    description_seo: article.seo_description  || '',
+    link_seo:        `${baseUrl}/${slug}`,
+    tukhoa_seo:      article.keyword          || '',
+    content_seo:     article.content          || '',
+    ma_hd:           company.contract_code    || '',
+    linh_vuc:        company.industry         || '',
+    email:           email,
+    chuki:           article.chuki            || null,
   };
   const res = await fetch(apiUrl, {
     method:  'POST',
@@ -481,7 +482,7 @@ router.post('/batch', async (req, res) => {
 });
 
 // ─── Helper dùng chung: lưu 1 bài từ kết quả Batch API ───────────────────────
-async function saveArticleFromBatch(jobKeyword, jobCompanyId, result, createdBy = null, jobKeywordId = null) {
+async function saveArticleFromBatch(jobKeyword, jobCompanyId, result, createdBy = null, jobKeywordId = null, chuki = null) {
   if (result.error) return { saved: false, message: `AI error: ${result.error}` };
 
   const { seo_title = result.title, seo_description = '', content = '', image_prompts = [] } = result;
@@ -497,10 +498,10 @@ async function saveArticleFromBatch(jobKeyword, jobCompanyId, result, createdBy 
     : [jobKeyword, result.title, jobCompanyId];
 
   const insertResult = await db.execute({
-    sql: `INSERT INTO articles (id, keyword, title, companyId, content, seo_title, seo_description, image_prompts, createdAt, createdBy, keywordId)
-          SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+    sql: `INSERT INTO articles (id, keyword, title, companyId, content, seo_title, seo_description, image_prompts, createdAt, createdBy, keywordId, chuki)
+          SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
           WHERE NOT EXISTS (${existsCheck})`,
-    args: [id, jobKeyword, result.title, jobCompanyId, content, seo_title, seo_description, JSON.stringify(image_prompts), createdAt, createdBy, jobKeywordId,
+    args: [id, jobKeyword, result.title, jobCompanyId, content, seo_title, seo_description, JSON.stringify(image_prompts), createdAt, createdBy, jobKeywordId, chuki,
            ...existsArgs],
   });
 

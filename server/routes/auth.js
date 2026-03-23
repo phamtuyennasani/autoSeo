@@ -67,8 +67,13 @@ router.post('/login', async (req, res) => {
 router.get('/me', authenticate, async (req, res) => {
   try {
     if (req.user.id === 'admin' && process.env.AUTH_ENABLED !== 'true') {
-      // Bypass mode
-      return res.json({ id: 'admin', username: 'admin', role: 'admin' });
+      // Bypass mode — lấy role thực từ DB thay vì hardcode 'admin'
+      const bypassResult = await db.execute({
+        sql: "SELECT id, username, full_name, role FROM users WHERE username = 'admin' LIMIT 1",
+        args: [],
+      });
+      const bypassUser = bypassResult.rows[0];
+      return res.json(bypassUser || { id: 'admin', username: 'admin', role: 'root' });
     }
 
     const result = await db.execute({
@@ -136,7 +141,7 @@ router.put('/profile', authenticate, async (req, res) => {
 });
 
 // GET /status — Trả về trạng thái AUTH_ENABLED (không cần token)
-router.get('/status', (req, res) => {
+router.get('/status', (req, res) => {   
   res.json({ authEnabled: process.env.AUTH_ENABLED === 'true' });
 });
 

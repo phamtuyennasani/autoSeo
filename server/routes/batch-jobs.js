@@ -9,7 +9,7 @@ const requireAdmin = require('../middleware/requireAdmin');
 
 // ─── POST / — Submit batch job mới lên Gemini (hoặc hẹn giờ) ────────────────
 router.post('/', async (req, res) => {
-  const user = req.user || { id: 'admin', role: 'admin' };
+  const user = req.user || { id: 'admin', role: 'root' };
   const { keyword, titles, companyId, scheduledAt, keywordId = null } = req.body;
   if (!keyword || !Array.isArray(titles) || titles.length === 0 || !companyId)
     return res.status(400).json({ error: 'Thiếu thông tin bắt buộc' });
@@ -26,9 +26,10 @@ router.post('/', async (req, res) => {
   }
 
   // ── Kiểm tra giới hạn bài viết/ngày — chỉ áp dụng khi dùng key hệ thống ──
-  if (apiConfig?.usingSystemKey && user.role !== 'admin') try {
+  const isRootUser = user.role === 'root' || user.role === 'admin';
+  if (apiConfig?.usingSystemKey && !isRootUser) try {
     const today = new Date().toISOString().slice(0, 10);
-    const isAdmin = user.role === 'admin';
+    const isAdmin = isRootUser;
 
     // Đọc per-user limit nếu AUTH bật và không phải admin
     let userArticleLimit = 0;
@@ -111,16 +112,19 @@ router.post('/', async (req, res) => {
 // ─── GET / — Danh sách batch jobs (filter theo ?keyword) ─────────────────────
 router.get('/', async (req, res) => {
   try {
-    const user = req.user || { id: 'admin', role: 'admin' };
-    const isAdmin = user.role === 'admin';
+    const user = req.user || { id: 'admin', role: 'root' };
+    const isRoot = user.role === 'root' || user.role === 'admin';
     const { keyword } = req.query;
 
-    let sql = `SELECT bj.*, c.name as companyName FROM batch_jobs bj LEFT JOIN companies c ON bj.companyId = c.id`;
+    let sql = `SELECT bj.*, c.name as companyName, u.username as creatorUsername, u.full_name as creatorFullName
+               FROM batch_jobs bj
+               LEFT JOIN companies c ON bj.companyId = c.id
+               LEFT JOIN users u ON bj.createdBy = u.id`;
     const args = [];
     const conditions = [];
 
     if (keyword) { conditions.push('bj.keyword = ?'); args.push(keyword); }
-    if (!isAdmin) { conditions.push('bj.createdBy = ?'); args.push(user.id); }
+    if (!isRoot) { conditions.push('bj.createdBy = ?'); args.push(user.id); }
 
     if (conditions.length > 0) sql += ' WHERE ' + conditions.join(' AND ');
     sql += ' ORDER BY bj.createdAt DESC';
@@ -183,7 +187,7 @@ router.post('/:id/check', async (req, res) => {
 
     for (const result of checkResult.results) {
       try {
-        const outcome = await saveArticleFromBatch(job.keyword, job.companyId, result, job.createdBy, job.keywordId);
+        const outcome = await saveArticleFromBatch(job.keyword, job.companyId, result, job.createdBy, job.keywordId, job.chuki || null);
         if (outcome.saved || outcome.skipped) {
           succeededCount++;
           savedArticles.push({ id: outcome.id, title: result.title, seo_title: outcome.seo_title });
@@ -240,13 +244,14 @@ router.post('/:id/submit-now', async (req, res) => {
 // ─── DELETE /:id ──────────────────────────────────────────────────────────────
 router.delete('/:id', async (req, res) => {
   try {
-    const user = req.user || { id: 'admin', role: 'admin' };
+    const user = req.user || { id: 'admin', role: 'root' };
     const { id } = req.params;
 
     const check = await db.execute({ sql: 'SELECT createdBy FROM batch_jobs WHERE id = ?', args: [id] });
     if (!check.rows[0]) return res.status(404).json({ error: 'Không tìm thấy' });
 
-    if (user.role !== 'admin' && check.rows[0].createdBy !== user.id) {
+    const isRoot = user.role === 'root' || user.role === 'admin';
+    if (!isRoot && check.rows[0].createdBy !== user.id) {
       return res.status(403).json({ error: 'Bạn không có quyền xóa batch job này.' });
     }
 

@@ -9,6 +9,8 @@ import Help from './pages/Help';
 import Login from './pages/Login';
 import Users from './pages/Users';
 import TokenStats from './pages/TokenStats';
+import HopDong from './pages/HopDong';
+import WebhookEvents from './pages/WebhookEvents';
 import { Toaster } from 'sonner';
 import { ThemeProvider } from './context/ThemeContext';
 import { TokenProvider } from './context/TokenContext';
@@ -49,6 +51,14 @@ function PublicRoute({ children }) {
   return children;
 }
 
+// RootRoute: chỉ cho phép role === 'root', redirect về / nếu không đủ quyền
+function RootRoute({ children }) {
+  const { user, loading } = useAuth();
+  if (loading) return null;
+  if (!user || user.role !== 'root') return <Navigate to="/" replace />;
+  return children;
+}
+
 function AppRoutes() {
   return (
     <Routes>
@@ -61,7 +71,9 @@ function AppRoutes() {
         <Route path="token-stats" element={<TokenStats />} />
         <Route path="settings"    element={<Settings />} />
         <Route path="help"        element={<Help />} />
-        <Route path="users"       element={<Users />} />
+        <Route path="users"          element={<Users />} />
+        <Route path="hop-dong"       element={<RootRoute><HopDong /></RootRoute>} />
+        <Route path="webhook-events" element={<RootRoute><WebhookEvents /></RootRoute>} />
       </Route>
     </Routes>
   );

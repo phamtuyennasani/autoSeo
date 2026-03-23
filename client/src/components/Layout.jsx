@@ -1,18 +1,20 @@
 import React from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { Search, Building2, Zap, Settings, HelpCircle, Sun, Moon, Cpu, TrendingUp, Layers, Users, LogOut, BarChart3 } from 'lucide-react';
+import { Search, Building2, Zap, Settings, HelpCircle, Sun, Moon, Cpu, TrendingUp, Layers, Users, LogOut, BarChart3, FileSignature, Webhook } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { useToken } from '../context/TokenContext';
 import { useAuth } from '../context/AuthContext';
 
 const pageTitles = {
-  '/keywords':     'SEO Keywords',
-  '/companies':    'Website & Công Ty',
-  '/batch-jobs':   'Batch Jobs',
-  '/token-stats':  'Token & Chi Phí',
-  '/settings':     'Cài Đặt',
-  '/help':         'Trợ Giúp',
-  '/users':        'Quản Lý Users',
+  '/keywords':        'SEO Keywords',
+  '/companies':       'Website & Công Ty',
+  '/batch-jobs':      'Batch Jobs',
+  '/token-stats':     'Token & Chi Phí',
+  '/settings':        'Cài Đặt',
+  '/help':            'Trợ Giúp',
+  '/users':           'Quản Lý Users',
+  '/hop-dong':        'Quản Lý Hợp Đồng',
+  '/webhook-events':  'Lịch Sử Webhook',
 };
 
 // Format số token lớn cho dễ đọc: 1234567 → 1.23M, 12345 → 12.3K
@@ -30,7 +32,6 @@ const Layout = () => {
   const { tokenStats } = useToken();
   const { user, logout, authEnabled, canManageUsers } = useAuth();
   const currentTitle = pageTitles[location.pathname] || 'Dashboard';
-
   const handleLogout = async () => {
     await logout();
     navigate('/login');
@@ -81,6 +82,17 @@ const Layout = () => {
               <NavLink to="/users" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
                 <Users size={17} className="nav-icon" /> Quản lý Users
               </NavLink>
+            )}
+            {/* Menu Hợp Đồng & Webhook — chỉ Root */}
+            {user?.role === 'root' && (
+              <>
+                <NavLink to="/hop-dong" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+                  <FileSignature size={17} className="nav-icon" /> Hợp Đồng
+                </NavLink>
+                <NavLink to="/webhook-events" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+                  <Webhook size={17} className="nav-icon" /> Webhook Logs
+                </NavLink>
+              </>
             )}
             <NavLink to="/settings" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
               <Settings size={17} className="nav-icon" /> Cài đặt
