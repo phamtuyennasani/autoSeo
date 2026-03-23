@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { Search, Building2, Zap, Settings, HelpCircle, Sun, Moon, Cpu, TrendingUp, Layers, Users, LogOut, BarChart3, FileSignature, Webhook } from 'lucide-react';
+import { Search, Building2, Zap, Settings, HelpCircle, Sun, Moon, Cpu, TrendingUp, Layers, Users, LogOut, BarChart3, FileSignature, Webhook, ListTodo } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { useToken } from '../context/TokenContext';
 import { useAuth } from '../context/AuthContext';
@@ -15,6 +15,7 @@ const pageTitles = {
   '/users':           'Quản Lý Users',
   '/hop-dong':        'Quản Lý Hợp Đồng',
   '/webhook-events':  'Lịch Sử Webhook',
+  '/keyword-planner': 'Keyword Planner',
 };
 
 // Format số token lớn cho dễ đọc: 1234567 → 1.23M, 12345 → 12.3K
@@ -72,6 +73,9 @@ const Layout = () => {
           </NavLink>
           <NavLink to="/token-stats" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
             <BarChart3 size={17} className="nav-icon" /> Token & Chi Phí
+          </NavLink>
+          <NavLink to="/keyword-planner" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+            <ListTodo size={17} className="nav-icon" /> Keyword Planner
           </NavLink>
         </div>
 

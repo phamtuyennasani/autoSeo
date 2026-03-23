@@ -174,6 +174,34 @@ async function initDb() {
       started_at   TEXT,
       done_at      TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS keyword_plans (
+      id          TEXT PRIMARY KEY,
+      name        TEXT NOT NULL,
+      description TEXT,
+      companyId   TEXT,
+      status      TEXT NOT NULL DEFAULT 'draft',
+      keywords    TEXT NOT NULL DEFAULT '[]',
+      createdBy   TEXT,
+      createdAt   TEXT NOT NULL,
+      updatedAt   TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS keyword_plan_items (
+      id            TEXT PRIMARY KEY,
+      planId        TEXT NOT NULL,
+      keyword       TEXT NOT NULL,
+      cluster_name  TEXT,
+      cluster_idx   INTEGER DEFAULT 0,
+      item_type     TEXT NOT NULL DEFAULT 'cluster',
+      search_intent TEXT,
+      content_angle TEXT,
+      status        TEXT NOT NULL DEFAULT 'draft',
+      articleId     TEXT,
+      scheduled_at  TEXT,
+      createdAt     TEXT NOT NULL,
+      FOREIGN KEY (planId) REFERENCES keyword_plans(id)
+    );
   `);
 
   // ── Migration: Thêm cột nếu thiếu ──

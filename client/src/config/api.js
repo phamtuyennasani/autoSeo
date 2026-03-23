@@ -21,6 +21,7 @@ export const API = {
   writeQueue: `${BASE_URL}/api/write-queue`,
   auth:       `${BASE_URL}/api/auth`,
   users:      `${BASE_URL}/api/users`,
+  keywordPlans: `${BASE_URL}/api/keyword-plans`,
 };
 
 // Axios instance mặc định
