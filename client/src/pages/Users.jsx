@@ -160,6 +160,7 @@ const RoleBadge = ({ role }) => {
     <span style={{
       display: 'inline-flex', alignItems: 'center', gap: 4,
       padding: '2px 9px', borderRadius: 99, fontSize: 11, fontWeight: 600,
+      whiteSpace: 'nowrap',
       background: `${cfg.color}18`,
       color: cfg.color,
       border: `1px solid ${cfg.color}40`,
