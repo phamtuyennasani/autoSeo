@@ -15,12 +15,12 @@ import apiClient from '../config/api';
 
 // ── Role config ────────────────────────────────────────────────────────────────
 const ROLE_CONFIG = {
-  root:            { label: 'Root',        color: '#818cf8', icon: <Crown size={9} /> },
-  admin:           { label: 'Root',        color: '#818cf8', icon: <Crown size={9} /> },
-  senior_manager:  { label: 'QL Cấp Cao', color: '#f59e0b', icon: <Shield size={9} /> },
-  manager:         { label: 'Quản Lý',    color: '#06b6d4', icon: <UsersIcon size={9} /> },
-  employee:        { label: 'Nhân Viên',  color: '#10b981', icon: <User size={9} /> },
-  user:            { label: 'Nhân Viên',  color: '#10b981', icon: <User size={9} /> },
+  root: { label: 'Root', color: '#818cf8', icon: <Crown size={9} /> },
+  admin: { label: 'Root', color: '#818cf8', icon: <Crown size={9} /> },
+  senior_manager: { label: 'QL Cấp Cao', color: '#f59e0b', icon: <Shield size={9} /> },
+  manager: { label: 'Quản Lý', color: '#06b6d4', icon: <UsersIcon size={9} /> },
+  employee: { label: 'Nhân Viên', color: '#10b981', icon: <User size={9} /> },
+  user: { label: 'Nhân Viên', color: '#10b981', icon: <User size={9} /> },
 };
 
 function roleLevelOf(role) {
@@ -185,33 +185,33 @@ const StatusBadge = ({ active }) => (
 
 // ── User Modal ────────────────────────────────────────────────────────────────
 function UserModal({ mode, user, onClose, onSave, currentUser, allUsers }) {
-  const isCurrentRoot          = roleLevelOf(currentUser?.role) >= 4;
-  const isCurrentManager       = currentUser?.role === 'manager';
+  const isCurrentRoot = roleLevelOf(currentUser?.role) >= 4;
+  const isCurrentManager = currentUser?.role === 'manager';
   const isCurrentSeniorManager = currentUser?.role === 'senior_manager';
-  const canShareManagerKey     = !isCurrentRoot && (isCurrentManager || isCurrentSeniorManager);
+  const canShareManagerKey = !isCurrentRoot && (isCurrentManager || isCurrentSeniorManager);
   const myLevel = roleLevelOf(currentUser?.role);
 
   const [form, setForm] = useState({
-    username:            user?.username            || '',
-    full_name:           user?.full_name           || '',
-    email:               user?.email               || '',
-    phone:               user?.phone               || '',
-    password:            '',
-    role:                user?.role === 'admin' ? 'root' : (user?.role || 'employee'),
+    username: user?.username || '',
+    full_name: user?.full_name || '',
+    email: user?.email || '',
+    phone: user?.phone || '',
+    password: '',
+    role: user?.role === 'admin' ? 'root' : (user?.role || 'employee'),
     // Nếu người tạo là QL, tự động gán manager_id = chính họ (trừ khi đang edit và đã có giá trị khác)
-    manager_id:          user?.manager_id || (mode === 'create' && isCurrentManager ? currentUser.id : ''),
-    daily_token_limit:   String(user?.daily_token_limit   ?? 0),
+    manager_id: user?.manager_id || (mode === 'create' && isCurrentManager ? currentUser.id : ''),
+    daily_token_limit: String(user?.daily_token_limit ?? 0),
     daily_article_limit: String(user?.daily_article_limit ?? 0),
-    use_system_key:      user?.use_system_key      ?? false,
-    use_manager_key:     user?.use_manager_key     ?? false,
+    use_system_key: user?.use_system_key ?? false,
+    use_manager_key: user?.use_manager_key ?? false,
   });
 
   // Roles mà người đang đăng nhập có thể gán (chỉ cấp thấp hơn mình)
   const assignableRoles = [
-    { val: 'employee',       label: 'Nhân Viên',   icon: <User size={14} />,   clr: '#10b981' },
-    { val: 'manager',        label: 'Quản Lý',     icon: <UsersIcon size={14} />, clr: '#06b6d4' },
-    { val: 'senior_manager', label: 'QL Cấp Cao',  icon: <Shield size={14} />, clr: '#f59e0b' },
-    { val: 'root',           label: 'Root',        icon: <Crown size={14} />,  clr: '#818cf8' },
+    { val: 'employee', label: 'Nhân Viên', icon: <User size={14} />, clr: '#10b981' },
+    { val: 'manager', label: 'Quản Lý', icon: <UsersIcon size={14} />, clr: '#06b6d4' },
+    { val: 'senior_manager', label: 'QL Cấp Cao', icon: <Shield size={14} />, clr: '#f59e0b' },
+    { val: 'root', label: 'Root', icon: <Crown size={14} />, clr: '#818cf8' },
   ].filter(r => roleLevelOf(r.val) < myLevel);
 
   // Manager dropdown: chỉ hiện với Root/Senior Manager khi tạo nhân viên
@@ -220,9 +220,9 @@ function UserModal({ mode, user, onClose, onSave, currentUser, allUsers }) {
   const managerOptions = showManagerDropdown
     ? allUsers.filter(u => u.id !== user?.id && u.role === 'manager' && roleLevelOf(u.role) < myLevel)
     : [];
-  const [showPw,  setShowPw]  = useState(false);
+  const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [err,     setErr]     = useState('');
+  const [err, setErr] = useState('');
   const isCreate = mode === 'create';
 
   const set = (key) => (val) => setForm(p => ({ ...p, [key]: val }));
@@ -630,9 +630,9 @@ function UserModal({ mode, user, onClose, onSave, currentUser, allUsers }) {
 // ── Main Page ─────────────────────────────────────────────────────────────────
 const Users = () => {
   const { user: currentUser, canManageUsers } = useAuth();
-  const [users, setUsers]               = useState([]);
-  const [loading, setLoading]           = useState(true);
-  const [modal, setModal]               = useState(null);
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [modal, setModal] = useState(null);
   const [actionLoading, setActionLoading] = useState(null);
 
   const load = useCallback(async () => {
@@ -649,29 +649,29 @@ const Users = () => {
   const handleCreate = async (form) => {
     await apiClient.post('/api/users', {
       ...form,
-      daily_token_limit:   parseInt(form.daily_token_limit,   10) || 0,
+      daily_token_limit: parseInt(form.daily_token_limit, 10) || 0,
       daily_article_limit: parseInt(form.daily_article_limit, 10) || 0,
-      use_system_key:      form.use_system_key,
-      share_manager_key:   form.use_manager_key,
-      full_name:           form.full_name   || null,
-      email:               form.email       || null,
-      phone:               form.phone       || null,
-      manager_id:          form.manager_id  || null,
+      use_system_key: form.use_system_key,
+      share_manager_key: form.use_manager_key,
+      full_name: form.full_name || null,
+      email: form.email || null,
+      phone: form.phone || null,
+      manager_id: form.manager_id || null,
     });
     await load();
   };
 
   const handleEdit = async (form) => {
     const payload = {
-      role:                form.role,
-      daily_token_limit:   parseInt(form.daily_token_limit,   10) || 0,
+      role: form.role,
+      daily_token_limit: parseInt(form.daily_token_limit, 10) || 0,
       daily_article_limit: parseInt(form.daily_article_limit, 10) || 0,
-      use_system_key:      form.use_system_key,
-      use_manager_key:     form.use_manager_key,
-      full_name:           form.full_name   || null,
-      email:               form.email       || null,
-      phone:               form.phone       || null,
-      manager_id:          form.manager_id  || null,
+      use_system_key: form.use_system_key,
+      use_manager_key: form.use_manager_key,
+      full_name: form.full_name || null,
+      email: form.email || null,
+      phone: form.phone || null,
+      manager_id: form.manager_id || null,
     };
     if (form.password) payload.password = form.password;
     await apiClient.put(`/api/users/${modal.user.id}`, payload);
@@ -704,11 +704,11 @@ const Users = () => {
     );
   }
 
-  const myLevel        = roleLevelOf(currentUser?.role);
-  const activeCount    = users.filter(u => u.is_active).length;
-  const rootCount      = users.filter(u => u.role === 'root' || u.role === 'admin').length;
-  const managerCount   = users.filter(u => u.role === 'manager' || u.role === 'senior_manager').length;
-  const sysKeyCount    = users.filter(u => !u.has_own_key && u.use_system_key).length;
+  const myLevel = roleLevelOf(currentUser?.role);
+  const activeCount = users.filter(u => u.is_active).length;
+  const rootCount = users.filter(u => u.role === 'root' || u.role === 'admin').length;
+  const managerCount = users.filter(u => u.role === 'manager' || u.role === 'senior_manager').length;
+  const sysKeyCount = users.filter(u => !u.has_own_key && u.use_system_key).length;
 
   // Một user có thể bị quản lý bởi currentUser không
   const canActOn = (u) => u.id !== currentUser?.id && roleLevelOf(u.role) < myLevel;
@@ -716,12 +716,12 @@ const Users = () => {
   return (
     <div>
       {/* HEADER */}
-      <div className="page-header" style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+      <div className="page-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div>
           <h1 className="page-title">Quản lý Users</h1>
           <p className="page-subtitle">{users.length} tài khoản · {activeCount} hoạt động · {rootCount} root · {managerCount} quản lý · {sysKeyCount} dùng key hệ thống</p>
         </div>
-        <div style={{ display: 'flex', gap: 8}}>
+        <div style={{ display: 'flex', gap: 8 }}>
           <button className="btn btn-outline" onClick={load} disabled={loading} title="Làm mới">
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
           </button>
@@ -736,7 +736,7 @@ const Users = () => {
         {/* Header */}
         <div style={{
           display: 'grid',
-          gridTemplateColumns: '2fr 90px 100px 110px 110px 120px 1fr 110px',
+          gridTemplateColumns: '2fr 100px 100px 110px 110px 120px 1fr 110px',
           padding: '10px 20px',
           borderBottom: '1px solid var(--border)',
           fontSize: 12, fontWeight: 700,
@@ -753,7 +753,7 @@ const Users = () => {
           [1, 2, 3].map(i => (
             <div key={i} style={{
               display: 'grid',
-              gridTemplateColumns: '2fr 90px 100px 110px 110px 120px 1fr 110px',
+              gridTemplateColumns: '2fr 100px 100px 110px 110px 120px 1fr 110px',
               padding: '16px 20px', borderBottom: '1px solid var(--border)',
               alignItems: 'center', gap: 12,
             }}>
@@ -761,7 +761,7 @@ const Users = () => {
                 <div className="skeleton" style={{ width: 32, height: 32, borderRadius: 8, flexShrink: 0 }} />
                 <div className="skeleton" style={{ height: 13, width: '60%', borderRadius: 4 }} />
               </div>
-              {[1,2,3,4,5,6,7].map(j => (
+              {[1, 2, 3, 4, 5, 6, 7].map(j => (
                 <div key={j} className="skeleton" style={{ height: 13, width: '70%', borderRadius: 4 }} />
               ))}
             </div>
@@ -774,15 +774,15 @@ const Users = () => {
           </div>
         ) : (
           users.map(u => {
-            const isSelf     = u.id === currentUser?.id;
-            const canAct     = canActOn(u);
+            const isSelf = u.id === currentUser?.id;
+            const canAct = canActOn(u);
             const isToggling = actionLoading === u.id + '-toggle';
             const isDeleting = actionLoading === u.id + '-delete';
-            const initial    = (u.full_name?.trim() || u.username || '?').charAt(0).toUpperCase();
+            const initial = (u.full_name?.trim() || u.username || '?').charAt(0).toUpperCase();
             const avatarColors = [
-              ['#6366f1','rgba(99,102,241,0.15)'],['#10b981','rgba(16,185,129,0.15)'],
-              ['#f59e0b','rgba(245,158,11,0.15)'], ['#ef4444','rgba(239,68,68,0.15)'],
-              ['#8b5cf6','rgba(139,92,246,0.15)'], ['#06b6d4','rgba(6,182,212,0.15)'],
+              ['#6366f1', 'rgba(99,102,241,0.15)'], ['#10b981', 'rgba(16,185,129,0.15)'],
+              ['#f59e0b', 'rgba(245,158,11,0.15)'], ['#ef4444', 'rgba(239,68,68,0.15)'],
+              ['#8b5cf6', 'rgba(139,92,246,0.15)'], ['#06b6d4', 'rgba(6,182,212,0.15)'],
             ];
             const [clr, bg] = avatarColors[u.username.charCodeAt(0) % avatarColors.length];
             return (
@@ -811,7 +811,7 @@ const Users = () => {
                   }}>{initial}</div>
                   <div>
                     {u.full_name && (
-                      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)',marginBottom:1 }}>{u.full_name}</div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 1 }}>{u.full_name}</div>
                     )}
                     <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>
                       {u.username}
@@ -819,7 +819,7 @@ const Users = () => {
                         <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--accent)', background: 'var(--accent-subtle)', padding: '1px 6px', borderRadius: 99, fontWeight: 600 }}>bạn</span>
                       )}
                     </div>
-                    
+
                     {u.email && (
                       <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{u.email}</div>
                     )}
@@ -862,7 +862,7 @@ const Users = () => {
                 {/* Last login */}
                 <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
                   {u.lastLoginAt
-                    ? new Date(u.lastLoginAt).toLocaleString('vi-VN', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' })
+                    ? new Date(u.lastLoginAt).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
                     : <span style={{ color: 'var(--text-muted)' }}>—</span>
                   }
                 </div>
