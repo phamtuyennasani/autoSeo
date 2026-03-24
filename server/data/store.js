@@ -300,7 +300,9 @@ async function initDb() {
     { key: 'serpapi_api_key',       value: process.env.SERPAPI_API_KEY || '', label: 'SerpAPI Key' },
     { key: 'batch_schedule_time',   value: '', label: 'Giờ chạy batch tự động (HH:MM, để trống = tắt)' },
     { key: 'batch_schedule_lastrun',value: '', label: 'Ngày chạy batch theo lịch lần cuối' },
-    { key: 'publish_api_url',        value: '', label: 'URL API đăng bài mặc định (bên thứ 3)' },
+    { key: 'publish_api_url',           value: '', label: 'URL API đăng bài mặc định (bên thứ 3)' },
+    { key: 'internal_links_enabled',    value: '0', label: 'Bật internal links tự động (0/1)' },
+    { key: 'internal_links_max',        value: '3', label: 'Số internal link tối đa mỗi bài' },
   ];
   for (const s of seedSettings) {
     await db.execute({

@@ -5,6 +5,7 @@ const { generateArticle } = require('../services/gemini');
 const { getEffectiveApiConfig } = require('../services/apiConfig');
 const { getSetting } = require('./settings');
 const { applyInlineStyles } = require('../services/htmlUtils');
+const { applyInternalLinks } = require('../services/internalLinks');
 const { isRoot, getVisibleUserIds, canManageUsers } = require('../services/permissions');
 
 // ─── Helper: slugify title thành URL slug (hỗ trợ tiếng Việt) ────────────────
@@ -130,7 +131,10 @@ async function generateAndSave(keyword, title, companyId, company, createdBy = n
     });
   }
 
-  const { content = '', seo_title = title, seo_description = '', image_prompts = [] } = result;
+  let { content = '', seo_title = title, seo_description = '', image_prompts = [] } = result;
+
+  // Step 6: Inject internal links (fail-safe — không bao giờ block tạo bài)
+  content = await applyInternalLinks(content, companyId, title, company.url);
 
   // Nếu bài đã tồn tại (cùng keywordId + title, hoặc keyword + title nếu chưa có keywordId) → lưu version cũ rồi UPDATE
   const existingQuery = keywordId
@@ -485,7 +489,16 @@ router.post('/batch', async (req, res) => {
 async function saveArticleFromBatch(jobKeyword, jobCompanyId, result, createdBy = null, jobKeywordId = null, chuki = null) {
   if (result.error) return { saved: false, message: `AI error: ${result.error}` };
 
-  const { seo_title = result.title, seo_description = '', content = '', image_prompts = [] } = result;
+  const { seo_title = result.title, seo_description = '', image_prompts = [] } = result;
+  // Inject internal links cho batch articles
+  let content = result.content || '';
+  try {
+    const compRes = await db.execute({ sql: 'SELECT url FROM companies WHERE id = ?', args: [jobCompanyId] });
+    content = await applyInternalLinks(content, jobCompanyId, result.title, compRes.rows[0]?.url || '');
+  } catch (e) {
+    console.warn('[saveArticleFromBatch] internalLinks lỗi, bỏ qua:', e.message);
+  }
+
   const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   const createdAt = new Date().toISOString();
 

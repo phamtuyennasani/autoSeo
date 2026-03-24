@@ -82,6 +82,24 @@ router.put('/', requireAdmin, async (req, res) => {
       changes.batch_schedule_time = val;
     }
 
+    // Internal Links settings
+    for (const key of ['internal_links_enabled', 'internal_links_max']) {
+      if (key in req.body) {
+        let val;
+        if (key === 'internal_links_enabled') {
+          val = req.body[key] ? '1' : '0';
+        } else {
+          val = String(Math.max(1, Math.min(10, parseInt(req.body[key], 10) || 3)));
+        }
+        await db.execute({
+          sql: `INSERT INTO settings (key, value, label, updatedAt) VALUES (?, ?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value, updatedAt = excluded.updatedAt`,
+          args: [key, val, key === 'internal_links_enabled' ? 'Bật internal links tự động (0/1)' : 'Số internal link tối đa mỗi bài', updatedAt],
+        });
+        changes[key] = val;
+      }
+    }
+
     res.json({ success: true, updated: changes, updatedAt });
   } catch (err) {
     res.status(500).json({ error: err.message });

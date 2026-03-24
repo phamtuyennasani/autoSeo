@@ -302,6 +302,99 @@ router.post('/:id/items/:itemId/create-article', async (req, res) => {
   }
 });
 
+// ─── POST /:id/batch-create — Tạo bài hàng loạt (fire-and-forget) ───────────
+router.post('/:id/batch-create', async (req, res) => {
+  try {
+    const user = req.user || { id: 'admin', role: 'root' };
+    const { itemIds } = req.body;
+    if (!Array.isArray(itemIds) || itemIds.length === 0)
+      return res.status(400).json({ error: 'Thiếu danh sách itemIds' });
+
+    const planResult = await db.execute({ sql: 'SELECT * FROM keyword_plans WHERE id = ?', args: [req.params.id] });
+    const plan = planResult.rows[0];
+    if (!plan) return res.status(404).json({ error: 'Không tìm thấy plan' });
+    if (!plan.companyId) return res.status(400).json({ error: 'Plan chưa chọn công ty' });
+
+    const compResult = await db.execute({ sql: 'SELECT * FROM companies WHERE id = ?', args: [plan.companyId] });
+    const company = compResult.rows[0];
+    if (!company) return res.status(404).json({ error: 'Không tìm thấy công ty' });
+
+    const { generateAndSave } = require('./articles');
+    const { getEffectiveApiConfig } = require('../services/apiConfig');
+    const apiConfig = await getEffectiveApiConfig(user.id);
+    if (apiConfig.blocked) return res.status(403).json({ error: apiConfig.message, type: 'no_api_key' });
+
+    // Chỉ lấy items ở trạng thái draft
+    const validItems = [];
+    for (const itemId of itemIds) {
+      const r = await db.execute({ sql: "SELECT * FROM keyword_plan_items WHERE id = ? AND planId = ? AND status = 'draft'", args: [itemId, req.params.id] });
+      if (r.rows[0]) validItems.push(r.rows[0]);
+    }
+    if (validItems.length === 0) return res.status(400).json({ error: 'Không có keyword nào ở trạng thái draft' });
+
+    // Đánh dấu in_queue ngay, trả về cho client
+    for (const item of validItems) {
+      await db.execute({ sql: "UPDATE keyword_plan_items SET status = 'in_queue' WHERE id = ?", args: [item.id] });
+    }
+    res.json({ queued: validItems.length, total: itemIds.length });
+
+    // Xử lý nền — không block request
+    (async () => {
+      for (const item of validItems) {
+        try {
+          const article = await generateAndSave(item.keyword, item.keyword, plan.companyId, company, user.id, apiConfig, null, null);
+          await db.execute({
+            sql: "UPDATE keyword_plan_items SET status = 'created', articleId = ? WHERE id = ?",
+            args: [article.id, item.id],
+          });
+        } catch (err) {
+          await db.execute({ sql: "UPDATE keyword_plan_items SET status = 'error' WHERE id = ?", args: [item.id] });
+          console.error(`[batch-create] item ${item.id} (${item.keyword}) lỗi:`, err.message);
+        }
+      }
+      console.log(`[batch-create] Hoàn thành plan ${req.params.id}: ${validItems.length} keyword`);
+    })().catch(err => console.error('[batch-create] background lỗi:', err.message));
+
+  } catch (err) {
+    console.error('[keyword-plans] batch-create', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── POST /:id/schedule — Lên lịch publish items ─────────────────────────────
+router.post('/:id/schedule', async (req, res) => {
+  try {
+    const { itemIds, interval_hours = 24, start_at } = req.body;
+    if (!Array.isArray(itemIds) || itemIds.length === 0)
+      return res.status(400).json({ error: 'Thiếu danh sách itemIds' });
+
+    const planResult = await db.execute({ sql: 'SELECT * FROM keyword_plans WHERE id = ?', args: [req.params.id] });
+    if (!planResult.rows[0]) return res.status(404).json({ error: 'Không tìm thấy plan' });
+
+    const startDate = start_at ? new Date(start_at) : new Date();
+    const scheduled = [];
+
+    for (let i = 0; i < itemIds.length; i++) {
+      const scheduledAt = new Date(startDate.getTime() + i * interval_hours * 3600 * 1000).toISOString();
+      await db.execute({
+        sql: "UPDATE keyword_plan_items SET status = 'scheduled', scheduled_at = ? WHERE id = ? AND planId = ?",
+        args: [scheduledAt, itemIds[i], req.params.id],
+      });
+      scheduled.push({ itemId: itemIds[i], scheduled_at: scheduledAt });
+    }
+
+    await db.execute({
+      sql: "UPDATE keyword_plans SET status = 'publishing', updatedAt = ? WHERE id = ?",
+      args: [new Date().toISOString(), req.params.id],
+    });
+
+    res.json({ scheduled, total: scheduled.length });
+  } catch (err) {
+    console.error('[keyword-plans] schedule', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── GET /:id/progress — Tiến độ plan ───────────────────────────────────────
 router.get('/:id/progress', async (req, res) => {
   try {
@@ -347,7 +440,7 @@ router.get('/:id/export', async (req, res) => {
     if (!plan) return res.status(404).json({ error: 'Không tìm thấy plan' });
 
     const items = await db.execute({
-      sql: `SELECT i.*, a.title as articleTitle, a.publish_status
+      sql: `SELECT i.*, a.title as articleTitle, a.publish_status, a.publish_external_id
             FROM keyword_plan_items i
             LEFT JOIN articles a ON i.articleId = a.id
             WHERE i.planId = ?
@@ -362,7 +455,7 @@ router.get('/:id/export', async (req, res) => {
     }
 
     // CSV
-    const csvLines = ['keyword,cluster,type,search_intent,content_angle,status,article_title'];
+    const csvLines = ['keyword,cluster,type,search_intent,content_angle,status,article_title,publish_status,publish_id'];
     for (const item of items.rows) {
       const row = [
         `"${(item.keyword || '').replace(/"/g, '""')}"`,
@@ -372,6 +465,8 @@ router.get('/:id/export', async (req, res) => {
         `"${(item.content_angle || '').replace(/"/g, '""')}"`,
         item.status || '',
         `"${(item.articleTitle || '').replace(/"/g, '""')}"`,
+        item.publish_status || '',
+        item.publish_external_id || '',
       ];
       csvLines.push(row.join(','));
     }

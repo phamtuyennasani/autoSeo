@@ -1,15 +1,16 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, Trash2, RefreshCw, ChevronDown, ChevronRight, FileText, BarChart2, Download, Search, Brain, CheckCircle2, Clock, AlertCircle, Circle, Star, Copy, X, Edit2, Check } from 'lucide-react';
+import { Plus, Trash2, ChevronDown, ChevronRight, FileText, Download, Search, Brain, CheckCircle2, Clock, AlertCircle, Circle, Star, Copy, X, Loader } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { API } from '../config/api';
 // ─── Constants ────────────────────────────────────────────────────────────────
 const STATUS_CONFIG = {
-  draft:     { label: 'Draft',     color: '#6b7280', bg: 'rgba(107,114,128,0.12)', icon: Circle },
-  created:   { label: 'Đã tạo',   color: '#3b82f6', bg: 'rgba(59,130,246,0.12)',  icon: FileText },
+  draft:     { label: 'Draft',       color: '#6b7280', bg: 'rgba(107,114,128,0.12)', icon: Circle },
+  in_queue:  { label: 'Đang xử lý', color: '#8b5cf6', bg: 'rgba(139,92,246,0.12)',  icon: Loader },
+  created:   { label: 'Đã tạo',     color: '#3b82f6', bg: 'rgba(59,130,246,0.12)',  icon: FileText },
   scheduled: { label: 'Đã lên lịch', color: '#f59e0b', bg: 'rgba(245,158,11,0.12)', icon: Clock },
-  published: { label: 'Published', color: '#22c55e', bg: 'rgba(34,197,94,0.12)',   icon: CheckCircle2 },
-  error:     { label: 'Lỗi',       color: '#ef4444', bg: 'rgba(239,68,68,0.12)',    icon: AlertCircle },
+  published: { label: 'Published',   color: '#22c55e', bg: 'rgba(34,197,94,0.12)',   icon: CheckCircle2 },
+  error:     { label: 'Lỗi',         color: '#ef4444', bg: 'rgba(239,68,68,0.12)',    icon: AlertCircle },
 };
 
 const PLAN_STATUS = {
@@ -28,8 +29,8 @@ const INTENT_COLOR = {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const apiFetch = async (url, opts = {}) => {
-  const token = localStorage.getItem('token');
-  const res = await fetch(API.keywordPlansl, {
+  const token = localStorage.getItem('autoseo_token');
+  const res = await fetch(url, {
     headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     ...opts,
   });
@@ -93,7 +94,7 @@ function CreatePlanModal({ onClose, onCreated }) {
     if (keywords.length > 200) return toast.warning('Khuyến nghị tối đa 200 keyword mỗi plan');
     setLoading(true);
     try {
-      const plan = await apiFetch(API, {
+      const plan = await apiFetch(API.keywordPlans, {
         method: 'POST',
         body: JSON.stringify({ name, description, companyId: companyId || null, keywords }),
       });
@@ -152,7 +153,7 @@ function CreatePlanModal({ onClose, onCreated }) {
 }
 
 // ─── Cluster Accordion ────────────────────────────────────────────────────────
-function ClusterAccordion({ clusterName, items, onEditItem, onCreateArticle, creating }) {
+function ClusterAccordion({ clusterName, items, onEditItem, onCreateArticle, onDeleteItem, creating, selectedIds, onToggleSelect }) {
   const [open, setOpen] = useState(true);
   const pillar = items.find(i => i.item_type === 'pillar');
   const clusters = items.filter(i => i.item_type !== 'pillar');
@@ -171,10 +172,10 @@ function ClusterAccordion({ clusterName, items, onEditItem, onCreateArticle, cre
       {open && (
         <div>
           {pillar && (
-            <KeywordItem item={pillar} isPillar onEdit={onEditItem} onCreateArticle={onCreateArticle} creating={creating} />
+            <KeywordItem item={pillar} isPillar onEdit={onEditItem} onCreateArticle={onCreateArticle} onDeleteItem={onDeleteItem} creating={creating} selected={selectedIds.has(pillar.id)} onToggleSelect={onToggleSelect} />
           )}
           {clusters.map(item => (
-            <KeywordItem key={item.id} item={item} onEdit={onEditItem} onCreateArticle={onCreateArticle} creating={creating} />
+            <KeywordItem key={item.id} item={item} onEdit={onEditItem} onCreateArticle={onCreateArticle} onDeleteItem={onDeleteItem} creating={creating} selected={selectedIds.has(item.id)} onToggleSelect={onToggleSelect} />
           ))}
         </div>
       )}
@@ -183,12 +184,16 @@ function ClusterAccordion({ clusterName, items, onEditItem, onCreateArticle, cre
 }
 
 // ─── Keyword Item Row ─────────────────────────────────────────────────────────
-function KeywordItem({ item, isPillar, onEdit, onCreateArticle, creating }) {
+function KeywordItem({ item, isPillar, onEdit, onCreateArticle, onDeleteItem, creating, selected, onToggleSelect }) {
   const [editingIntent, setEditingIntent] = useState(false);
   const intents = ['Informational', 'Commercial', 'Navigational', 'Transactional'];
+  const isProcessing = item.status === 'in_queue';
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 16px', borderTop: '1px solid var(--border)', background: isPillar ? 'rgba(139,92,246,0.04)' : 'transparent', flexWrap: 'wrap' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 16px', borderTop: '1px solid var(--border)', background: selected ? 'rgba(99,102,241,0.06)' : isPillar ? 'rgba(139,92,246,0.04)' : 'transparent', flexWrap: 'wrap' }}>
+      <input type="checkbox" checked={selected} onChange={() => onToggleSelect(item.id)}
+        onClick={e => e.stopPropagation()} disabled={isProcessing}
+        style={{ width: 14, height: 14, cursor: 'pointer', accentColor: 'var(--accent)', flexShrink: 0 }} />
       {isPillar ? <Star size={13} color="#8b5cf6" /> : <span style={{ width: 13, display: 'inline-block' }} />}
       <span style={{ flex: 1, minWidth: 180, fontSize: 13, color: 'var(--text-primary)', fontWeight: isPillar ? 600 : 400 }}>
         {item.keyword}
@@ -210,14 +215,24 @@ function KeywordItem({ item, isPillar, onEdit, onCreateArticle, creating }) {
         <span style={{ fontSize: 10, color: 'var(--text-secondary)', fontStyle: 'italic' }}>{item.content_angle}</span>
       )}
       <Badge status={item.status} />
-      {item.status === 'draft' ? (
+      {item.status === 'draft' && (
         <button onClick={() => onCreateArticle(item)} disabled={creating === item.id}
           style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid var(--accent)', background: 'transparent', color: 'var(--accent)', cursor: 'pointer', fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap' }}>
           {creating === item.id ? '...' : '+ Tạo bài'}
         </button>
-      ) : item.articleId ? (
+      )}
+      {item.status === 'in_queue' && (
+        <span style={{ fontSize: 11, color: '#8b5cf6' }}>⏳ Đang xử lý...</span>
+      )}
+      {item.articleId && item.status !== 'in_queue' && (
         <span style={{ fontSize: 11, color: '#22c55e' }}>✓ Đã tạo</span>
-      ) : null}
+      )}
+      <button onClick={() => onDeleteItem(item.id)} title="Xóa keyword"
+        style={{ padding: '3px', borderRadius: 4, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--text-secondary)', display: 'flex', opacity: 0.5, marginLeft: 'auto' }}
+        onMouseEnter={e => { e.currentTarget.style.color = '#ef4444'; e.currentTarget.style.opacity = '1'; }}
+        onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.opacity = '0.5'; }}>
+        <Trash2 size={12} />
+      </button>
     </div>
   );
 }
@@ -228,7 +243,7 @@ function ProgressPanel({ planId }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    apiFetch(`${API}/${planId}/progress`).then(setData).catch(() => {}).finally(() => setLoading(false));
+    apiFetch(`${API.keywordPlans}/${planId}/progress`).then(setData).catch(() => {}).finally(() => setLoading(false));
   }, [planId]);
 
   if (loading) return <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-secondary)' }}>Đang tải...</div>;
@@ -302,10 +317,14 @@ function PlanDetail({ planId, companies, onBack }) {
   const [activeTab, setActiveTab] = useState('clusters'); // clusters | progress
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterCluster, setFilterCluster] = useState('all');
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [batchCreating, setBatchCreating] = useState(false);
+  const [showSchedule, setShowSchedule] = useState(false);
+  const [scheduleHours, setScheduleHours] = useState(24);
 
   const load = useCallback(async () => {
     try {
-      const data = await apiFetch(`${API}/${planId}`);
+      const data = await apiFetch(`${API.keywordPlans}/${planId}`);
       setPlan(data);
       setItems(data.items || []);
     } catch (err) {
@@ -321,7 +340,7 @@ function PlanDetail({ planId, companies, onBack }) {
     if (!window.confirm('Chạy AI phân tích sẽ xóa kết quả cũ. Tiếp tục?')) return;
     setAnalyzing(true);
     try {
-      const data = await apiFetch(`${API}/${planId}/analyze`, { method: 'POST' });
+      const data = await apiFetch(`${API.keywordPlans}/${planId}/analyze`, { method: 'POST' });
       setPlan(data);
       setItems(data.items || []);
       toast.success(`Phân tích xong! ${data.clusters_count} clusters`);
@@ -334,8 +353,19 @@ function PlanDetail({ planId, companies, onBack }) {
 
   const handleEditItem = async (itemId, changes) => {
     try {
-      const updated = await apiFetch(`${API}/${planId}/items/${itemId}`, { method: 'PUT', body: JSON.stringify(changes) });
+      const updated = await apiFetch(`${API.keywordPlans}/${planId}/items/${itemId}`, { method: 'PUT', body: JSON.stringify(changes) });
       setItems(prev => prev.map(i => i.id === itemId ? { ...i, ...updated } : i));
+    } catch (err) {
+      toast.error(err.message);
+    }
+  };
+
+  const handleDeleteItem = async (itemId) => {
+    if (!window.confirm('Xóa keyword này khỏi plan?')) return;
+    try {
+      await apiFetch(`${API.keywordPlans}/${planId}/items/${itemId}`, { method: 'DELETE' });
+      setItems(prev => prev.filter(i => i.id !== itemId));
+      setSelectedIds(prev => { const n = new Set(prev); n.delete(itemId); return n; });
     } catch (err) {
       toast.error(err.message);
     }
@@ -345,7 +375,7 @@ function PlanDetail({ planId, companies, onBack }) {
     if (!plan.companyId) return toast.error('Plan chưa chọn công ty. Vui lòng cập nhật plan.');
     setCreating(item.id);
     try {
-      const result = await apiFetch(`${API}/${planId}/items/${item.id}/create-article`, {
+      const result = await apiFetch(`${API.keywordPlans}/${planId}/items/${item.id}/create-article`, {
         method: 'POST',
         body: JSON.stringify({ companyId: plan.companyId, title: item.keyword }),
       });
@@ -359,9 +389,61 @@ function PlanDetail({ planId, companies, onBack }) {
   };
 
   const handleExport = (format) => {
-    const token = localStorage.getItem('token');
-    const url = `${API}/${planId}/export?format=${format}`;
+    const token = localStorage.getItem('autoseo_token');
+    const url = `${API.keywordPlans}/${planId}/export?format=${format}`;
     window.open(url + (token ? `&token=${token}` : ''), '_blank');
+  };
+
+  const handleToggleSelect = (itemId) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      next.has(itemId) ? next.delete(itemId) : next.add(itemId);
+      return next;
+    });
+  };
+
+  const handleSelectAllDraft = () => {
+    const draftIds = items.filter(i => i.status === 'draft').map(i => i.id);
+    setSelectedIds(new Set(draftIds));
+  };
+
+  const handleBatchCreate = async () => {
+    if (selectedIds.size === 0) return toast.error('Chưa chọn keyword nào');
+    if (!plan.companyId) return toast.error('Plan chưa chọn công ty');
+    if (!window.confirm(`Tạo bài cho ${selectedIds.size} keyword đã chọn?`)) return;
+    setBatchCreating(true);
+    try {
+      const result = await apiFetch(`${API.keywordPlans}/${planId}/batch-create`, {
+        method: 'POST',
+        body: JSON.stringify({ itemIds: [...selectedIds] }),
+      });
+      toast.success(`Đã thêm ${result.queued} keyword vào hàng đợi. Bài sẽ được tạo lần lượt trong nền.`);
+      setSelectedIds(new Set());
+      await load();
+    } catch (err) {
+      toast.error('Batch tạo thất bại: ' + err.message);
+    } finally {
+      setBatchCreating(false);
+    }
+  };
+
+  const handleSchedule = async () => {
+    if (selectedIds.size === 0) return toast.error('Chưa chọn keyword nào');
+    setBatchCreating(true);
+    try {
+      const result = await apiFetch(`${API.keywordPlans}/${planId}/schedule`, {
+        method: 'POST',
+        body: JSON.stringify({ itemIds: [...selectedIds], interval_hours: scheduleHours }),
+      });
+      toast.success(`Đã lên lịch ${result.total} keyword (cách nhau ${scheduleHours}h)`);
+      setSelectedIds(new Set());
+      setShowSchedule(false);
+      await load();
+    } catch (err) {
+      toast.error('Lên lịch thất bại: ' + err.message);
+    } finally {
+      setBatchCreating(false);
+    }
   };
 
   if (loading) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-secondary)' }}>Đang tải...</div>;
@@ -432,9 +514,9 @@ function PlanDetail({ planId, companies, onBack }) {
 
       {activeTab === 'clusters' && (
         <>
-          {/* Filters */}
+          {/* Filters + Batch actions */}
           {items.length > 0 && (
-            <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
               <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
                 style={{ padding: '6px 10px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg-panel)', color: 'var(--text-primary)', fontSize: 12 }}>
                 <option value="all">Tất cả trạng thái</option>
@@ -445,6 +527,56 @@ function PlanDetail({ planId, companies, onBack }) {
                 <option value="all">Tất cả clusters</option>
                 {clusterNames.map(name => <option key={name} value={name}>{name}</option>)}
               </select>
+              <button onClick={handleSelectAllDraft}
+                style={{ padding: '6px 12px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg-panel)', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 12 }}>
+                Chọn tất cả Draft
+              </button>
+              {selectedIds.size > 0 && (
+                <>
+                  <span style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 600 }}>({selectedIds.size} đã chọn)</span>
+                  <button onClick={handleBatchCreate} disabled={batchCreating}
+                    style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 12px', borderRadius: 7, border: 'none', background: 'var(--accent)', color: '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 600, opacity: batchCreating ? 0.7 : 1 }}>
+                    <FileText size={13} /> {batchCreating ? 'Đang tạo...' : 'Batch tạo bài'}
+                  </button>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {showSchedule && (
+                      <>
+                        <select value={scheduleHours} onChange={e => setScheduleHours(Number(e.target.value))}
+                          style={{ padding: '5px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-main)', color: 'var(--text-primary)', fontSize: 12 }}>
+                          <option value={0}>Ngay lập tức</option>
+                          <option value={24}>Hàng ngày (1 bài/ngày)</option>
+                          <option value={48}>Mỗi 2 ngày</option>
+                          <option value={168}>Hàng tuần</option>
+                          <option value={-1}>Tùy chỉnh...</option>
+                        </select>
+                        {scheduleHours === -1 && (
+                          <input type="number" min={1} max={720} placeholder="Số giờ"
+                            onChange={e => setScheduleHours(Number(e.target.value))}
+                            style={{ width: 70, padding: '5px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-main)', color: 'var(--text-primary)', fontSize: 12 }} />
+                        )}
+                        <button onClick={handleSchedule} disabled={batchCreating}
+                          style={{ padding: '6px 12px', borderRadius: 7, border: 'none', background: '#f59e0b', color: '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>
+                          Xác nhận
+                        </button>
+                        <button onClick={() => setShowSchedule(false)}
+                          style={{ padding: '5px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', cursor: 'pointer', color: 'var(--text-secondary)' }}>
+                          <X size={13} />
+                        </button>
+                      </>
+                    )}
+                    {!showSchedule && (
+                      <button onClick={() => setShowSchedule(true)}
+                        style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 12px', borderRadius: 7, border: '1px solid #f59e0b', background: 'rgba(245,158,11,0.1)', color: '#f59e0b', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>
+                        <Clock size={13} /> Lên lịch
+                      </button>
+                    )}
+                  </div>
+                  <button onClick={() => setSelectedIds(new Set())}
+                    style={{ padding: '5px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', cursor: 'pointer', color: 'var(--text-secondary)' }}>
+                    <X size={13} />
+                  </button>
+                </>
+              )}
             </div>
           )}
 
@@ -460,7 +592,8 @@ function PlanDetail({ planId, companies, onBack }) {
           ) : (
             Object.entries(clusters).map(([clusterName, clusterItems]) => (
               <ClusterAccordion key={clusterName} clusterName={clusterName} items={clusterItems}
-                onEditItem={handleEditItem} onCreateArticle={handleCreateArticle} creating={creating} />
+                onEditItem={handleEditItem} onCreateArticle={handleCreateArticle} onDeleteItem={handleDeleteItem} creating={creating}
+                selectedIds={selectedIds} onToggleSelect={handleToggleSelect} />
             ))
           )}
         </>
@@ -480,7 +613,7 @@ function PlansList({ onSelect, refreshKey }) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await apiFetch(API);
+      const data = await apiFetch(API.keywordPlans);
       setPlans(Array.isArray(data) ? data : data.data || []);
     } catch (err) {
       toast.error(err.message);
@@ -495,7 +628,7 @@ function PlansList({ onSelect, refreshKey }) {
     e.stopPropagation();
     if (!window.confirm(`Xóa plan "${plan.name}"? (Bài viết đã tạo sẽ không bị xóa)`)) return;
     try {
-      await apiFetch(`${API}/${plan.id}`, { method: 'DELETE' });
+      await apiFetch(`${API.keywordPlans}/${plan.id}`, { method: 'DELETE' });
       toast.success('Đã xóa plan');
       setPlans(prev => prev.filter(p => p.id !== plan.id));
     } catch (err) {
@@ -506,7 +639,7 @@ function PlansList({ onSelect, refreshKey }) {
   const handleDuplicate = async (plan, e) => {
     e.stopPropagation();
     try {
-      const newPlan = await apiFetch(`${API}/${plan.id}/duplicate`, { method: 'POST' });
+      const newPlan = await apiFetch(`${API.keywordPlans}/${plan.id}/duplicate`, { method: 'POST' });
       toast.success('Đã nhân bản plan');
       setPlans(prev => [newPlan, ...prev]);
     } catch (err) {
@@ -599,7 +732,7 @@ export default function KeywordPlanner() {
   const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
-    apiFetch('/api/companies?limit=500')
+    apiFetch(API.companies)
       .then(data => {
         const list = Array.isArray(data) ? data : (data.data || []);
         setCompanies(list);
