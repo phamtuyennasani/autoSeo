@@ -6,7 +6,7 @@ import {
   Save, RefreshCw, Loader2, CheckCircle2,
   Zap, FileText, AlertTriangle, Info, BarChart3,
   Shield, TrendingUp, Calendar, KeyRound, Eye, EyeOff, Cpu,
-  Calculator, DollarSign, ChevronDown, ChevronUp, Upload, User, Globe, Link2
+  Calculator, DollarSign, ChevronDown, ChevronUp, Upload, User, Globe
 } from 'lucide-react';
 
 import { API } from '../config/api';
@@ -782,9 +782,6 @@ export default function SettingsPage() {
   const [tokenLimit, setTokenLimit] = useState('0');
   const [articleLimit, setArticleLimit] = useState('0');
   const [publishApiUrl, setPublishApiUrl] = useState('');
-  const [internalLinksEnabled, setInternalLinksEnabled] = useState(false);
-  const [internalLinksMax, setInternalLinksMax] = useState('3');
-
   // Đổi mật khẩu
   const [isChangePwOpen, setIsChangePwOpen] = useState(false);
   const [pwForm, setPwForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
@@ -858,8 +855,6 @@ export default function SettingsPage() {
       setTokenLimit(s.find(r => r.key === 'daily_token_limit')?.value ?? '0');
       setArticleLimit(s.find(r => r.key === 'daily_article_limit')?.value ?? '0');
       setPublishApiUrl(s.find(r => r.key === 'publish_api_url')?.value ?? '');
-      setInternalLinksEnabled((s.find(r => r.key === 'internal_links_enabled')?.value ?? '0') === '1');
-      setInternalLinksMax(s.find(r => r.key === 'internal_links_max')?.value ?? '3');
     } catch (err) {
       setError('Không thể tải cài đặt: ' + err.message);
     } finally {
@@ -876,8 +871,6 @@ export default function SettingsPage() {
         daily_token_limit:    parseInt(tokenLimit, 10) || 0,
         daily_article_limit:  parseInt(articleLimit, 10) || 0,
         publish_api_url:      publishApiUrl.trim(),
-        internal_links_enabled: internalLinksEnabled,
-        internal_links_max:     parseInt(internalLinksMax, 10) || 3,
       });
       setSaved(true);
       await fetchSettings();
@@ -1038,58 +1031,7 @@ export default function SettingsPage() {
                   </div>
                 </div>
 
-                {/* ─── Internal Links ─────────────────────────────────── */}
-                <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden', background: 'var(--bg-panel)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 18px', borderBottom: internalLinksEnabled ? '1px solid var(--border)' : 'none', background: 'var(--bg-elevated)' }}>
-                    <div style={{ width: 34, height: 34, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(99,102,241,0.12)', flexShrink: 0 }}>
-                      <Link2 size={16} color="var(--accent)" />
-                    </div>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text)' }}>Internal Links Tự Động</div>
-                      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 1 }}>
-                        Tự động chèn link đến các bài viết khác cùng công ty khi tạo bài mới.
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ fontSize: 12, fontWeight: 600, color: internalLinksEnabled ? 'var(--success)' : 'var(--text-muted)' }}>
-                        {internalLinksEnabled ? 'Đang bật' : 'Đang tắt'}
-                      </span>
-                      <div
-                        onClick={() => setInternalLinksEnabled(v => !v)}
-                        style={{
-                          width: 40, height: 22, borderRadius: 11, position: 'relative',
-                          background: internalLinksEnabled ? 'var(--success)' : 'var(--border)',
-                          cursor: 'pointer', transition: 'background 0.2s', flexShrink: 0,
-                        }}
-                      >
-                        <div style={{
-                          position: 'absolute', top: 3,
-                          left: internalLinksEnabled ? 21 : 3,
-                          width: 16, height: 16, borderRadius: '50%',
-                          background: '#fff', transition: 'left 0.2s',
-                          boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
-                        }} />
-                      </div>
-                    </div>
-                  </div>
-                  {internalLinksEnabled && (
-                    <div style={{ padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 12 }}>
-                      <label style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 500, whiteSpace: 'nowrap' }}>
-                        Số link tối đa mỗi bài:
-                      </label>
-                      <input
-                        type="number" min="1" max="10"
-                        className="input-field"
-                        value={internalLinksMax}
-                        onChange={e => setInternalLinksMax(e.target.value)}
-                        style={{ width: 80, textAlign: 'center' }}
-                      />
-                      <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>(1–10 links)</span>
-                    </div>
-                  )}
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '16px 20px', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', background: 'var(--bg-panel)' }}>
+<div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '16px 20px', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', background: 'var(--bg-panel)' }}>
                   <button onClick={handleSave} className="btn btn-primary" disabled={saving} style={{ gap: 7, minWidth: 150, justifyContent: 'center' }}>
                     {saving ? <><Loader2 className="animate-spin" size={15} /> Đang lưu...</> : <><Save size={15} /> Lưu cài đặt</>}
                   </button>

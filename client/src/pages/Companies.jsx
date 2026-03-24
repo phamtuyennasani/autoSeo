@@ -40,12 +40,12 @@ const Companies = () => {
 
   // Add modal
   const [isAddOpen, setIsAddOpen] = useState(false);
-  const [addForm, setAddForm] = useState({ name: '', url: '', info: '', contract_code: '', industry: [], publish_api_url: '', auto_publish: false });
+  const [addForm, setAddForm] = useState({ name: '', url: '', info: '', contract_code: '', industry: [], publish_api_url: '', auto_publish: false, internal_links_enabled: false, internal_links_max: 3 });
   const [submitting, setSubmitting] = useState(false);
 
   // Edit modal
   const [editingCompany, setEditingCompany] = useState(null);
-  const [editForm, setEditForm] = useState({ name: '', url: '', info: '', contract_code: '', industry: [], publish_api_url: '', auto_publish: false });
+  const [editForm, setEditForm] = useState({ name: '', url: '', info: '', contract_code: '', industry: [], publish_api_url: '', auto_publish: false, internal_links_enabled: false, internal_links_max: 3 });
   const [saving, setSaving] = useState(false);
 
   useEffect(() => { fetchCompanies(); }, []);
@@ -71,8 +71,8 @@ const Companies = () => {
     e.preventDefault();
     setSubmitting(true);
     try {
-      await apiClient.post(API_URL, { ...addForm, industry: addForm.industry.join(','), auto_publish: addForm.auto_publish ? 1 : 0 });
-      setAddForm({ name: '', url: '', info: '', contract_code: '', industry: [], publish_api_url: '', auto_publish: false });
+      await apiClient.post(API_URL, { ...addForm, industry: addForm.industry.join(','), auto_publish: addForm.auto_publish ? 1 : 0, internal_links_enabled: addForm.internal_links_enabled ? 1 : 0 });
+      setAddForm({ name: '', url: '', info: '', contract_code: '', industry: [], publish_api_url: '', auto_publish: false, internal_links_enabled: false, internal_links_max: 3 });
       setIsAddOpen(false);
       fetchCompanies();
     } catch (error) {
@@ -85,7 +85,7 @@ const Companies = () => {
   // EDIT - open
   const openEdit = (company) => {
     setEditingCompany(company);
-    setEditForm({ name: company.name, url: company.url, info: company.info || '', contract_code: company.contract_code || '', industry: (company.industry || '').split(',').filter(Boolean), publish_api_url: company.publish_api_url || '', auto_publish: !!company.auto_publish });
+    setEditForm({ name: company.name, url: company.url, info: company.info || '', contract_code: company.contract_code || '', industry: (company.industry || '').split(',').filter(Boolean), publish_api_url: company.publish_api_url || '', auto_publish: !!company.auto_publish, internal_links_enabled: !!company.internal_links_enabled, internal_links_max: company.internal_links_max || 3 });
   };
 
   // EDIT - save
@@ -93,7 +93,7 @@ const Companies = () => {
     e.preventDefault();
     setSaving(true);
     try {
-      await apiClient.put(`${API_URL}/${editingCompany.id}`, { ...editForm, industry: editForm.industry.join(','), auto_publish: editForm.auto_publish ? 1 : 0 });
+      await apiClient.put(`${API_URL}/${editingCompany.id}`, { ...editForm, industry: editForm.industry.join(','), auto_publish: editForm.auto_publish ? 1 : 0, internal_links_enabled: editForm.internal_links_enabled ? 1 : 0 });
       setEditingCompany(null);
       fetchCompanies();
     } catch (error) {
@@ -323,6 +323,35 @@ const Companies = () => {
                     <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>Tự động đăng bài sau khi viết xong</span>
                   </label>
                 </div>
+                <div className="input-group" style={{ marginBottom: 8 }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', userSelect: 'none' }}>
+                    <div
+                      onClick={() => !submitting && setAddForm(f => ({ ...f, internal_links_enabled: !f.internal_links_enabled }))}
+                      style={{
+                        width: 36, height: 20, borderRadius: 99, flexShrink: 0,
+                        background: addForm.internal_links_enabled ? 'var(--success)' : 'var(--border)',
+                        position: 'relative', transition: 'background 0.2s', cursor: 'pointer',
+                      }}
+                    >
+                      <div style={{
+                        position: 'absolute', top: 3, left: addForm.internal_links_enabled ? 18 : 3,
+                        width: 14, height: 14, borderRadius: '50%', background: '#fff',
+                        transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                      }} />
+                    </div>
+                    <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>Tự động chèn internal links</span>
+                  </label>
+                </div>
+                {addForm.internal_links_enabled && (
+                  <div className="input-group" style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                    <label style={{ fontSize: 13, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>Số link tối đa mỗi bài:</label>
+                    <input type="number" min="1" max="10" className="input-field"
+                      value={addForm.internal_links_max}
+                      onChange={e => setAddForm(f => ({ ...f, internal_links_max: e.target.value }))}
+                      style={{ width: 70, textAlign: 'center' }} disabled={submitting} />
+                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>(1–10)</span>
+                  </div>
+                )}
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '8px' }}>
                   <button type="button" className="btn btn-outline" onClick={() => setIsAddOpen(false)} disabled={submitting}>Hủy</button>
                   <button type="submit" className="btn btn-primary" disabled={submitting}>
@@ -407,6 +436,35 @@ const Companies = () => {
                     <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>Tự động đăng bài sau khi viết xong</span>
                   </label>
                 </div>
+                <div className="input-group" style={{ marginBottom: 8 }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', userSelect: 'none' }}>
+                    <div
+                      onClick={() => !saving && setEditForm(f => ({ ...f, internal_links_enabled: !f.internal_links_enabled }))}
+                      style={{
+                        width: 36, height: 20, borderRadius: 99, flexShrink: 0,
+                        background: editForm.internal_links_enabled ? 'var(--success)' : 'var(--border)',
+                        position: 'relative', transition: 'background 0.2s', cursor: 'pointer',
+                      }}
+                    >
+                      <div style={{
+                        position: 'absolute', top: 3, left: editForm.internal_links_enabled ? 18 : 3,
+                        width: 14, height: 14, borderRadius: '50%', background: '#fff',
+                        transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                      }} />
+                    </div>
+                    <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>Tự động chèn internal links</span>
+                  </label>
+                </div>
+                {editForm.internal_links_enabled && (
+                  <div className="input-group" style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                    <label style={{ fontSize: 13, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>Số link tối đa mỗi bài:</label>
+                    <input type="number" min="1" max="10" className="input-field"
+                      value={editForm.internal_links_max}
+                      onChange={e => setEditForm(f => ({ ...f, internal_links_max: e.target.value }))}
+                      style={{ width: 70, textAlign: 'center' }} disabled={saving} />
+                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>(1–10)</span>
+                  </div>
+                )}
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '8px' }}>
                   <button type="button" className="btn btn-outline" onClick={() => setEditingCompany(null)} disabled={saving}>Hủy</button>
                   <button type="submit" className="btn btn-primary" disabled={saving}>

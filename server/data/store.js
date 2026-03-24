@@ -251,7 +251,9 @@ async function initDb() {
     { table: 'articles', col: 'writtenBy', ddl: 'ALTER TABLE articles ADD COLUMN writtenBy TEXT' },
     { table: 'batch_jobs', col: 'writtenBy', ddl: 'ALTER TABLE batch_jobs ADD COLUMN writtenBy TEXT' },
     // companies — liên kết hợp đồng
-    { table: 'companies', col: 'hop_dong_id', ddl: 'ALTER TABLE companies ADD COLUMN hop_dong_id TEXT' },
+    { table: 'companies', col: 'hop_dong_id',           ddl: 'ALTER TABLE companies ADD COLUMN hop_dong_id TEXT' },
+    { table: 'companies', col: 'internal_links_enabled', ddl: 'ALTER TABLE companies ADD COLUMN internal_links_enabled INTEGER NOT NULL DEFAULT 0' },
+    { table: 'companies', col: 'internal_links_max',     ddl: 'ALTER TABLE companies ADD COLUMN internal_links_max INTEGER NOT NULL DEFAULT 3' },
     // chuki — chu kỳ từ CRM1, dùng để gửi lại CRM2 khi publish
     { table: 'batch_jobs', col: 'chuki', ddl: 'ALTER TABLE batch_jobs ADD COLUMN chuki TEXT' },
     { table: 'articles',   col: 'chuki', ddl: 'ALTER TABLE articles ADD COLUMN chuki TEXT' },
@@ -301,8 +303,6 @@ async function initDb() {
     { key: 'batch_schedule_time',   value: '', label: 'Giờ chạy batch tự động (HH:MM, để trống = tắt)' },
     { key: 'batch_schedule_lastrun',value: '', label: 'Ngày chạy batch theo lịch lần cuối' },
     { key: 'publish_api_url',           value: '', label: 'URL API đăng bài mặc định (bên thứ 3)' },
-    { key: 'internal_links_enabled',    value: '0', label: 'Bật internal links tự động (0/1)' },
-    { key: 'internal_links_max',        value: '3', label: 'Số internal link tối đa mỗi bài' },
   ];
   for (const s of seedSettings) {
     await db.execute({

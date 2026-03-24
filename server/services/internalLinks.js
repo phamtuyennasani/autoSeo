@@ -35,10 +35,18 @@ function escapeRegex(str) {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-// ─── Đọc setting trực tiếp từ DB (tránh circular import với routes) ───────────
-async function getSettingValue(key) {
-  const r = await db.execute({ sql: 'SELECT value FROM settings WHERE key = ?', args: [key] });
-  return r.rows[0]?.value ?? null;
+// ─── Đọc config internal links từ company ─────────────────────────────────────
+async function getCompanyLinkConfig(companyId) {
+  const r = await db.execute({
+    sql:  'SELECT internal_links_enabled, internal_links_max FROM companies WHERE id = ?',
+    args: [companyId],
+  });
+  const row = r.rows[0];
+  if (!row) return { enabled: false, maxLinks: 3 };
+  return {
+    enabled:  row.internal_links_enabled === 1 || row.internal_links_enabled === '1',
+    maxLinks: Math.max(1, Math.min(10, parseInt(row.internal_links_max || 3, 10))),
+  };
 }
 
 // ─── Build link map: phrase (lowercase) → { href, label } ────────────────────
@@ -130,11 +138,10 @@ function injectLinks(html, linkMap, maxLinks) {
 // ─── Entry point ──────────────────────────────────────────────────────────────
 async function applyInternalLinks(html, companyId, currentTitle, companyUrl) {
   try {
-    const enabled = await getSettingValue('internal_links_enabled');
-    if (!enabled || enabled === '0') return html;
+    const { enabled, maxLinks } = await getCompanyLinkConfig(companyId);
+    if (!enabled) return html;
 
-    const maxLinks = Math.max(1, Math.min(10, parseInt(await getSettingValue('internal_links_max') || '3', 10)));
-    const linkMap  = await buildLinkMap(companyId, currentTitle, companyUrl);
+    const linkMap = await buildLinkMap(companyId, currentTitle, companyUrl);
     if (linkMap.size === 0) return html;
 
     return injectLinks(html, linkMap, maxLinks);
