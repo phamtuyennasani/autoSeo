@@ -1,23 +1,39 @@
 // Inject inline styles vào các thẻ HTML sau khi markdown → HTML
 // styles (optional) — object từ companies.article_styles để ghi đè default
 
+function hexToRgba(hex, alpha) {
+  hex = hex.replace('#', '');
+  if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
+  const r = parseInt(hex.slice(0, 2), 16);
+  const g = parseInt(hex.slice(2, 4), 16);
+  const b = parseInt(hex.slice(4, 6), 16);
+  if (isNaN(r) || isNaN(g) || isNaN(b)) return `rgba(99,102,241,${alpha})`;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
 function applyInlineStyles(html, styles = {}) {
   if (!html) return '';
 
   const s = {
-    fontFamily: styles.fontFamily || "'Plus Jakarta Sans',sans-serif",
-    fontSize:   styles.fontSize   || '16px',
-    lineHeight: styles.lineHeight || '1.8',
-    color:      styles.color      || 'var(--text-primary)',
-    h2FontSize: styles.h2FontSize || '20px',
-    h2Color:    styles.h2Color    || 'var(--text-primary)',
-    h3FontSize: styles.h3FontSize || '17px',
-    h3Color:    styles.h3Color    || 'var(--text-primary)',
-    h4FontSize: styles.h4FontSize || '15px',
-    h4Color:    styles.h4Color    || 'var(--text-primary)',
+    fontFamily:  styles.fontFamily  || "'Plus Jakarta Sans',sans-serif",
+    fontSize:    styles.fontSize    || '16px',
+    lineHeight:  styles.lineHeight  || '1.8',
+    color:       styles.color       || 'var(--text-primary)',
+    accentColor: styles.accentColor || null,
+    h2FontSize:  styles.h2FontSize  || '20px',
+    h2Color:     styles.h2Color     || 'var(--text-primary)',
+    h3FontSize:  styles.h3FontSize  || '17px',
+    h3Color:     styles.h3Color     || 'var(--text-primary)',
+    h4FontSize:  styles.h4FontSize  || '15px',
+    h4Color:     styles.h4Color     || 'var(--text-primary)',
   };
 
-  const hBase = `font-family:${s.fontFamily};font-weight:700;margin-top:2em;margin-bottom:0.6em;line-height:1.4;letter-spacing:-0.2px;`;
+  const accent       = s.accentColor || 'var(--accent)';
+  const accentSubtle = s.accentColor ? hexToRgba(s.accentColor, 0.1) : 'var(--accent-subtle)';
+  const accentCode   = s.accentColor ? hexToRgba(s.accentColor, 0.12) : 'rgba(99,102,241,0.1)';
+  const accentLight  = s.accentColor ? hexToRgba(s.accentColor, 0.75) : '#a78bfa';
+
+  const hBase = `font-family:${s.fontFamily};font-weight:700;margin-top:2em;margin-bottom:0.6em;line-height:${s.lineHeight};`;
 
   // 1. Xử lý <pre><code> trước để tránh xung đột với inline code
   html = html.replace(/<pre(\s[^>]*)?>[\s\S]*?<\/pre>/gi, (match, preAttrs = '') => {
@@ -40,24 +56,24 @@ function applyInlineStyles(html, styles = {}) {
 
   // 4. Blockquote
   html = html.replace(/<blockquote(\s[^>]*)?>/gi, (_, a = '') =>
-    `<blockquote${a} style="border-left:3px solid var(--accent);padding:10px 16px;margin:1.5em 0;background:var(--accent-subtle);border-radius:0 var(--radius-sm) var(--radius-sm) 0;color:var(--text-secondary);font-style:italic;">`);
+    `<blockquote${a} style="border-left:3px solid ${accent};padding:10px 16px;margin:1.5em 0;background:${accentSubtle};border-radius:0 var(--radius-sm) var(--radius-sm) 0;color:${s.color};font-style:italic;">`);
 
   // 5. Inline code
   html = html.replace(/<code(\s[^>]*)?>/gi, (_, a = '') =>
-    `<code${a} style="font-family:'Fira Code','Consolas',monospace;font-size:13px;background:rgba(99,102,241,0.1);color:#a78bfa;padding:2px 6px;border-radius:4px;">`);
+    `<code${a} style="font-family:${s.fontFamily};font-size:13px;background:${accentCode};color:${accentLight};padding:2px 6px;border-radius:4px;">`);
 
   // 6. Inline formatting
   html = html.replace(/<strong(\s[^>]*)?>/gi, (_, a = '') => `<strong${a} style="font-weight:700;color:${s.color};">`);
-  html = html.replace(/<em(\s[^>]*)?>/gi,     (_, a = '') => `<em${a} style="font-style:italic;color:var(--text-secondary);">`);
-  html = html.replace(/<a(\s[^>]*)?>/gi,      (_, a = '') => `<a${a} style="color:var(--accent);text-decoration:underline;text-underline-offset:3px;">`);
+  html = html.replace(/<em(\s[^>]*)?>/gi,     (_, a = '') => `<em${a} style="font-style:italic;color:${s.color};">`);
+  html = html.replace(/<a(\s[^>]*)?>/gi,      (_, a = '') => `<a${a} style="color:${accent};text-decoration:underline;text-underline-offset:3px;">`);
 
   // 7. HR
-  html = html.replace(/<hr(\s[^>]*)?>/gi, (_, a = '') => `<hr${a} style="border:none;border-top:1px solid var(--border);margin:2em 0;">`);
+  html = html.replace(/<hr(\s[^>]*)?>/gi, (_, a = '') => `<hr${a} style="border:none;border-top:1px solid gray;margin:2em 0;">`);
 
   // 8. Table
   html = html.replace(/<table(\s[^>]*)?>/gi, (_, a = '') => `<table${a} style="width:100%;border-collapse:collapse;margin:1.5em 0;font-size:14px;">`);
-  html = html.replace(/<th(\s[^>]*)?>/gi,    (_, a = '') => `<th${a} style="padding:10px 14px;border:1px solid var(--border);text-align:left;background:var(--bg-panel);font-weight:600;color:${s.color};">`);
-  html = html.replace(/<td(\s[^>]*)?>/gi,    (_, a = '') => `<td${a} style="padding:10px 14px;border:1px solid var(--border);text-align:left;color:${s.color};">`);
+  html = html.replace(/<th(\s[^>]*)?>/gi,    (_, a = '') => `<th${a} style="padding:10px 14px;border:1px solid gray;text-align:left;background:#ffffff;font-weight:600;color:${s.color};">`);
+  html = html.replace(/<td(\s[^>]*)?>/gi,    (_, a = '') => `<td${a} style="padding:10px 14px;border:1px solid gray;text-align:left;color:${s.color};">`);
 
   return html;
 }

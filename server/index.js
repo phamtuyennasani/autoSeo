@@ -34,6 +34,7 @@ app.use('/api/batch-jobs', require('./routes/batch-jobs'));
 app.use('/api/write-queue', require('./routes/write-queue'));
 app.use('/api/keyword-plans', require('./routes/keyword-plans'));
 app.use('/api/chat',         require('./routes/chat'));
+app.use('/api/fonts',        require('./routes/fonts'));
 
 // ── Webhook nhận từ CRM1 (không cần login, bảo mật bằng HMAC) ────────────────
 app.use('/api/webhooks', require('./routes/webhooks'));

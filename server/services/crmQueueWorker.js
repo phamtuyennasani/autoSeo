@@ -154,6 +154,7 @@ async function processTitleJob(job) {
     const compRes = await db.execute({ sql: 'SELECT * FROM companies WHERE id = ?', args: [job.company_id] });
     const company = compRes.rows[0];
     if (!company) throw new Error(`Không tìm thấy công ty id=${job.company_id}`);
+    try { if (company.article_styles) company.article_styles = JSON.parse(company.article_styles); } catch { company.article_styles = {}; }
 
     const apiConfig = await getApiConfig(job.created_by);
 

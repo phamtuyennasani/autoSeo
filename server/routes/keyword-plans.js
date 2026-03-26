@@ -175,8 +175,8 @@ router.post('/:id/analyze', async (req, res) => {
       for (const item of cluster.items) {
         const itemId = makeId();
         await db.execute({
-          sql: 'INSERT INTO keyword_plan_items (id, planId, keyword, cluster_name, cluster_idx, item_type, search_intent, content_angle, status, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-          args: [itemId, req.params.id, item.keyword, cluster.name, ci, item.item_type || 'cluster', item.search_intent || '', item.content_angle || '', 'draft', now],
+          sql: 'INSERT INTO keyword_plan_items (id, planId, keyword, cluster_name, cluster_idx, item_type, search_intent, content_angle, variants, recommended_word_count, status, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          args: [itemId, req.params.id, item.keyword, cluster.name, ci, item.item_type || 'cluster', item.search_intent || '', item.content_angle || '', JSON.stringify(Array.isArray(item.variants) ? item.variants : []), item.recommended_word_count || 0, 'draft', now],
         });
       }
     }
@@ -208,7 +208,7 @@ router.post('/:id/analyze', async (req, res) => {
 // ─── PUT /:id/items/:itemId — Cập nhật 1 item ──────────────────────────────
 router.put('/:id/items/:itemId', async (req, res) => {
   try {
-    const { cluster_name, cluster_idx, item_type, search_intent, content_angle, status } = req.body;
+    const { cluster_name, cluster_idx, item_type, search_intent, content_angle, status, variants, recommended_word_count } = req.body;
     const updates = [];
     const args = [];
     if (cluster_name !== undefined)  { updates.push('cluster_name = ?');  args.push(cluster_name); }
@@ -217,6 +217,8 @@ router.put('/:id/items/:itemId', async (req, res) => {
     if (search_intent !== undefined) { updates.push('search_intent = ?'); args.push(search_intent); }
     if (content_angle !== undefined) { updates.push('content_angle = ?'); args.push(content_angle); }
     if (status !== undefined)        { updates.push('status = ?');        args.push(status); }
+    if (variants !== undefined)              { updates.push('variants = ?');              args.push(JSON.stringify(Array.isArray(variants) ? variants : [])); }
+    if (recommended_word_count !== undefined){ updates.push('recommended_word_count = ?'); args.push(recommended_word_count); }
     if (!updates.length) return res.status(400).json({ error: 'Không có gì để cập nhật' });
 
     args.push(req.params.itemId);
@@ -249,8 +251,8 @@ router.post('/:id/items', async (req, res) => {
     const itemId = makeId();
     const now = new Date().toISOString();
     await db.execute({
-      sql: 'INSERT INTO keyword_plan_items (id, planId, keyword, cluster_name, cluster_idx, item_type, search_intent, content_angle, status, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      args: [itemId, req.params.id, keyword, cluster_name || '', cluster_idx || 0, item_type || 'cluster', search_intent || '', content_angle || '', 'draft', now],
+      sql: 'INSERT INTO keyword_plan_items (id, planId, keyword, cluster_name, cluster_idx, item_type, search_intent, content_angle, variants, recommended_word_count, status, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      args: [itemId, req.params.id, keyword, cluster_name || '', cluster_idx || 0, item_type || 'cluster', search_intent || '', content_angle || '', '[]', 0, 'draft', now],
     });
     const item = await db.execute({ sql: 'SELECT * FROM keyword_plan_items WHERE id = ?', args: [itemId] });
     res.json(item.rows[0]);

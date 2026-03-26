@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, Trash2, ChevronDown, ChevronRight, FileText, Download, Search, Brain, CheckCircle2, Clock, AlertCircle, Circle, Star, Copy, X, Loader } from 'lucide-react';
+import { Plus, Trash2, ChevronDown, ChevronRight, FileText, Download, Search, Brain, CheckCircle2, Clock, AlertCircle, Circle, Star, Copy, X, Loader, ExternalLink, Hash, Check } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { API } from '../config/api';
+import { AppSelect } from '../components/AppSelect';
 // ─── Constants ────────────────────────────────────────────────────────────────
 const STATUS_CONFIG = {
-  draft:     { label: 'Draft',       color: '#6b7280', bg: 'rgba(107,114,128,0.12)', icon: Circle },
+  draft:     { label: 'Chờ xử lý',       color: '#6b7280', bg: 'rgba(107,114,128,0.12)', icon: Circle },
   in_queue:  { label: 'Đang xử lý', color: '#8b5cf6', bg: 'rgba(139,92,246,0.12)',  icon: Loader },
   created:   { label: 'Đã tạo',     color: '#3b82f6', bg: 'rgba(59,130,246,0.12)',  icon: FileText },
   scheduled: { label: 'Đã lên lịch', color: '#f59e0b', bg: 'rgba(245,158,11,0.12)', icon: Clock },
@@ -26,6 +27,37 @@ const INTENT_COLOR = {
   Navigational:  '#06b6d4',
   Transactional: '#f59e0b',
 };
+
+const INTENT_VN = {
+  Informational: 'Thông tin',
+  Commercial:    'Thương mại',
+  Navigational:  'Điều hướng',
+  Transactional: 'Giao dịch',
+};
+
+const ANGLE_CONFIG = {
+  'Hướng dẫn':  { color: '#3b82f6', bg: 'rgba(59,130,246,0.12)' },
+  'Danh sách':  { color: '#22c55e', bg: 'rgba(34,197,94,0.12)' },
+  'So sánh':    { color: '#f59e0b', bg: 'rgba(245,158,11,0.12)' },
+  'Review':     { color: '#06b6d4', bg: 'rgba(6,182,212,0.12)' },
+  'Case Study': { color: '#8b5cf6', bg: 'rgba(139,92,246,0.12)' },
+  'Hỏi đáp':   { color: '#ec4899', bg: 'rgba(236,72,153,0.12)' },
+  'Định nghĩa': { color: '#6366f1', bg: 'rgba(99,102,241,0.12)' },
+  'Tin tức':    { color: '#f97316', bg: 'rgba(249,115,22,0.12)' },
+  'How-to Guide': { color: '#3b82f6', bg: 'rgba(59,130,246,0.12)' },
+  'Listicle':   { color: '#22c55e', bg: 'rgba(34,197,94,0.12)' },
+  'Comparison': { color: '#f59e0b', bg: 'rgba(245,158,11,0.12)' },
+  'FAQ':        { color: '#ec4899', bg: 'rgba(236,72,153,0.12)' },
+  'Guide 101':  { color: '#f97316', bg: 'rgba(249,115,22,0.12)' },
+};
+
+const daysSince = (dateStr) => {
+  if (!dateStr) return null;
+  const d = Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000);
+  return d > 0 ? `${d}d` : 'hôm nay';
+};
+
+const fmtWords = (n) => n > 0 ? `~${n.toLocaleString('vi-VN')} từ` : null;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const apiFetch = async (url, opts = {}) => {
@@ -58,7 +90,8 @@ const IntentBadge = ({ intent }) => intent ? (
     padding: '1px 7px', borderRadius: 10, fontSize: 10, fontWeight: 600,
     color: INTENT_COLOR[intent] || '#6b7280',
     background: (INTENT_COLOR[intent] || '#6b7280') + '20',
-  }}>{intent}</span>
+    whiteSpace: 'nowrap',
+  }}>{INTENT_VN[intent] || intent}</span>
 ) : null;
 
 const PlanStatusBadge = ({ status }) => {
@@ -68,6 +101,16 @@ const PlanStatusBadge = ({ status }) => {
       padding: '2px 9px', borderRadius: 20, fontSize: 11, fontWeight: 600,
       color: cfg.color, background: cfg.color + '18',
     }}>{cfg.label}</span>
+  );
+};
+
+const AngleBadge = ({ angle }) => {
+  if (!angle) return null;
+  const cfg = ANGLE_CONFIG[angle] || { color: '#6b7280', bg: 'rgba(107,114,128,0.12)' };
+  return (
+    <span style={{ padding: '1px 7px', borderRadius: 10, fontSize: 10, fontWeight: 600, color: cfg.color, background: cfg.bg, whiteSpace: 'nowrap' }}>
+      {angle}
+    </span>
   );
 };
 
@@ -153,29 +196,104 @@ function CreatePlanModal({ onClose, onCreated }) {
 }
 
 // ─── Cluster Accordion ────────────────────────────────────────────────────────
-function ClusterAccordion({ clusterName, items, onEditItem, onCreateArticle, onDeleteItem, creating, selectedIds, onToggleSelect }) {
+function ClusterAccordion({ clusterIdx, clusterName, items, onEditItem, onCreateArticle, onDeleteItem, onRemoveVariant, creating, selectedIds, onToggleSelect }) {
   const [open, setOpen] = useState(true);
-  const pillar = items.find(i => i.item_type === 'pillar');
-  const clusters = items.filter(i => i.item_type !== 'pillar');
-  const published = items.filter(i => i.status === 'published').length;
+  const pillar   = items.find(i => i.item_type === 'pillar');
+  const children = items.filter(i => i.item_type !== 'pillar');
+  const created  = items.filter(i => i.status !== 'draft').length;
+
+  let variants = [];
+  try { variants = pillar?.variants ? JSON.parse(pillar.variants) : []; } catch { variants = []; }
+
+  const pillarIntent = pillar?.search_intent;
+  const clusterAngle = pillar?.content_angle;
 
   return (
-    <div style={{ border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden', marginBottom: 10 }}>
-      <div onClick={() => setOpen(o => !o)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', background: 'var(--bg-panel)', cursor: 'pointer', userSelect: 'none' }}>
-        {open ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
-        <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-primary)', flex: 1 }}>📁 {clusterName || 'Chưa phân nhóm'}</span>
-        <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{published}/{items.length} bài</span>
-        <div style={{ width: 60, height: 4, borderRadius: 4, background: 'var(--border)', overflow: 'hidden' }}>
-          <div style={{ height: '100%', width: `${items.length ? (published / items.length) * 100 : 0}%`, background: '#22c55e', borderRadius: 4 }} />
+    <div style={{ border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden', marginBottom: 8 }}>
+      {/* ── Header ── */}
+      <div
+        onClick={() => setOpen(o => !o)}
+        style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', background: 'var(--bg-panel)', cursor: 'pointer', userSelect: 'none', minHeight: 40 }}
+      >
+        {/* chevron */}
+        <span style={{ flexShrink: 0, color: 'var(--text-muted)', display: 'flex' }}>
+          {open ? <ChevronDown size={13}/> : <ChevronRight size={13}/>}
+        </span>
+
+        {/* cluster number */}
+        <span style={{ flexShrink: 0, fontSize: 10, fontWeight: 700, color: 'var(--accent)', background: 'var(--accent-subtle)', padding: '2px 7px', borderRadius: 5, lineHeight: 1.4 }}>
+          #{clusterIdx + 1}
+        </span>
+
+        {/* cluster name + pillar — truncate if too long */}
+        <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
+          <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block', lineHeight: 1.4 }}>
+            {clusterName || 'Chưa phân nhóm'}
+            {pillar && (
+              <span style={{ fontWeight: 400, fontSize: 11, color: 'var(--text-muted)', marginLeft: 5 }}>
+                (Pillar: {pillar.keyword})
+              </span>
+            )}
+          </span>
+        </div>
+
+        {/* badges — right side, no wrap */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
+          {pillarIntent && <IntentBadge intent={pillarIntent} />}
+          {clusterAngle && <AngleBadge angle={clusterAngle} />}
+          <span style={{ fontSize: 11, color: 'var(--text-muted)', paddingLeft: 2 }}>{items.length} kw</span>
+          <span style={{ fontSize: 11, fontWeight: 600, color: created > 0 ? '#22c55e' : 'var(--text-secondary)' }}>
+            {created}/{items.length}
+          </span>
+          {/* mini progress bar */}
+          <div style={{ width: 36, height: 3, borderRadius: 3, background: 'var(--border)', overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${items.length ? (created / items.length) * 100 : 0}%`, background: '#22c55e', borderRadius: 3, transition: 'width 0.4s' }} />
+          </div>
         </div>
       </div>
+
       {open && (
         <div>
-          {pillar && (
-            <KeywordItem item={pillar} isPillar onEdit={onEditItem} onCreateArticle={onCreateArticle} onDeleteItem={onDeleteItem} creating={creating} selected={selectedIds.has(pillar.id)} onToggleSelect={onToggleSelect} />
+          {/* ── Biến thể row ── */}
+          {variants.length > 0 && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap',
+              padding: '5px 14px 5px 36px',
+              borderTop: '1px solid var(--border)',
+              background: 'rgba(99,102,241,0.03)',
+            }}>
+              <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.04em', flexShrink: 0 }}>Biến thể:</span>
+              {variants.map((v, vi) => (
+                <span key={vi} style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 3,
+                  fontSize: 11, color: 'var(--text-secondary)',
+                  background: 'var(--bg-main)', border: '1px solid var(--border)',
+                  borderRadius: 20, padding: '1px 8px',
+                }}>
+                  {v}
+                  {onRemoveVariant && (
+                    <button
+                      onClick={e => { e.stopPropagation(); onRemoveVariant(pillar.id, variants.filter((_, i) => i !== vi)); }}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, lineHeight: 1, color: 'var(--text-muted)', display: 'flex' }}
+                    >
+                      <X size={9}/>
+                    </button>
+                  )}
+                </span>
+              ))}
+            </div>
           )}
-          {clusters.map(item => (
-            <KeywordItem key={item.id} item={item} onEdit={onEditItem} onCreateArticle={onCreateArticle} onDeleteItem={onDeleteItem} creating={creating} selected={selectedIds.has(item.id)} onToggleSelect={onToggleSelect} />
+
+          {/* ── Items ── */}
+          {pillar && (
+            <KeywordItem item={pillar} isPillar
+              onEdit={onEditItem} onCreateArticle={onCreateArticle} onDeleteItem={onDeleteItem}
+              creating={creating} selected={selectedIds.has(pillar.id)} onToggleSelect={onToggleSelect} />
+          )}
+          {children.map(item => (
+            <KeywordItem key={item.id} item={item}
+              onEdit={onEditItem} onCreateArticle={onCreateArticle} onDeleteItem={onDeleteItem}
+              creating={creating} selected={selectedIds.has(item.id)} onToggleSelect={onToggleSelect} />
           ))}
         </div>
       )}
@@ -186,53 +304,120 @@ function ClusterAccordion({ clusterName, items, onEditItem, onCreateArticle, onD
 // ─── Keyword Item Row ─────────────────────────────────────────────────────────
 function KeywordItem({ item, isPillar, onEdit, onCreateArticle, onDeleteItem, creating, selected, onToggleSelect }) {
   const [editingIntent, setEditingIntent] = useState(false);
-  const intents = ['Informational', 'Commercial', 'Navigational', 'Transactional'];
+  const intents     = ['Informational', 'Commercial', 'Navigational', 'Transactional'];
   const isProcessing = item.status === 'in_queue';
+  const age         = daysSince(item.createdAt);
+  const wordCount   = fmtWords(item.recommended_word_count);
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 16px', borderTop: '1px solid var(--border)', background: selected ? 'rgba(99,102,241,0.06)' : isPillar ? 'rgba(139,92,246,0.04)' : 'transparent', flexWrap: 'wrap' }}>
-      <input type="checkbox" checked={selected} onChange={() => onToggleSelect(item.id)}
-        onClick={e => e.stopPropagation()} disabled={isProcessing}
-        style={{ width: 14, height: 14, cursor: 'pointer', accentColor: 'var(--accent)', flexShrink: 0 }} />
-      {isPillar ? <Star size={13} color="#8b5cf6" /> : <span style={{ width: 13, display: 'inline-block' }} />}
-      <span style={{ flex: 1, minWidth: 180, fontSize: 13, color: 'var(--text-primary)', fontWeight: isPillar ? 600 : 400 }}>
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 7,
+      padding: '7px 14px',
+      borderTop: `1px solid ${selected ? 'rgba(99,102,241,0.3)' : 'var(--border)'}`,
+      background: selected
+        ? 'rgba(99,102,241,0.06)'
+        : isPillar ? 'rgba(139,92,246,0.04)' : 'var(--bg-page)',
+      minHeight: 38,
+      transition: 'all 0.12s',
+      cursor: 'default',
+    }}>
+      {/* checkbox */}
+      <div
+        onClick={e => { e.stopPropagation(); if (!isProcessing) onToggleSelect(item.id); }}
+        style={{
+          width: 15, height: 15, borderRadius: 4, flexShrink: 0,
+          border: `2px solid ${selected ? 'var(--accent)' : 'var(--border)'}`,
+          background: selected ? 'var(--accent)' : 'transparent',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          cursor: isProcessing ? 'default' : 'pointer',
+          transition: 'all 0.12s',
+        }}
+      >
+        {selected && <Check size={9} color="#fff" strokeWidth={3}/>}
+      </div>
+
+      {/* star icon for pillar */}
+      {isPillar
+        ? <Star size={12} color="#8b5cf6" style={{ flexShrink: 0 }}/>
+        : <span style={{ width: 12, flexShrink: 0 }}/>
+      }
+
+      {/* keyword text — truncates */}
+      <span style={{
+        flex: 1, minWidth: 0,
+        fontSize: 13, color: 'var(--text-primary)',
+        fontWeight: isPillar ? 600 : 400,
+        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+      }}>
         {item.keyword}
       </span>
-      {isPillar && <span style={{ fontSize: 10, color: '#8b5cf6', fontWeight: 700, border: '1px solid #8b5cf680', borderRadius: 10, padding: '1px 7px' }}>PILLAR</span>}
-      {editingIntent ? (
-        <select autoFocus defaultValue={item.search_intent}
-          onBlur={e => { setEditingIntent(false); onEdit(item.id, { search_intent: e.target.value }); }}
-          onChange={e => { setEditingIntent(false); onEdit(item.id, { search_intent: e.target.value }); }}
-          style={{ fontSize: 11, border: '1px solid var(--border)', borderRadius: 6, padding: '2px 6px', background: 'var(--bg-panel)', color: 'var(--text-primary)' }}>
-          {intents.map(i => <option key={i} value={i}>{i}</option>)}
-        </select>
-      ) : (
-        <span onClick={() => setEditingIntent(true)} style={{ cursor: 'pointer' }}>
-          <IntentBadge intent={item.search_intent} />
-        </span>
-      )}
-      {item.content_angle && (
-        <span style={{ fontSize: 10, color: 'var(--text-secondary)', fontStyle: 'italic' }}>{item.content_angle}</span>
-      )}
-      <Badge status={item.status} />
-      {item.status === 'draft' && (
-        <button onClick={() => onCreateArticle(item)} disabled={creating === item.id}
-          style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid var(--accent)', background: 'transparent', color: 'var(--accent)', cursor: 'pointer', fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap' }}>
-          {creating === item.id ? '...' : '+ Tạo bài'}
+
+      {/* right-side meta + actions — no wrap */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
+        {isPillar && (
+          <span style={{ fontSize: 9, color: '#8b5cf6', fontWeight: 700, border: '1px solid #8b5cf670', borderRadius: 8, padding: '1px 6px', letterSpacing: '0.05em' }}>PILLAR</span>
+        )}
+        {age && (
+          <span style={{ fontSize: 10, color: 'var(--text-muted)', background: 'var(--bg-hover)', border: '1px solid var(--border)', borderRadius: 8, padding: '1px 6px' }}>{age}</span>
+        )}
+
+        {/* intent badge — click to edit */}
+        {editingIntent ? (
+          <select autoFocus defaultValue={item.search_intent}
+            onBlur={e  => { setEditingIntent(false); onEdit(item.id, { search_intent: e.target.value }); }}
+            onChange={e => { setEditingIntent(false); onEdit(item.id, { search_intent: e.target.value }); }}
+            style={{ fontSize: 11, border: '1px solid var(--border)', borderRadius: 6, padding: '1px 5px', background: 'var(--bg-panel)', color: 'var(--text-primary)' }}>
+            {intents.map(i => <option key={i} value={i}>{INTENT_VN[i] || i}</option>)}
+          </select>
+        ) : (
+          <span onClick={() => setEditingIntent(true)} title="Click để thay đổi" style={{ cursor: 'pointer' }}>
+            <IntentBadge intent={item.search_intent}/>
+          </span>
+        )}
+
+        {item.content_angle && <AngleBadge angle={item.content_angle}/>}
+
+        {wordCount && (
+          <span style={{ fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{wordCount}</span>
+        )}
+
+        <Badge status={item.status}/>
+
+        {/* Google search link */}
+        <a
+          href={`https://www.google.com/search?q=${encodeURIComponent(item.keyword)}`}
+          target="_blank" rel="noopener noreferrer"
+          onClick={e => e.stopPropagation()}
+          title="Tìm trên Google"
+          style={{ display: 'flex', alignItems: 'center', padding: '3px 5px', borderRadius: 5, border: '1px solid var(--border)', color: 'var(--text-muted)', textDecoration: 'none', transition: 'all 0.15s' }}
+          onMouseEnter={e => { e.currentTarget.style.color = '#4285f4'; e.currentTarget.style.borderColor = '#4285f480'; }}
+          onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.borderColor = 'var(--border)'; }}
+        >
+          <ExternalLink size={11}/>
+        </a>
+
+        {/* create article button */}
+        {item.status === 'draft' && (
+          <button onClick={() => onCreateArticle(item)} disabled={creating === item.id}
+            style={{ padding: '3px 10px', borderRadius: 6, border: '1px solid var(--accent)', background: 'transparent', color: 'var(--accent)', cursor: 'pointer', fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap' }}>
+            {creating === item.id ? '...' : '+ Tạo bài'}
+          </button>
+        )}
+        {item.status === 'in_queue' && (
+          <span style={{ fontSize: 11, color: '#8b5cf6' }}>⏳</span>
+        )}
+        {item.articleId && item.status === 'created' && (
+          <span style={{ fontSize: 11, color: '#22c55e' }}>✓</span>
+        )}
+
+        {/* delete */}
+        <button onClick={() => onDeleteItem(item.id)} title="Xóa"
+          style={{ display: 'flex', padding: '3px', borderRadius: 4, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--text-muted)', opacity: 0.4, transition: 'all 0.15s' }}
+          onMouseEnter={e => { e.currentTarget.style.color = '#ef4444'; e.currentTarget.style.opacity = '1'; }}
+          onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.opacity = '0.4'; }}>
+          <Trash2 size={12}/>
         </button>
-      )}
-      {item.status === 'in_queue' && (
-        <span style={{ fontSize: 11, color: '#8b5cf6' }}>⏳ Đang xử lý...</span>
-      )}
-      {item.articleId && item.status !== 'in_queue' && (
-        <span style={{ fontSize: 11, color: '#22c55e' }}>✓ Đã tạo</span>
-      )}
-      <button onClick={() => onDeleteItem(item.id)} title="Xóa keyword"
-        style={{ padding: '3px', borderRadius: 4, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--text-secondary)', display: 'flex', opacity: 0.5, marginLeft: 'auto' }}
-        onMouseEnter={e => { e.currentTarget.style.color = '#ef4444'; e.currentTarget.style.opacity = '1'; }}
-        onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.opacity = '0.5'; }}>
-        <Trash2 size={12} />
-      </button>
+      </div>
     </div>
   );
 }
@@ -360,6 +545,15 @@ function PlanDetail({ planId, companies, onBack }) {
     }
   };
 
+  const handleRemoveVariant = async (itemId, newVariants) => {
+    try {
+      const updated = await apiFetch(`${API.keywordPlans}/${planId}/items/${itemId}`, { method: 'PUT', body: JSON.stringify({ variants: newVariants }) });
+      setItems(prev => prev.map(i => i.id === itemId ? { ...i, ...updated } : i));
+    } catch (err) {
+      toast.error(err.message);
+    }
+  };
+
   const handleDeleteItem = async (itemId) => {
     if (!window.confirm('Xóa keyword này khỏi plan?')) return;
     try {
@@ -480,7 +674,7 @@ function PlanDetail({ planId, companies, onBack }) {
             <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
               <PlanStatusBadge status={plan.status} />
               {plan.companyName && <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>🏢 {plan.companyName}</span>}
-              <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>📝 {totalItems} items · {createdItems} đã tạo · {publishedItems} published</span>
+              <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Tổng: <strong style={{ color: 'var(--text-primary)' }}>{totalItems}</strong> keywords · Đã tạo: <strong style={{ color: '#3b82f6' }}>{createdItems}</strong> · Đã publish: <strong style={{ color: '#22c55e' }}>{publishedItems}</strong></span>
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -502,7 +696,7 @@ function PlanDetail({ planId, companies, onBack }) {
 
       {/* Tabs */}
       <div style={{ display: 'flex', gap: 2, marginBottom: 16, borderBottom: '1px solid var(--border)', paddingBottom: 0 }}>
-        {[{ id: 'clusters', label: '📁 Clusters' }, { id: 'progress', label: '📊 Tiến độ' }].map(tab => (
+        {[{ id: 'clusters', label: `📋 Cấu trúc ${totalItems}` }, { id: 'progress', label: `📄 Bài viết ${createdItems}/${totalItems}` }].map(tab => (
           <button key={tab.id} onClick={() => setActiveTab(tab.id)}
             style={{ padding: '8px 16px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, fontWeight: activeTab === tab.id ? 700 : 400,
               color: activeTab === tab.id ? 'var(--accent)' : 'var(--text-secondary)',
@@ -514,68 +708,87 @@ function PlanDetail({ planId, companies, onBack }) {
 
       {activeTab === 'clusters' && (
         <>
-          {/* Filters + Batch actions */}
+          {/* ── Toolbar: filters + bulk actions ── */}
           {items.length > 0 && (
-            <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
-              <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
-                style={{ padding: '6px 10px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg-panel)', color: 'var(--text-primary)', fontSize: 12 }}>
-                <option value="all">Tất cả trạng thái</option>
-                {Object.entries(STATUS_CONFIG).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-              </select>
-              <select value={filterCluster} onChange={e => setFilterCluster(e.target.value)}
-                style={{ padding: '6px 10px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg-panel)', color: 'var(--text-primary)', fontSize: 12 }}>
-                <option value="all">Tất cả clusters</option>
-                {clusterNames.map(name => <option key={name} value={name}>{name}</option>)}
-              </select>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+
+              {/* Filters */}
+              <AppSelect
+                size="sm"
+                value={filterStatus}
+                onChange={setFilterStatus}
+                options={[
+                  { value: 'all', label: 'Tất cả trạng thái' },
+                  ...Object.entries(STATUS_CONFIG).map(([k, v]) => ({ value: k, label: v.label })),
+                ]}
+              />
+              <AppSelect
+                size="sm"
+                value={filterCluster}
+                onChange={setFilterCluster}
+                options={[
+                  { value: 'all', label: 'Tất cả clusters' },
+                  ...clusterNames.map(n => ({ value: n, label: n })),
+                ]}
+                style={{ maxWidth: 200 }}
+              />
               <button onClick={handleSelectAllDraft}
-                style={{ padding: '6px 12px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg-panel)', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 12 }}>
-                Chọn tất cả Draft
+                style={{ padding: '5px 12px', height: 32, borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg-main)', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 12, whiteSpace: 'nowrap' }}>
+                Chọn tất cả
               </button>
+
+              {/* Bulk action bar — hiện khi có chọn */}
               {selectedIds.size > 0 && (
-                <>
-                  <span style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 600 }}>({selectedIds.size} đã chọn)</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', background: 'var(--accent-subtle)', border: '1px solid rgba(99,102,241,0.3)', borderRadius: 8 }}>
+                  <span style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 700 }}>{selectedIds.size} đã chọn</span>
+                  <div style={{ width: 1, height: 16, background: 'rgba(99,102,241,0.3)' }}/>
                   <button onClick={handleBatchCreate} disabled={batchCreating}
-                    style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 12px', borderRadius: 7, border: 'none', background: 'var(--accent)', color: '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 600, opacity: batchCreating ? 0.7 : 1 }}>
-                    <FileText size={13} /> {batchCreating ? 'Đang tạo...' : 'Batch tạo bài'}
+                    style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 6, border: 'none', background: 'var(--accent)', color: '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 600, opacity: batchCreating ? 0.7 : 1, whiteSpace: 'nowrap' }}>
+                    <FileText size={12}/> {batchCreating ? 'Đang tạo...' : 'Tạo bài'}
                   </button>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                     {showSchedule && (
                       <>
-                        <select value={scheduleHours} onChange={e => setScheduleHours(Number(e.target.value))}
-                          style={{ padding: '5px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-main)', color: 'var(--text-primary)', fontSize: 12 }}>
-                          <option value={0}>Ngay lập tức</option>
-                          <option value={24}>Hàng ngày (1 bài/ngày)</option>
-                          <option value={48}>Mỗi 2 ngày</option>
-                          <option value={168}>Hàng tuần</option>
-                          <option value={-1}>Tùy chỉnh...</option>
-                        </select>
+                        <AppSelect
+                          size="sm"
+                          value={String(scheduleHours)}
+                          onChange={v => setScheduleHours(Number(v))}
+                          options={[
+                            { value: '0', label: 'Ngay lập tức' },
+                            { value: '24', label: 'Hàng ngày' },
+                            { value: '48', label: 'Mỗi 2 ngày' },
+                            { value: '168', label: 'Hàng tuần' },
+                            { value: '-1', label: 'Tùy chỉnh...' },
+                          ]}
+                        />
                         {scheduleHours === -1 && (
-                          <input type="number" min={1} max={720} placeholder="Số giờ"
+                          <input type="number" min={1} max={720} placeholder="giờ"
                             onChange={e => setScheduleHours(Number(e.target.value))}
-                            style={{ width: 70, padding: '5px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-main)', color: 'var(--text-primary)', fontSize: 12 }} />
+                            style={{ width: 55, padding: '3px 7px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-main)', color: 'var(--text-primary)', fontSize: 11 }} />
                         )}
                         <button onClick={handleSchedule} disabled={batchCreating}
-                          style={{ padding: '6px 12px', borderRadius: 7, border: 'none', background: '#f59e0b', color: '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>
+                          style={{ padding: '3px 10px', borderRadius: 6, border: 'none', background: '#f59e0b', color: '#fff', cursor: 'pointer', fontSize: 11, fontWeight: 600 }}>
                           Xác nhận
                         </button>
                         <button onClick={() => setShowSchedule(false)}
-                          style={{ padding: '5px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', cursor: 'pointer', color: 'var(--text-secondary)' }}>
-                          <X size={13} />
+                          style={{ display: 'flex', padding: '3px', borderRadius: 5, border: '1px solid var(--border)', background: 'transparent', cursor: 'pointer', color: 'var(--text-secondary)' }}>
+                          <X size={12}/>
                         </button>
                       </>
                     )}
                     {!showSchedule && (
                       <button onClick={() => setShowSchedule(true)}
-                        style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 12px', borderRadius: 7, border: '1px solid #f59e0b', background: 'rgba(245,158,11,0.1)', color: '#f59e0b', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>
-                        <Clock size={13} /> Lên lịch
+                        style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 6, border: '1px solid #f59e0b', background: 'rgba(245,158,11,0.1)', color: '#f59e0b', cursor: 'pointer', fontSize: 11, fontWeight: 600 }}>
+                        <Clock size={12}/> Lên lịch
                       </button>
                     )}
                   </div>
                   <button onClick={() => setSelectedIds(new Set())}
-                    style={{ padding: '5px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', cursor: 'pointer', color: 'var(--text-secondary)' }}>
-                    <X size={13} />
+                    style={{ display: 'flex', padding: '3px', borderRadius: 5, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--text-muted)' }}
+                    title="Bỏ chọn">
+                    <X size={13}/>
                   </button>
-                </>
+                </div>
               )}
             </div>
           )}
@@ -590,9 +803,10 @@ function PlanDetail({ planId, companies, onBack }) {
           ) : Object.keys(clusters).length === 0 ? (
             <div style={{ textAlign: 'center', padding: 30, color: 'var(--text-secondary)' }}>Không có keyword nào khớp với bộ lọc</div>
           ) : (
-            Object.entries(clusters).map(([clusterName, clusterItems]) => (
-              <ClusterAccordion key={clusterName} clusterName={clusterName} items={clusterItems}
-                onEditItem={handleEditItem} onCreateArticle={handleCreateArticle} onDeleteItem={handleDeleteItem} creating={creating}
+            Object.entries(clusters).map(([clusterName, clusterItems], idx) => (
+              <ClusterAccordion key={clusterName} clusterIdx={idx} clusterName={clusterName} items={clusterItems}
+                onEditItem={handleEditItem} onCreateArticle={handleCreateArticle} onDeleteItem={handleDeleteItem}
+                onRemoveVariant={handleRemoveVariant} creating={creating}
                 selectedIds={selectedIds} onToggleSelect={handleToggleSelect} />
             ))
           )}

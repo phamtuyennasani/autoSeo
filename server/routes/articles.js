@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { db } = require('../data/store');
-const { generateArticle } = require('../services/gemini');
+const { generateArticle, generateFanpageArticle } = require('../services/gemini');
 const { getEffectiveApiConfig } = require('../services/apiConfig');
 const { getSetting } = require('./settings');
 const { applyInlineStyles } = require('../services/htmlUtils');
@@ -121,7 +121,10 @@ async function checkArticleLimit(user) {
 
 // ─── Helper: gọi AI + lưu token + lưu DB ─────────────────────────────────────
 async function generateAndSave(keyword, title, companyId, company, createdBy = null, userConfig = {}, keywordId = null, writtenBy = null) {
-  const result = await generateArticle(keyword, title, company, userConfig);
+  const isFanpage = userConfig.contentType === 'fanpage';
+  const result = isFanpage
+    ? await generateFanpageArticle(keyword, title, company, userConfig)
+    : await generateArticle(keyword, title, company, userConfig);
 
   if (result.usage) {
     const usageId = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}-article`;
@@ -131,10 +134,24 @@ async function generateAndSave(keyword, title, companyId, company, createdBy = n
     });
   }
 
-  let { content = '', seo_title = title, seo_description = '', image_prompts = [] } = result;
+  let content, seo_title, seo_description, image_prompts;
+  if (isFanpage) {
+    const hashtagStr = Array.isArray(result.hashtags) ? result.hashtags.join(' ') : '';
+    content         = result.caption || '';
+    seo_title       = result.post_type || title;
+    seo_description = hashtagStr;
+    image_prompts   = result.image_prompt ? [result.image_prompt] : [];
+  } else {
+    content         = result.content         || '';
+    seo_title       = result.seo_title       || title;
+    seo_description = result.seo_description || '';
+    image_prompts   = result.image_prompts   || [];
+  }
 
-  // Step 6: Inject internal links (fail-safe — không bao giờ block tạo bài)
-  content = await applyInternalLinks(content, companyId, title, company.url);
+  // Step 6: Inject internal links (chỉ cho blog, bỏ qua fanpage)
+  if (!isFanpage) {
+    content = await applyInternalLinks(content, companyId, title, company.url);
+  }
 
   // Nếu bài đã tồn tại (cùng keywordId + title, hoặc keyword + title nếu chưa có keywordId) → lưu version cũ rồi UPDATE
   const existingQuery = keywordId
@@ -408,6 +425,7 @@ router.post('/', async (req, res) => {
     const compResult = await db.execute({ sql: 'SELECT * FROM companies WHERE id = ?', args: [companyId] });
     const company = compResult.rows[0];
     if (!company) return res.status(404).json({ error: 'Không tìm thấy thông tin công ty' });
+    try { if (company.article_styles) company.article_styles = JSON.parse(company.article_styles); } catch { company.article_styles = {}; }
 
     const apiConfig = await getEffectiveApiConfig(user.id);
     if (apiConfig.blocked) {
@@ -418,6 +436,14 @@ router.post('/', async (req, res) => {
     if (apiConfig.usingSystemKey && !isRoot(user)) {
       const limitErr = await checkArticleLimit(user);
       if (limitErr) return res.status(429).json(limitErr);
+    }
+
+    // Lấy content_type của keyword để chọn đúng prompt
+    if (keywordId) {
+      try {
+        const kwRes = await db.execute({ sql: 'SELECT content_type FROM keywords WHERE id = ?', args: [keywordId] });
+        if (kwRes.rows[0]?.content_type) apiConfig.contentType = kwRes.rows[0].content_type;
+      } catch { /* giữ mặc định nếu lỗi */ }
     }
 
     const article = await generateAndSave(keyword, title, companyId, company, effectiveCreatedBy, apiConfig, keywordId, writtenBy);
@@ -451,6 +477,7 @@ router.post('/batch', async (req, res) => {
   const compResult = await db.execute({ sql: 'SELECT * FROM companies WHERE id = ?', args: [companyId] });
   const company = compResult.rows[0];
   if (!company) return res.status(404).json({ error: 'Không tìm thấy thông tin công ty' });
+  try { if (company.article_styles) company.article_styles = JSON.parse(company.article_styles); } catch { company.article_styles = {}; }
 
   const apiConfig = await getEffectiveApiConfig(user.id);
   if (apiConfig.blocked) {
@@ -461,6 +488,14 @@ router.post('/batch', async (req, res) => {
   if (apiConfig.usingSystemKey && !isRoot(user)) {
     const limitErr = await checkArticleLimit(user);
     if (limitErr) return res.status(429).json(limitErr);
+  }
+
+  // Lấy content_type của keyword để chọn đúng prompt
+  if (keywordId) {
+    try {
+      const kwRes = await db.execute({ sql: 'SELECT content_type FROM keywords WHERE id = ?', args: [keywordId] });
+      if (kwRes.rows[0]?.content_type) apiConfig.contentType = kwRes.rows[0].content_type;
+    } catch { /* giữ mặc định nếu lỗi */ }
   }
 
   res.setHeader('Content-Type', 'text/event-stream');

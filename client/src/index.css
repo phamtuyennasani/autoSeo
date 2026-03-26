@@ -687,7 +687,7 @@ body {
 }
 
 .btn-outline {
-  background: transparent;
+  background: var(--bg-panel);
   color: var(--text-secondary);
   border: 1px solid var(--border);
 }

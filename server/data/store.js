@@ -259,7 +259,8 @@ async function initDb() {
     { table: 'articles',   col: 'chuki', ddl: 'ALTER TABLE articles ADD COLUMN chuki TEXT' },
     // source — 'webhook' nếu tạo từ CRM1, null nếu tạo thủ công
     { table: 'batch_jobs',     col: 'source', ddl: "ALTER TABLE batch_jobs ADD COLUMN source TEXT" },
-    { table: 'keywords',       col: 'source', ddl: "ALTER TABLE keywords ADD COLUMN source TEXT" },
+    { table: 'keywords',       col: 'source',        ddl: "ALTER TABLE keywords ADD COLUMN source TEXT" },
+    { table: 'keywords',       col: 'content_type',  ddl: "ALTER TABLE keywords ADD COLUMN content_type TEXT DEFAULT 'blog'" },
     // webhook_events — lưu email CRM1 gửi lên để tìm user
     { table: 'webhook_events', col: 'email',  ddl: 'ALTER TABLE webhook_events ADD COLUMN email TEXT' },
     // AI provider — hỗ trợ multi-provider (openai, gemini, ...)
@@ -276,6 +277,8 @@ async function initDb() {
     { table: 'users', col: 'custom_prompt',    ddl: 'ALTER TABLE users ADD COLUMN custom_prompt TEXT' },
     // companies — per-website article style config
     { table: 'companies', col: 'article_styles', ddl: 'ALTER TABLE companies ADD COLUMN article_styles TEXT' },
+    { table: 'keyword_plan_items', col: 'variants', ddl: "ALTER TABLE keyword_plan_items ADD COLUMN variants TEXT NOT NULL DEFAULT '[]'" },
+    { table: 'keyword_plan_items', col: 'recommended_word_count', ddl: 'ALTER TABLE keyword_plan_items ADD COLUMN recommended_word_count INTEGER NOT NULL DEFAULT 0' },
   ];
 
   for (const m of migrations) {

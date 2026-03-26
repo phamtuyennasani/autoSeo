@@ -44,6 +44,19 @@ async function generateArticle(keyword, title, companyInfo, config = {}) {
 }
 
 /**
+ * Viết bài đăng Fanpage hoàn chỉnh.
+ * @param {string} keyword
+ * @param {string} title
+ * @param {object} companyInfo  - { name, url, info }
+ * @param {object} config       - { apiKey?, modelName?, provider? }
+ * @returns {Promise<{ caption, hashtags, image_prompt, post_type, usage }>}
+ */
+async function generateFanpageArticle(keyword, title, companyInfo, config = {}) {
+  const provider = getProvider(resolveProviderName(config));
+  return provider.generateFanpageArticle(keyword, title, companyInfo, config);
+}
+
+/**
  * Phân tích danh sách keyword: clustering, search intent, content angle.
  * @param {string[]} keywords
  * @param {object} config  - { apiKey?, modelName?, provider? }
@@ -54,4 +67,4 @@ async function analyzeKeywords(keywords, config = {}) {
   return provider.analyzeKeywords(keywords, config);
 }
 
-module.exports = { generateTitles, generateArticle, analyzeKeywords };
+module.exports = { generateTitles, generateArticle, generateFanpageArticle, analyzeKeywords };

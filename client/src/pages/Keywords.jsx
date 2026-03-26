@@ -65,6 +65,7 @@ const Keywords = () => {
   // Add keyword modal
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [keywordInput, setKeywordInput] = useState('');
+  const [contentType, setContentType] = useState('blog'); // 'blog' | 'fanpage'
   const [selectedCompanyId, setSelectedCompanyId] = useState('');
   const [titleCount, setTitleCount] = useState(10);
   const [manualTitlesInput, setManualTitlesInput] = useState('');
@@ -333,7 +334,7 @@ const Keywords = () => {
   // Bắt đầu viết tất cả bằng hàng đợi nền (SSE)
   const handleWriteAllQueue = async () => {
     if (!selectedKeyword || writeQueueJob?.status === 'running') return;
-    const allUnwritten = (selectedKeyword.titles || []).filter(
+    const allUnwritten = (selectedKeyword.titles || []).map(t => typeof t === 'string' ? t : t.title).filter(
       t => !articlesOfKeyword.find(a => a.title === t) && !pendingBatchTitles.has(t)
     );
     const unwrittenTitles = checkedTitles.size > 0
@@ -376,11 +377,13 @@ const Keywords = () => {
       await apiClient.post(API_KEYWORD, {
         keyword: keywordInput,
         companyId: selectedCompanyId,
+        contentType,
         ...(parsedManual ? { manualTitles: parsedManual } : { titleCount }),
       });
       setKeywordInput('');
       setTitleCount(10);
       setManualTitlesInput('');
+      setContentType('blog');
       setIsAddModalOpen(false);
       refreshStats(); // cập nhật token stats trên topbar
       fetchData();
@@ -523,7 +526,7 @@ const Keywords = () => {
   // Gửi Gemini Batch Job — nhận scheduledAt (ISO string) nếu hẹn giờ, null nếu gửi ngay
   const handleWriteAll = async (scheduledAt = null) => {
     if (!selectedKeyword || isWritingAll) return;
-    const allUnwritten = (selectedKeyword.titles || []).filter(
+    const allUnwritten = (selectedKeyword.titles || []).map(t => typeof t === 'string' ? t : t.title).filter(
       t => !articlesOfKeyword.find(a => a.title === t) && !pendingBatchTitles.has(t)
     );
     const unwrittenTitles = batchCheckedTitles.size > 0
@@ -769,12 +772,21 @@ const Keywords = () => {
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '12px' }}>
             <CopyBtn field="content" />
           </div>
-          <div
-            ref={articleContentRef}
-            className="article-html-content"
-            id='seo-html-content'
-            dangerouslySetInnerHTML={{ __html: viewingArticle.content || '' }}
-          />
+          {selectedKeyword?.content_type === 'fanpage' ? (
+            <div
+              id='seo-html-content'
+              style={{ whiteSpace: 'pre-wrap', lineHeight: '1.8', fontSize: '15px', color: 'var(--text-primary)' }}
+            >
+              {viewingArticle.content || ''}
+            </div>
+          ) : (
+            <div
+              ref={articleContentRef}
+              className="article-html-content"
+              id='seo-html-content'
+              dangerouslySetInnerHTML={{ __html: viewingArticle.content || '' }}
+            />
+          )}
         </div>
       </div>
 
@@ -896,8 +908,9 @@ const Keywords = () => {
   // ============================================================
   if (selectedKeyword) {
     const company = getCompany(selectedKeyword.companyId);
-    const titles = selectedKeyword.titles || [];
-    const unwrittenTitles = titles.filter(t => !getArticleForTitle(t));
+    const titles = (selectedKeyword.titles || []).map(t => typeof t === 'string' ? { title: t, topic: '' } : t);
+    const titleStrings = titles.map(t => t.title);
+    const unwrittenTitles = titleStrings.filter(t => !getArticleForTitle(t));
     const unwrittenCount = unwrittenTitles.length;
     const writtenCount = titles.length - unwrittenCount;
     // Tiêu đề eligible cho SSE và Batch: chưa viết + chưa nằm trong pending batch
@@ -1045,7 +1058,8 @@ const Keywords = () => {
                 </div>
               )}
               {/* PUBLISH HÀNG LOẠT */}
-              {articlesOfKeyword.filter(a => a.publish_status !== 'published').length > 0 && !isWritingAll && writeQueueJob?.status !== 'running' &&
+              {selectedKeyword?.content_type !== 'fanpage' &&
+               articlesOfKeyword.filter(a => a.publish_status !== 'published').length > 0 && !isWritingAll && writeQueueJob?.status !== 'running' &&
                (isRoot || currentUser?.publish_api_url || articlesOfKeyword.some(a => a.company_publish_api_url)) && (
                 <button
                   onClick={handlePublishBatch}
@@ -1112,7 +1126,9 @@ const Keywords = () => {
           )}
 
           <div className="title-list">
-            {titles.length > 0 ? titles.map((title, idx) => {
+            {titles.length > 0 ? titles.map((item, idx) => {
+              const title = item.title;
+              const topic = item.topic || '';
               const article = getArticleForTitle(title);
               const isThisWriting = isWritingAll && !article;
               const isInQueue = writeQueueTitles.has(title); // title này đã được submit vào SSE queue
@@ -1187,9 +1203,18 @@ const Keywords = () => {
                               : <Clock size={16} color="var(--text-muted)" style={{ flexShrink: 0 }} />
                   }
 
-                  {/* Title */}
-                  <span style={{ fontSize: '14px', lineHeight: '1.5', color: 'var(--text-primary)', flex: 1 }}>
+                  {/* Title + Topic tag */}
+                  <span style={{ fontSize: '14px', lineHeight: '1.5', color: 'var(--text-primary)', flex: 1, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                     {title}
+                    {topic && (
+                      <span style={{
+                        fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 20,
+                        background: 'var(--accent-subtle)', color: 'var(--accent)',
+                        border: '1px solid rgba(99,102,241,0.2)', whiteSpace: 'nowrap', flexShrink: 0,
+                      }}>
+                        {topic}
+                      </span>
+                    )}
                   </span>
 
                   {/* Date written */}
@@ -1229,7 +1254,8 @@ const Keywords = () => {
                         >
                           <Edit3 size={13} /> Sửa
                         </button>
-                        {article.publish_status !== 'published' &&
+                        {selectedKeyword?.content_type !== 'fanpage' &&
+                         article.publish_status !== 'published' &&
                          (isRoot || article.company_publish_api_url || currentUser?.publish_api_url) && (
                           <button
                             onClick={() => handlePublishArticle(article)}
@@ -1373,9 +1399,10 @@ const Keywords = () => {
 
         {/* BATCH MODAL */}
         {isBatchModalOpen && (() => {
-          const allTitles = selectedKeyword.titles || [];
+          const allTitles = (selectedKeyword.titles || []).map(t => typeof t === 'string' ? { title: t, topic: '' } : t);
+          const allTitleStrings = allTitles.map(t => t.title);
           // Tiêu đề chưa viết và CHƯA nằm trong pending batch nào
-          const allUnwritten = allTitles.filter(t =>
+          const allUnwritten = allTitleStrings.filter(t =>
             !articlesOfKeyword.find(a => a.title === t) && !pendingBatchTitles.has(t)
           );
           const batchChecked = allUnwritten.filter(t => batchCheckedTitles.has(t));
@@ -1474,7 +1501,8 @@ const Keywords = () => {
 
                     {/* Scrollable list */}
                     <div style={{ maxHeight: 200, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 3, paddingRight: 2 }}>
-                      {allTitles.map((t, i) => {
+                      {allTitles.map((item, i) => {
+                        const t = item.title;
                         const isWritten = !!articlesOfKeyword.find(a => a.title === t);
                         const isPending = pendingBatchTitles.has(t);
                         const isDisabled = isWritten || isPending;
@@ -1851,8 +1879,15 @@ const Keywords = () => {
                 <div key={item.id} className="table-row" style={{ gridTemplateColumns: showMultiUser ? '1fr 130px 110px 130px 110px' : '1fr 130px 110px 110px' }}>
                   {/* Từ khóa + công ty */}
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ fontWeight: '600', fontSize: '14px', color: 'var(--text-primary)', marginBottom: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {item.keyword}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: '4px' }}>
+                      <span style={{ fontWeight: '600', fontSize: '14px', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {item.keyword}
+                      </span>
+                      {item.content_type === 'fanpage' && (
+                        <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 10, background: 'rgba(236,72,153,0.1)', color: '#ec4899', border: '1px solid rgba(236,72,153,0.25)', flexShrink: 0 }}>
+                          📱 Fanpage
+                        </span>
+                      )}
                     </div>
                     {company ? (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
@@ -1990,6 +2025,33 @@ const Keywords = () => {
             </div>
             <div className="modal-body">
               <form onSubmit={handleAddKeyword}>
+                {/* Loại nội dung */}
+                <div className="input-group">
+                  <label className="input-label">Loại nội dung</label>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    {[
+                      { value: 'blog', label: '📝 Blog / Bài viết SEO' },
+                      { value: 'fanpage', label: '📱 Fanpage / Mạng xã hội' },
+                    ].map(opt => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => setContentType(opt.value)}
+                        disabled={isGenerating}
+                        style={{
+                          flex: 1, padding: '8px 12px', borderRadius: 'var(--radius-md)',
+                          border: `2px solid ${contentType === opt.value ? 'var(--accent)' : 'var(--border)'}`,
+                          background: contentType === opt.value ? 'var(--accent-subtle)' : 'var(--bg-input)',
+                          color: contentType === opt.value ? 'var(--accent)' : 'var(--text-secondary)',
+                          fontWeight: contentType === opt.value ? 600 : 400,
+                          fontSize: 13, cursor: 'pointer', transition: 'all 0.15s',
+                        }}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <div className="input-group">
                   <label className="input-label">Website / Công Ty áp dụng *</label>
                   {companies.length === 0 ? (
@@ -2006,30 +2068,32 @@ const Keywords = () => {
                   )}
                 </div>
                 <div className="input-group">
-                  <label className="input-label">Từ khóa SEO cần phân tích *</label>
+                  <label className="input-label">{contentType === 'fanpage' ? 'Chủ đề / Từ khóa *' : 'Từ khóa SEO cần phân tích *'}</label>
                   <input
                     type="text" className="input-field"
-                    placeholder="VD: Thiết kế nội thất chung cư cao cấp"
+                    placeholder={contentType === 'fanpage' ? 'VD: Thiết kế nội thất, Nội thất chung cư...' : 'VD: Thiết kế nội thất chung cư cao cấp'}
                     value={keywordInput} onChange={e => setKeywordInput(e.target.value)}
                     required disabled={isGenerating} autoFocus
                   />
                 </div>
                 <div className="input-group">
                   <label className="input-label">
-                    Tiêu đề có sẵn
-                    <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 400, color: 'var(--text-muted)' }}>(Tùy chọn — mỗi tiêu đề 1 dòng)</span>
+                    {contentType === 'fanpage' ? 'Ý tưởng bài có sẵn' : 'Tiêu đề có sẵn'}
+                    <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 400, color: 'var(--text-muted)' }}>(Tùy chọn — mỗi dòng 1 ý tưởng)</span>
                   </label>
                   <textarea
                     className="input-field"
                     rows={4}
-                    placeholder={'Nhập tiêu đề thủ công, mỗi dòng 1 tiêu đề.\nNếu để trống, AI sẽ tự sinh tiêu đề.'}
+                    placeholder={contentType === 'fanpage'
+                      ? 'Nhập caption/ý tưởng bài đăng, mỗi dòng 1 bài.\nNếu để trống, AI sẽ tự sinh ý tưởng.'
+                      : 'Nhập tiêu đề thủ công, mỗi dòng 1 tiêu đề.\nNếu để trống, AI sẽ tự sinh tiêu đề.'}
                     value={manualTitlesInput}
                     onChange={e => setManualTitlesInput(e.target.value)}
                     disabled={isGenerating}
                   />
                   {manualTitlesInput.trim() && (
                     <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 5 }}>
-                      {manualTitlesInput.split('\n').filter(t => t.trim()).length} tiêu đề
+                      {manualTitlesInput.split('\n').filter(t => t.trim()).length} {contentType === 'fanpage' ? 'ý tưởng' : 'tiêu đề'}
                     </div>
                   )}
                 </div>
@@ -2037,7 +2101,7 @@ const Keywords = () => {
                 {!manualTitlesInput.trim() && (
                   <div className="input-group">
                     <label className="input-label">
-                      Số tiêu đề AI cần tạo
+                      {contentType === 'fanpage' ? 'Số ý tưởng AI cần tạo' : 'Số tiêu đề AI cần tạo'}
                       <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 400, color: 'var(--text-muted)' }}>(1 – 30)</span>
                     </label>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -2062,8 +2126,10 @@ const Keywords = () => {
                 <div className="info-box info-box-blue" style={{ marginBottom: '16px' }}>
                   <Sparkles size={14} style={{ flexShrink: 0, marginTop: '1px' }} />
                   {manualTitlesInput.trim()
-                    ? <span>Sẽ lưu <strong>{manualTitlesInput.split('\n').filter(t => t.trim()).length} tiêu đề</strong> bạn đã nhập, không dùng AI.</span>
-                    : <span>Hệ thống sẽ tự động phân tích và sinh <strong>{titleCount} tiêu đề</strong> tối ưu SEO cho từ khóa này.</span>
+                    ? <span>Sẽ lưu <strong>{manualTitlesInput.split('\n').filter(t => t.trim()).length} {contentType === 'fanpage' ? 'ý tưởng bài đăng' : 'tiêu đề'}</strong> bạn đã nhập, không dùng AI.</span>
+                    : contentType === 'fanpage'
+                      ? <span>AI sẽ tạo <strong>{titleCount} ý tưởng bài đăng Fanpage</strong> hấp dẫn, đa dạng dạng bài cho chủ đề này.</span>
+                      : <span>Hệ thống sẽ tự động phân tích và sinh <strong>{titleCount} tiêu đề</strong> tối ưu SEO cho từ khóa này.</span>
                   }
                 </div>
                 <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>

@@ -77,6 +77,7 @@ router.get('/', async (req, res) => {
     const data = result.rows.map(k => {
       let parsedTitles = [];
       try { parsedTitles = JSON.parse(k.titles); } catch (e) {}
+      parsedTitles = parsedTitles.map(t => typeof t === 'string' ? { title: t, topic: '' } : t);
       return { ...k, titles: parsedTitles, titleCount: parsedTitles.length };
     });
 
@@ -91,14 +92,15 @@ router.get('/', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     const user = req.user || { id: 'admin', role: 'admin' };
-    const { keyword, companyId, titleCount, manualTitles } = req.body;
+    const { keyword, companyId, titleCount, manualTitles, contentType } = req.body;
     if (!keyword || !companyId) return res.status(400).json({ error: 'Keyword và Company ID là bắt buộc' });
+    const resolvedContentType = contentType === 'fanpage' ? 'fanpage' : 'blog';
 
     let titles = [];
 
     // Nếu user tự nhập tiêu đề → bỏ qua AI hoàn toàn
     if (Array.isArray(manualTitles) && manualTitles.length > 0) {
-      titles = manualTitles.filter(t => typeof t === 'string' && t.trim()).map(t => t.trim());
+      titles = manualTitles.filter(t => typeof t === 'string' && t.trim()).map(t => ({ title: t.trim(), topic: '' }));
       console.log(`Dùng ${titles.length} tiêu đề do user nhập cho keyword: ${keyword}`);
     } else {
       const count = Math.max(1, Math.min(30, parseInt(titleCount) || 10));
@@ -113,7 +115,7 @@ router.post('/', async (req, res) => {
 
       try {
         console.log(`Đang dùng AI tạo ${count} titles...`);
-        const result = await generateTitles(keyword, searchContext, count, apiConfig);
+        const result = await generateTitles(keyword, searchContext, count, { ...apiConfig, contentType: resolvedContentType });
         titles = result.titles.slice(0, count);
 
         if (result.usage) {
@@ -133,11 +135,11 @@ router.post('/', async (req, res) => {
     const createdAt = new Date().toISOString();
 
     await db.execute({
-      sql: 'INSERT INTO keywords (id, keyword, titles, companyId, createdAt, createdBy) VALUES (?, ?, ?, ?, ?, ?)',
-      args: [id, keyword, JSON.stringify(titles), companyId, createdAt, user.id],
+      sql: 'INSERT INTO keywords (id, keyword, titles, companyId, createdAt, createdBy, content_type) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      args: [id, keyword, JSON.stringify(titles), companyId, createdAt, user.id, resolvedContentType],
     });
 
-    res.json({ id, keyword, titles, companyId, createdAt, createdBy: user.id, titleCount: titles.length, articleCount: 0 });
+    res.json({ id, keyword, titles, companyId, createdAt, createdBy: user.id, content_type: resolvedContentType, titleCount: titles.length, articleCount: 0 });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Internal server error' });

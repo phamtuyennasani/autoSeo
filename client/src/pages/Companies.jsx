@@ -5,6 +5,7 @@ import { Plus, Trash2, Building2, Globe, Pencil, X, Save, User, Upload, Palette,
 import { useAuth } from '../context/AuthContext';
 import { useConfirm } from '../context/ConfirmContext';
 import { AppMultiSelect } from '../components/AppMultiSelect';
+import { FontPicker } from '../components/FontPicker';
 
 import { API } from '../config/api';
 const API_URL = API.companies;
@@ -29,7 +30,7 @@ const INDUSTRIES = [
 ];
 const INDUSTRY_OPTIONS = INDUSTRIES.map(ind => ({ value: ind, label: ind }));
 
-const DEFAULT_STYLES = { fontFamily: '', fontSize: '', lineHeight: '', color: '', h2FontSize: '', h2Color: '', h3FontSize: '', h3Color: '', h4FontSize: '', h4Color: '' };
+const DEFAULT_STYLES = { fontFamily: '', fontSize: '', lineHeight: '', color: '', accentColor: '', h2FontSize: '', h2Color: '', h3FontSize: '', h3Color: '', h4FontSize: '', h4Color: '' };
 
 const Companies = () => {
   const { user: currentUser, authEnabled, canManageUsers } = useAuth();
@@ -51,6 +52,38 @@ const Companies = () => {
   const [editForm, setEditForm] = useState({ name: '', url: '', info: '', contract_code: '', industry: [], publish_api_url: '', auto_publish: false, internal_links_enabled: false, internal_links_max: 3, article_styles: { ...DEFAULT_STYLES } });
   const [saving, setSaving] = useState(false);
   const [showEditStyles, setShowEditStyles] = useState(false);
+
+  // Google Fonts — lazy load khi mở accordion lần đầu
+  const [googleFonts, setGoogleFonts] = useState([]);
+  const [fontsLoading, setFontsLoading] = useState(false);
+  const fontsFetched = React.useRef(false);
+
+  const fetchGoogleFonts = () => {
+    if (fontsFetched.current) return;
+    fontsFetched.current = true;
+    const api = document.querySelector('meta[name="google_font_api"]')?.getAttribute('content');
+    if (!api) return;
+    setFontsLoading(true);
+    const url = `https://www.googleapis.com/webfonts/v1/webfonts?key=${api}&sort=popularity`;
+    fetch(url)
+      .then(r => r.json())
+      .then(data => setGoogleFonts((data.items || []).map(f => ({ family: f.family }))))
+      .catch(() => { fontsFetched.current = false; })
+      .finally(() => setFontsLoading(false));
+  };
+
+  // Load Google Font CSS khi chọn font
+  const loadGoogleFont = (family) => {
+    if (!family) return;
+    const id = `gf-${family.replace(/\s+/g, '-')}`;
+    if (!document.getElementById(id)) {
+      const link = document.createElement('link');
+      link.id = id;
+      link.rel = 'stylesheet';
+      link.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(family)}&display=swap`;
+      document.head.appendChild(link);
+    }
+  };
 
   useEffect(() => { fetchCompanies(); }, []);
   useEffect(() => {
@@ -368,7 +401,7 @@ const Companies = () => {
 
                 {/* Tùy chỉnh style bài viết */}
                 <div style={{ borderTop: '1px solid var(--border)', marginTop: 4, paddingTop: 12 }}>
-                  <button type="button" onClick={() => setShowAddStyles(v => !v)}
+                  <button type="button" onClick={() => { setShowAddStyles(v => !v); fetchGoogleFonts(); }}
                     style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', padding: 0, cursor: 'pointer', width: '100%', marginBottom: showAddStyles ? 12 : 0 }}>
                     <Palette size={14} color="var(--accent)" />
                     <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-primary)' }}>Tùy chỉnh giao diện bài viết</span>
@@ -379,9 +412,13 @@ const Companies = () => {
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 12px' }}>
                       <div className="input-group" style={{ marginBottom: 0 }}>
                         <label className="input-label" style={{ fontSize: 11 }}>Font chữ</label>
-                        <input className="input-field" style={{ fontSize: 12 }} placeholder="VD: Arial, sans-serif"
+                        <FontPicker
                           value={addForm.article_styles.fontFamily}
-                          onChange={e => setAddForm(f => ({ ...f, article_styles: { ...f.article_styles, fontFamily: e.target.value } }))} />
+                          onChange={v => { loadGoogleFont(v); setAddForm(f => ({ ...f, article_styles: { ...f.article_styles, fontFamily: v } })); }}
+                          fonts={googleFonts}
+                          loading={fontsLoading}
+                          placeholder="-- Mặc định --"
+                        />
                       </div>
                       <div className="input-group" style={{ marginBottom: 0 }}>
                         <label className="input-label" style={{ fontSize: 11 }}>Font size tổng</label>
@@ -404,6 +441,17 @@ const Companies = () => {
                           <input className="input-field" style={{ fontSize: 12, flex: 1 }} placeholder="#333333"
                             value={addForm.article_styles.color}
                             onChange={e => setAddForm(f => ({ ...f, article_styles: { ...f.article_styles, color: e.target.value } }))} />
+                        </div>
+                      </div>
+                      <div className="input-group" style={{ marginBottom: 0 }}>
+                        <label className="input-label" style={{ fontSize: 11 }}>Màu chủ đạo (link, blockquote...)</label>
+                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                          <input type="color" value={addForm.article_styles.accentColor || '#6366f1'}
+                            onChange={e => setAddForm(f => ({ ...f, article_styles: { ...f.article_styles, accentColor: e.target.value } }))}
+                            style={{ width: 32, height: 32, padding: 2, border: '1px solid var(--border)', borderRadius: 6, cursor: 'pointer', background: 'none' }} />
+                          <input className="input-field" style={{ fontSize: 12, flex: 1 }} placeholder="#6366f1"
+                            value={addForm.article_styles.accentColor}
+                            onChange={e => setAddForm(f => ({ ...f, article_styles: { ...f.article_styles, accentColor: e.target.value } }))} />
                         </div>
                       </div>
                       <div className="input-group" style={{ marginBottom: 0 }}>
@@ -582,7 +630,7 @@ const Companies = () => {
 
                 {/* Tùy chỉnh style bài viết */}
                 <div style={{ borderTop: '1px solid var(--border)', marginTop: 4, paddingTop: 12 }}>
-                  <button type="button" onClick={() => setShowEditStyles(v => !v)}
+                  <button type="button" onClick={() => { setShowEditStyles(v => !v); fetchGoogleFonts(); }}
                     style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', padding: 0, cursor: 'pointer', width: '100%', marginBottom: showEditStyles ? 12 : 0 }}>
                     <Palette size={14} color="var(--accent)" />
                     <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-primary)' }}>Tùy chỉnh giao diện bài viết</span>
@@ -593,9 +641,13 @@ const Companies = () => {
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 12px' }}>
                       <div className="input-group" style={{ marginBottom: 0 }}>
                         <label className="input-label" style={{ fontSize: 11 }}>Font chữ</label>
-                        <input className="input-field" style={{ fontSize: 12 }} placeholder="VD: Arial, sans-serif"
+                        <FontPicker
                           value={editForm.article_styles.fontFamily}
-                          onChange={e => setEditForm(f => ({ ...f, article_styles: { ...f.article_styles, fontFamily: e.target.value } }))} />
+                          onChange={v => { loadGoogleFont(v); setEditForm(f => ({ ...f, article_styles: { ...f.article_styles, fontFamily: v } })); }}
+                          fonts={googleFonts}
+                          loading={fontsLoading}
+                          placeholder="-- Mặc định --"
+                        />
                       </div>
                       <div className="input-group" style={{ marginBottom: 0 }}>
                         <label className="input-label" style={{ fontSize: 11 }}>Font size tổng</label>
@@ -618,6 +670,17 @@ const Companies = () => {
                           <input className="input-field" style={{ fontSize: 12, flex: 1 }} placeholder="#333333"
                             value={editForm.article_styles.color}
                             onChange={e => setEditForm(f => ({ ...f, article_styles: { ...f.article_styles, color: e.target.value } }))} />
+                        </div>
+                      </div>
+                      <div className="input-group" style={{ marginBottom: 0 }}>
+                        <label className="input-label" style={{ fontSize: 11 }}>Màu chủ đạo (link, blockquote...)</label>
+                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                          <input type="color" value={editForm.article_styles.accentColor || '#6366f1'}
+                            onChange={e => setEditForm(f => ({ ...f, article_styles: { ...f.article_styles, accentColor: e.target.value } }))}
+                            style={{ width: 32, height: 32, padding: 2, border: '1px solid var(--border)', borderRadius: 6, cursor: 'pointer', background: 'none' }} />
+                          <input className="input-field" style={{ fontSize: 12, flex: 1 }} placeholder="#6366f1"
+                            value={editForm.article_styles.accentColor}
+                            onChange={e => setEditForm(f => ({ ...f, article_styles: { ...f.article_styles, accentColor: e.target.value } }))} />
                         </div>
                       </div>
                       <div className="input-group" style={{ marginBottom: 0 }}>

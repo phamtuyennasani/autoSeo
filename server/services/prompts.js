@@ -20,7 +20,7 @@ OUTPUT RULES (MUST FOLLOW 100%):
  * @param {object} company   - { name, url, info }
  * @returns {string}         - Prompt text gửi cho AI
  */
-function buildArticlePrompt(keyword, title, company) {
+function buildArticlePrompt(keyword, title, company,optionsPromt='') {
   return `# VAI TRÒ
 Bạn là một chuyên gia SEO, Content Marketing hàng đầu. Nhiệm vụ của bạn là viết một bài viết SEO hoàn chỉnh, tự nhiên, có tính thuyết phục, hấp dẫn và tối ưu hóa cho công cụ tìm kiếm.
 
@@ -51,20 +51,23 @@ ${company.info || ''}
 
 ## 3. content (QUAN TRỌNG - ĐỌC KỸ)
 - Định dạng: Markdown
-- Độ dài: Khoảng 1000 từ (±10%)
+- Độ dài: Khoảng 1400 từ (±10%)
 - Không có thẻ <hr>, không có thẻ <h1>
 - Không có tiêu đề nhàm chán: "Mở đầu", "Kết luận", "Tổng kết"
 - Không so sánh trực tiếp với đối thủ
-- Sử dụng H2, H3 hợp lý; từ khóa chính trong ít nhất 2 thẻ H2
+- Sử dụng H2, H3 hợp lý tự nhiên không nhồi nhét; từ khóa chính trong ít nhất 2 thẻ H2
 - Không in đậm H2, H3
 - Đoạn văn ngắn gọn dưới 5 dòng/đoạn
 - Dùng bullet points (-), numbering (1.), bold (**text**) để làm nổi bật ý quan trọng
 - Chèn link tự nhiên: [${company.name}](${company.url})
 - Thêm thông tin liên hệ công ty ở cuối bài
 - Đoạn kết là CTA khéo léo, tự nhiên
+- Làm nổi bật khung thông tin liên hệ
 - Những vị trí cần ảnh thì thêm dòng ghi chú: <!-- image: mô tả ngắn -->
 - Cấu trúc: Mở bài → 2-4 thẻ H2 (mỗi H2 có 1-3 H3) → Phần kết CTA
 - **Mật độ từ khóa chính xuất hiện:** "1% - 1.5%" (tự nhiên, không nhồi nhét).
+
+${optionsPromt}
 
 # QUY TẮC JSON BẮT BUỘC - TUYỆT ĐỐI TUÂN THỦ
 Đây là phần quan trọng nhất. Bạn phải tạo ra JSON hợp lệ có thể parse được bằng JSON.parse().
@@ -94,13 +97,16 @@ ${company.info || ''}
  * @returns {string}
  */
 function buildTitlesPrompt(keyword, searchContext, count = 10) {
+  const format = `[{"title":"Tiêu đề 1","topic":"Chủ đề ngắn"},...]`;
+
   if (searchContext) {
     return `Bạn là một chuyên gia SEO Copywriter. Tôi có từ khóa: "${keyword}".
 Đây là kết quả tìm kiếm Google hiện tại cho từ khóa này:
 ${searchContext}
 
 Dựa vào ngữ cảnh tìm kiếm trên, hãy sáng tạo ${count} tiêu đề bài viết chuẩn SEO, thu hút, CTR cao, đúng ý định tìm kiếm của người dùng cho từ khóa "${keyword}".
-Trả về ĐÚNG MỘT MẢNG JSON hợp lệ chứa ${count} chuỗi tiêu đề. KHÔNG giải thích thêm, KHÔNG markdown. Định dạng: ["Tiêu đề 1", "Tiêu đề 2", ...]`;
+Với mỗi tiêu đề, thêm trường "topic" là chủ đề ngắn gọn (2-4 từ, ví dụ: "Hướng dẫn", "So sánh", "Review", "Kinh nghiệm", "Tin tức"...).
+Trả về ĐÚNG MỘT MẢNG JSON hợp lệ. KHÔNG giải thích thêm, KHÔNG markdown. Định dạng: ${format}`;
   }
 
   return `Bạn là một chuyên gia SEO Copywriter. Tôi có từ khóa: "${keyword}".
@@ -110,12 +116,97 @@ Dựa vào kiến thức SEO chuyên sâu và hiểu biết về thị trường
 - Đa dạng góc độ: thông tin, so sánh, hướng dẫn, review, kinh nghiệm...
 - Thu hút, CTR cao, tự nhiên, không spam từ khóa
 - Độ dài tiêu đề 50-70 ký tự
+- Với mỗi tiêu đề, thêm trường "topic" là chủ đề ngắn gọn (2-4 từ, ví dụ: "Hướng dẫn", "So sánh", "Review", "Kinh nghiệm"...)
 
-Trả về ĐÚNG MỘT MẢNG JSON hợp lệ chứa ${count} chuỗi tiêu đề. KHÔNG giải thích thêm, KHÔNG markdown. Định dạng: ["Tiêu đề 1", "Tiêu đề 2", ...]`;
+Trả về ĐÚNG MỘT MẢNG JSON hợp lệ. KHÔNG giải thích thêm, KHÔNG markdown. Định dạng: ${format}`;
+}
+
+/**
+ * Prompt tạo ý tưởng bài đăng Fanpage từ từ khóa
+ */
+function buildFanpagePostsPrompt(keyword, searchContext, count = 10) {
+  const format = `[{"title":"Nội dung caption bài đăng...","topic":"Loại bài"},...]`;
+
+  const base = searchContext
+    ? `Bạn là chuyên gia Social Media Marketing. Tôi có chủ đề: "${keyword}".\nDây là thông tin liên quan:\n${searchContext}\n\n`
+    : `Bạn là chuyên gia Social Media Marketing. Tôi có chủ đề: "${keyword}".\n\n`;
+
+  return `${base}Hãy tạo ${count} ý tưởng bài đăng Facebook Fanpage hấp dẫn về chủ đề này. Yêu cầu:
+- Ngắn gọn, thu hút, phù hợp mạng xã hội (không phải SEO blog)
+- Đa dạng dạng bài: chia sẻ kiến thức, mẹo hay, câu hỏi tương tác, câu chuyện, quảng bá sản phẩm/dịch vụ, minigame...
+- Có thể dùng emoji phù hợp
+- Trường "title" là caption/nội dung chính của bài đăng (50-150 ký tự)
+- Trường "topic" là dạng bài (2-3 từ, ví dụ: "Mẹo hay", "Hỏi đáp", "Chia sẻ", "Quảng bá", "Câu chuyện"...)
+
+Trả về ĐÚNG MỘT MẢNG JSON hợp lệ. KHÔNG giải thích thêm, KHÔNG markdown. Định dạng: ${format}`;
+}
+
+// ─── Prompt viết bài Fanpage hoàn chỉnh ──────────────────────────────────────
+/**
+ * @param {string} keyword   - Chủ đề / từ khóa chính
+ * @param {string} title     - Tiêu đề / ý tưởng bài đăng
+ * @param {object} company   - { name, url, info }
+ * @param {string} optionsPromt - Yêu cầu bổ sung (tuỳ chọn)
+ * @returns {string}         - Prompt text gửi cho AI
+ */
+function buildFanpageArticlePrompt(keyword, title, company, optionsPromt = '') {
+  return `# VAI TRÒ
+Bạn là một chuyên gia Social Media Marketing, chuyên viết content Facebook Fanpage viral, thu hút tương tác cao và chuyển đổi tốt.
+
+# THÔNG TIN ĐẦU VÀO
+- **Chủ đề / Từ khóa**: "${keyword}"
+- **Ý tưởng bài đăng**: "${title}"
+- **Fanpage / Thương hiệu**: "${company.name}"
+- **Website**: "${company.url}"
+- **Thông tin công ty**:
+${company.info || ''}
+
+# QUY TRÌNH THỰC HIỆN
+1. Xác định mục tiêu bài đăng: tăng tương tác, giáo dục, quảng bá hay chuyển đổi?
+2. Chọn cấu trúc phù hợp: Hook → Nội dung → CTA.
+3. Viết caption tự nhiên, đúng tone Facebook, dùng emoji hợp lý.
+4. Tạo danh sách hashtag liên quan, tối đa 10 hashtag.
+5. Gợi ý mô tả hình ảnh/video đi kèm bài đăng.
+6. Đóng gói JSON hợp lệ.
+
+# YÊU CẦU CHI TIẾT
+
+## 1. caption (NỘI DUNG CHÍNH — QUAN TRỌNG NHẤT)
+- **Hook (2-3 dòng đầu):** Phải cực kỳ thu hút để người đọc nhấn "Xem thêm". Dùng câu hỏi, số liệu gây sốc, hoặc câu chuyện ngắn.
+- **Thân bài:** Cung cấp giá trị thực (mẹo, kiến thức, câu chuyện, lý do). Đoạn ngắn 1-3 dòng, dễ đọc trên mobile. Dùng emoji ở đầu mỗi ý để dễ scan. Dùng xuống dòng (\\n) nhiều để thoáng.
+- **CTA cuối bài:** Kêu gọi hành động rõ ràng (comment, share, nhắn tin, truy cập link). Đề cập tự nhiên tới ${company.name} hoặc link ${company.url} nếu phù hợp.
+- **Tone:** Gần gũi, thân thiện, như người thật nói chuyện. KHÔNG dùng ngôn ngữ quảng cáo cứng nhắc.
+- **Độ dài:** 150-400 từ tùy dạng bài. Không quá ngắn (thiếu giá trị), không quá dài (mất tập trung).
+
+## 2. hashtags
+- Mảng 5-10 hashtag tiếng Việt và tiếng Anh liên quan đến chủ đề
+- Ưu tiên hashtag phổ biến trên Facebook Việt Nam
+- Định dạng: ["#hashtag1", "#hashtag2", ...]
+
+## 3. image_prompt
+- Mô tả hình ảnh/ảnh đồ hoạ nên dùng cho bài đăng này (dùng để tạo ảnh AI hoặc tìm stock)
+- Ngắn gọn, cụ thể, bằng tiếng Việt (50-100 ký tự)
+
+## 4. post_type
+- Phân loại dạng bài: "Mẹo hay" | "Chia sẻ kiến thức" | "Câu chuyện" | "Quảng bá" | "Hỏi đáp" | "Minigame" | "Tin tức" | "Cảm hứng"
+
+${optionsPromt}
+
+# QUY TẮC JSON BẮT BUỘC
+- Chỉ trả về DUY NHẤT một JSON object thuần túy
+- KHÔNG bọc trong markdown code block
+- Bắt đầu ngay bằng { và kết thúc bằng }
+- Xuống dòng trong caption → dùng \\n
+- Dấu ngoặc kép trong string → dùng \\"
+
+## Mẫu JSON chuẩn:
+{"caption":"Hook hấp dẫn 2-3 dòng đầu...\\n\\n🔥 Ý 1\\n✅ Ý 2\\n💡 Ý 3\\n\\nCTA tự nhiên cuối bài...","hashtags":["#hashtag1","#hashtag2","#hashtag3"],"image_prompt":"Mô tả hình ảnh phù hợp cho bài đăng","post_type":"Mẹo hay"}`;
 }
 
 module.exports = {
   ARTICLE_SYSTEM_INSTRUCTION,
   buildArticlePrompt,
   buildTitlesPrompt,
+  buildFanpagePostsPrompt,
+  buildFanpageArticlePrompt,
 };
