@@ -1,8 +1,23 @@
 // Inject inline styles vào các thẻ HTML sau khi markdown → HTML
-// CSS variables (var(--accent) v.v.) hoạt động bình thường trong browser inline styles
-function applyInlineStyles(html) {
+// styles (optional) — object từ companies.article_styles để ghi đè default
+
+function applyInlineStyles(html, styles = {}) {
   if (!html) return '';
-  const hBase = "font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;color:var(--text-primary);margin-top:2em;margin-bottom:0.6em;line-height:1.4;letter-spacing:-0.2px;";
+
+  const s = {
+    fontFamily: styles.fontFamily || "'Plus Jakarta Sans',sans-serif",
+    fontSize:   styles.fontSize   || '16px',
+    lineHeight: styles.lineHeight || '1.8',
+    color:      styles.color      || 'var(--text-primary)',
+    h2FontSize: styles.h2FontSize || '20px',
+    h2Color:    styles.h2Color    || 'var(--text-primary)',
+    h3FontSize: styles.h3FontSize || '17px',
+    h3Color:    styles.h3Color    || 'var(--text-primary)',
+    h4FontSize: styles.h4FontSize || '15px',
+    h4Color:    styles.h4Color    || 'var(--text-primary)',
+  };
+
+  const hBase = `font-family:${s.fontFamily};font-weight:700;margin-top:2em;margin-bottom:0.6em;line-height:1.4;letter-spacing:-0.2px;`;
 
   // 1. Xử lý <pre><code> trước để tránh xung đột với inline code
   html = html.replace(/<pre(\s[^>]*)?>[\s\S]*?<\/pre>/gi, (match, preAttrs = '') => {
@@ -12,16 +27,16 @@ function applyInlineStyles(html) {
   });
 
   // 2. Headings
-  html = html.replace(/<h1(\s[^>]*)?>/gi, (_, a = '') => `<h1${a} style="${hBase}font-size:26px;border-bottom:2px solid var(--border);padding-bottom:10px;">`);
-  html = html.replace(/<h2(\s[^>]*)?>/gi, (_, a = '') => `<h2${a} style="${hBase}font-size:20px;">`);
-  html = html.replace(/<h3(\s[^>]*)?>/gi, (_, a = '') => `<h3${a} style="${hBase}font-size:17px;">`);
-  html = html.replace(/<h4(\s[^>]*)?>/gi, (_, a = '') => `<h4${a} style="${hBase}font-size:15px;">`);
+  html = html.replace(/<h1(\s[^>]*)?>/gi, (_, a = '') => `<h1${a} style="${hBase}font-size:26px;color:${s.h2Color};border-bottom:2px solid var(--border);padding-bottom:10px;">`);
+  html = html.replace(/<h2(\s[^>]*)?>/gi, (_, a = '') => `<h2${a} style="${hBase}font-size:${s.h2FontSize};color:${s.h2Color};">`);
+  html = html.replace(/<h3(\s[^>]*)?>/gi, (_, a = '') => `<h3${a} style="${hBase}font-size:${s.h3FontSize};color:${s.h3Color};">`);
+  html = html.replace(/<h4(\s[^>]*)?>/gi, (_, a = '') => `<h4${a} style="${hBase}font-size:${s.h4FontSize};color:${s.h4Color};">`);
 
   // 3. Paragraph, list
-  html = html.replace(/<p(\s[^>]*)?>/gi,  (_, a = '') => `<p${a} style="margin-bottom:1.2em;color:var(--text-primary);">`);
+  html = html.replace(/<p(\s[^>]*)?>/gi,  (_, a = '') => `<p${a} style="margin-bottom:1.2em;color:${s.color};font-size:${s.fontSize};line-height:${s.lineHeight};font-family:${s.fontFamily};">`);
   html = html.replace(/<ul(\s[^>]*)?>/gi, (_, a = '') => `<ul${a} style="padding-left:1.6em;margin-bottom:1.2em;">`);
   html = html.replace(/<ol(\s[^>]*)?>/gi, (_, a = '') => `<ol${a} style="padding-left:1.6em;margin-bottom:1.2em;">`);
-  html = html.replace(/<li(\s[^>]*)?>/gi, (_, a = '') => `<li${a} style="margin-bottom:0.4em;">`);
+  html = html.replace(/<li(\s[^>]*)?>/gi, (_, a = '') => `<li${a} style="margin-bottom:0.4em;color:${s.color};font-size:${s.fontSize};line-height:${s.lineHeight};">`);
 
   // 4. Blockquote
   html = html.replace(/<blockquote(\s[^>]*)?>/gi, (_, a = '') =>
@@ -32,7 +47,7 @@ function applyInlineStyles(html) {
     `<code${a} style="font-family:'Fira Code','Consolas',monospace;font-size:13px;background:rgba(99,102,241,0.1);color:#a78bfa;padding:2px 6px;border-radius:4px;">`);
 
   // 6. Inline formatting
-  html = html.replace(/<strong(\s[^>]*)?>/gi, (_, a = '') => `<strong${a} style="font-weight:700;color:var(--text-primary);">`);
+  html = html.replace(/<strong(\s[^>]*)?>/gi, (_, a = '') => `<strong${a} style="font-weight:700;color:${s.color};">`);
   html = html.replace(/<em(\s[^>]*)?>/gi,     (_, a = '') => `<em${a} style="font-style:italic;color:var(--text-secondary);">`);
   html = html.replace(/<a(\s[^>]*)?>/gi,      (_, a = '') => `<a${a} style="color:var(--accent);text-decoration:underline;text-underline-offset:3px;">`);
 
@@ -41,8 +56,8 @@ function applyInlineStyles(html) {
 
   // 8. Table
   html = html.replace(/<table(\s[^>]*)?>/gi, (_, a = '') => `<table${a} style="width:100%;border-collapse:collapse;margin:1.5em 0;font-size:14px;">`);
-  html = html.replace(/<th(\s[^>]*)?>/gi,    (_, a = '') => `<th${a} style="padding:10px 14px;border:1px solid var(--border);text-align:left;background:var(--bg-panel);font-weight:600;color:var(--text-primary);">`);
-  html = html.replace(/<td(\s[^>]*)?>/gi,    (_, a = '') => `<td${a} style="padding:10px 14px;border:1px solid var(--border);text-align:left;">`);
+  html = html.replace(/<th(\s[^>]*)?>/gi,    (_, a = '') => `<th${a} style="padding:10px 14px;border:1px solid var(--border);text-align:left;background:var(--bg-panel);font-weight:600;color:${s.color};">`);
+  html = html.replace(/<td(\s[^>]*)?>/gi,    (_, a = '') => `<td${a} style="padding:10px 14px;border:1px solid var(--border);text-align:left;color:${s.color};">`);
 
   return html;
 }

@@ -1,0 +1,3 @@
+Hiện tại, khi AI trả về markdow, chúng ta dùng applyInlineStyles để chuyển qa HTML và ap style. nhưng cách này lại qá cứng nhắc ko phù hợp vs nhiều công ty / website.
+Nên tôi muốn tại mục thông tin công ty/ website, mỗi website sẽ có mục tùy chỉnh style riêng như:
+Font bài viết là gì , font-size H2 bao nhiêu, H3 bao nhiêu, H2 màu gì, H3 màu gì, Màu tổng của bài viết là gì, Font-size tổng bài viết là bao nhiêu, leight-height bao nhiêu...

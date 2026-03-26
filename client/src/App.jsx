@@ -17,6 +17,7 @@ import { ThemeProvider } from './context/ThemeContext';
 import { TokenProvider } from './context/TokenContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ConfirmProvider } from './context/ConfirmContext';
+import ChatBot from './components/ChatBot';
 
 // PrivateRoute: redirect /login nếu AUTH=true và chưa đăng nhập
 function PrivateRoute({ children }) {
@@ -60,6 +61,14 @@ function RootRoute({ children }) {
   return children;
 }
 
+// ChatBotWrapper: chỉ hiển thị khi đã đăng nhập (hoặc AUTH tắt)
+function ChatBotWrapper() {
+  const { user, loading, authEnabled } = useAuth();
+  if (loading) return null;
+  if (authEnabled && !user) return null;
+  return <ChatBot />;
+}
+
 function AppRoutes() {
   return (
     <Routes>
@@ -90,6 +99,7 @@ function App() {
             <ConfirmProvider>
               <AppRoutes />
               <Toaster richColors position="top-right" />
+              <ChatBotWrapper />
             </ConfirmProvider>
           </BrowserRouter>
         </AuthProvider>

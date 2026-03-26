@@ -6,7 +6,7 @@ import {
   Save, RefreshCw, Loader2, CheckCircle2,
   Zap, FileText, AlertTriangle, Info, BarChart3,
   Shield, TrendingUp, Calendar, KeyRound, Eye, EyeOff, Cpu,
-  Calculator, DollarSign, ChevronDown, ChevronUp, Upload, User, Globe
+  Calculator, DollarSign, ChevronDown, ChevronUp, Upload, User, Globe, Shuffle
 } from 'lucide-react';
 
 import { API } from '../config/api';
@@ -390,7 +390,7 @@ function ApiConfigTab() {
   const { user, authEnabled, updateUser, isRoot } = useAuth();
   const isUserScope = authEnabled && !isRoot; // user thường khi AUTH bật
 
-  const [form, setForm] = useState({ gemini_api_key: '', gemini_model: 'gemini-2.5-flash', serpapi_api_key: '', publish_api_url: '' });
+  const [form, setForm] = useState({ gemini_api_key: '', gemini_model: 'gemini-2.5-flash', serpapi_api_key: '', publish_api_url: '', open_key_mode: false });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -485,6 +485,52 @@ function ApiConfigTab() {
         show={showSerp}
         onToggleShow={() => setShowSerp(v => !v)}
       />
+
+      {/* Open Key Mode — chỉ root */}
+      {!isUserScope && (
+        <div style={{ border: `1px solid ${form.open_key_mode ? 'rgba(245,158,11,0.4)' : 'var(--border)'}`, borderRadius: 'var(--radius-lg)', overflow: 'hidden', transition: 'border-color 0.2s' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 18px', background: form.open_key_mode ? 'rgba(245,158,11,0.06)' : 'var(--bg-panel)', transition: 'background 0.2s' }}>
+            <div style={{ width: 34, height: 34, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(245,158,11,0.12)', flexShrink: 0 }}>
+              <Shuffle size={16} color="var(--warning)" />
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
+                Open Key — Xoay key toàn cộng đồng
+                {form.open_key_mode && (
+                  <span style={{ padding: '2px 8px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: 'rgba(245,158,11,0.15)', color: 'var(--warning)', border: '1px solid rgba(245,158,11,0.3)' }}>ĐANG BẬT</span>
+                )}
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                Khi bật: gom <strong>tất cả Gemini API key của mọi user</strong> vào 1 pool và xoay vòng. Key hệ thống chỉ thêm cho user có quyền dùng.
+              </div>
+            </div>
+            {/* Toggle */}
+            <div
+              onClick={() => setForm(f => ({ ...f, open_key_mode: !f.open_key_mode }))}
+              style={{
+                width: 44, height: 24, borderRadius: 99, flexShrink: 0, cursor: 'pointer',
+                background: form.open_key_mode ? 'var(--warning)' : 'var(--border)',
+                position: 'relative', transition: 'background 0.2s',
+              }}
+            >
+              <div style={{
+                position: 'absolute', top: 3,
+                left: form.open_key_mode ? 22 : 3,
+                width: 18, height: 18, borderRadius: '50%', background: '#fff',
+                transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
+              }} />
+            </div>
+          </div>
+          {form.open_key_mode && (
+            <div style={{ padding: '10px 18px', borderTop: '1px solid rgba(245,158,11,0.2)', background: 'rgba(245,158,11,0.04)', display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+              <AlertTriangle size={13} color="var(--warning)" style={{ flexShrink: 0, marginTop: 1 }} />
+              <span style={{ fontSize: 12, color: 'var(--warning)', lineHeight: 1.5 }}>
+                Khi bật, mọi user sẽ dùng chung pool key. User không có key riêng và không được dùng key hệ thống vẫn được hưởng lợi từ pool. Tắt để quay về phân quyền key thông thường.
+              </span>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Publish API URL — chỉ cho user scope */}
       {isUserScope && (
@@ -791,7 +837,7 @@ export default function SettingsPage() {
 
   // Cập nhật hồ sơ
   const [isProfileOpen, setIsProfileOpen] = useState(false);
-  const [profileForm, setProfileForm] = useState({ full_name: '', email: '', phone: '' });
+  const [profileForm, setProfileForm] = useState({ full_name: '', email: '', phone: '', custom_prompt: '' });
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileError, setProfileError] = useState('');
   const [profileSuccess, setProfileSuccess] = useState('');
@@ -823,6 +869,7 @@ export default function SettingsPage() {
       full_name: user?.full_name || '',
       email: user?.email || '',
       phone: user?.phone || '',
+      custom_prompt: user?.custom_prompt || '',
     });
     setProfileError('');
     setProfileSuccess('');
@@ -909,9 +956,11 @@ export default function SettingsPage() {
                 <button onClick={openProfile} className="btn btn-outline" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   <User size={14} /> Hồ sơ
                 </button>
-                <button onClick={() => setIsChangePwOpen(true)} className="btn btn-outline" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <KeyRound size={14} /> Đổi mật khẩu
-                </button>
+                {!user.google_id && (
+                  <button onClick={() => setIsChangePwOpen(true)} className="btn btn-outline" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <KeyRound size={14} /> Đổi mật khẩu
+                  </button>
+                )}
               </>
             )}
             {activeTab === 'limits' && (
@@ -1105,6 +1154,33 @@ export default function SettingsPage() {
                     disabled={profileSaving}
                   />
                 </div>
+
+                {/* Custom Prompt */}
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>
+                    Phong cách viết cá nhân
+                    <span style={{ fontWeight: 400, color: 'var(--text-muted)', marginLeft: 6 }}>(tùy chọn)</span>
+                  </label>
+                  <p style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6, lineHeight: 1.5 }}>
+                    Mô tả phong cách, giọng văn hoặc yêu cầu đặc biệt. Sẽ được nối vào prompt gốc khi viết bài.
+                    <br />
+                    <span style={{ color: 'var(--error, #f87171)' }}>Không được yêu cầu trả về JSON hoặc dùng code block.</span>
+                  </p>
+                  <textarea
+                    className="input-field"
+                    placeholder="Ví dụ: Viết theo giọng văn thân thiện, dễ hiểu. Dùng nhiều ví dụ thực tế. Tránh thuật ngữ kỹ thuật phức tạp..."
+                    value={profileForm.custom_prompt}
+                    onChange={e => setProfileForm(f => ({ ...f, custom_prompt: e.target.value }))}
+                    disabled={profileSaving}
+                    rows={4}
+                    maxLength={2000}
+                    style={{ width: '100%', boxSizing: 'border-box', resize: 'vertical', minHeight: 90 }}
+                  />
+                  <div style={{ textAlign: 'right', fontSize: 11, color: 'var(--text-muted)', marginTop: 3 }}>
+                    {profileForm.custom_prompt.length}/2000
+                  </div>
+                </div>
+
                 <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
                   <button type="button" className="btn btn-outline" onClick={() => setIsProfileOpen(false)} disabled={profileSaving}>Hủy</button>
                   <button type="submit" className="btn btn-primary" disabled={profileSaving}>

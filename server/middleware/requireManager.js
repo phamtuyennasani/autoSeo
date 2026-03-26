@@ -1,8 +1,8 @@
 /**
  * middleware/requireManager.js
  *
- * Cho phép: root, senior_manager, manager.
- * Chặn: employee / user.
+ * Cho phép: root, director, manager, leader.
+ * Chặn: user.
  */
 
 const { canManageUsers } = require('../services/permissions');

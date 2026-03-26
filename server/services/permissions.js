@@ -2,36 +2,66 @@
  * services/permissions.js — Role helpers và hierarchy logic
  *
  * Roles (cao → thấp):
- *   root / admin       → toàn quyền hệ thống
- *   senior_manager     → quản lý cấp cao: quản lý managers + employees, xem dữ liệu cấp dưới
- *   manager            → quản lý: xem dữ liệu employees trực thuộc, viết bài thay
- *   employee / user    → nhân viên: chỉ thấy dữ liệu của mình
+ *   root       (5) → toàn quyền hệ thống
+ *   director   (4) → tạo mọi user (trừ root), thấy toàn bộ dữ liệu
+ *   manager    (3) → tạo leader + user, thấy toàn bộ dữ liệu
+ *   leader     (2) → tạo user, thấy dữ liệu của user mình quản lý
+ *   user       (1) → chỉ thấy dữ liệu của bản thân
  */
 
 const { db } = require('../data/store');
 
 // ─── Role level ───────────────────────────────────────────────────────────────
 function getRoleLevel(role) {
-  if (role === 'root' || role === 'admin') return 4;
-  if (role === 'senior_manager')           return 3;
-  if (role === 'manager')                  return 2;
-  return 1; // employee / user
+  if (role === 'root' || role === 'admin') return 5;
+  if (role === 'director')                return 4;
+  if (role === 'manager')                 return 3;
+  if (role === 'leader')                  return 2;
+  return 1; // user / employee
 }
 
 // ─── Role checks ──────────────────────────────────────────────────────────────
-function isRoot(user)          { return user?.role === 'root' || user?.role === 'admin'; }
-function isSeniorManager(user) { return user?.role === 'senior_manager'; }
-function isManager(user)       { return user?.role === 'manager'; }
-function isEmployee(user)      { return user?.role === 'employee' || user?.role === 'user'; }
-function canManageUsers(user)  {
-  const lvl = getRoleLevel(user?.role);
-  return lvl >= 2; // manager trở lên
+function isRoot(user)     { return user?.role === 'root' || user?.role === 'admin'; }
+function isDirector(user) { return user?.role === 'director'; }
+function isManager(user)  { return user?.role === 'manager'; }
+function isLeader(user)   { return user?.role === 'leader'; }
+function isUser(user)     { return user?.role === 'user' || user?.role === 'employee'; }
+
+// Có quyền truy cập trang Users (leader trở lên)
+function canManageUsers(user) {
+  return getRoleLevel(user?.role) >= 2;
 }
 
 /**
- * Kiểm tra user A có quyền quản lý user B không.
- * @param {string} managerRole - role của người quản lý
- * @param {string} subordinateRole - role của người cấp dưới
+ * Kiểm tra người dùng với managerRole có được TẠO user với targetRole không.
+ * - root:     tạo được mọi quyền (trừ root khác)
+ * - director: tạo được director, manager, leader, user
+ * - manager:  tạo được leader, user (KHÔNG tạo director/manager)
+ * - leader:   tạo được user
+ * - user:     không tạo được ai
+ */
+function canAssignRole(managerRole, targetRole) {
+  const managerLvl = getRoleLevel(managerRole);
+  const targetLvl  = getRoleLevel(targetRole);
+
+  if (managerLvl < 2) return false; // user không tạo ai
+  if (isRoot({ role: managerRole })) return targetLvl < 5; // root tạo mọi quyền
+
+  // director: tạo được mọi quyền < director (4)
+  if (managerLvl === 4) return targetLvl < 4;
+
+  // manager: chỉ tạo leader (2) và user (1)
+  if (managerLvl === 3) return targetLvl <= 2;
+
+  // leader: chỉ tạo user (1)
+  if (managerLvl === 2) return targetLvl === 1;
+
+  return false;
+}
+
+/**
+ * Kiểm tra user A có quyền EDIT/DELETE user B không
+ * (cấp trên mới quản lý được cấp dưới)
  */
 function canManage(managerRole, subordinateRole) {
   const managerLvl    = getRoleLevel(managerRole);
@@ -40,36 +70,16 @@ function canManage(managerRole, subordinateRole) {
 }
 
 /**
- * Trả về danh sách user IDs mà userId có thể xem dữ liệu (articles/keywords/companies).
- * null = xem tất cả (root)
+ * Trả về danh sách user IDs mà userId có thể XEM dữ liệu (articles/keywords).
+ * null  = xem tất cả
  * array = danh sách IDs cụ thể
  */
 async function getVisibleUserIds(userId, role) {
-  if (isRoot({ role })) return null; // tất cả
+  // root, director, manager: xem tất cả
+  if (getRoleLevel(role) >= 3) return null;
 
-  if (role === 'senior_manager') {
-    // Cấp dưới trực tiếp của senior_manager
-    const directRes = await db.execute({
-      sql: 'SELECT id FROM users WHERE manager_id = ?',
-      args: [userId],
-    });
-    const directIds = directRes.rows.map(r => r.id);
-
-    // Employees cấp dưới của các managers trực thuộc
-    let indirectIds = [];
-    if (directIds.length > 0) {
-      const placeholders = directIds.map(() => '?').join(',');
-      const indirectRes = await db.execute({
-        sql: `SELECT id FROM users WHERE manager_id IN (${placeholders})`,
-        args: directIds,
-      });
-      indirectIds = indirectRes.rows.map(r => r.id);
-    }
-
-    return [...new Set([userId, ...directIds, ...indirectIds])];
-  }
-
-  if (role === 'manager') {
+  // leader: xem bản thân + direct reports
+  if (role === 'leader') {
     const directRes = await db.execute({
       sql: 'SELECT id FROM users WHERE manager_id = ?',
       args: [userId],
@@ -78,40 +88,21 @@ async function getVisibleUserIds(userId, role) {
     return [...new Set([userId, ...directIds])];
   }
 
-  // employee / user
+  // user
   return [userId];
 }
 
 /**
- * Trả về danh sách user IDs mà userId CÓ THỂ QUẢN LÝ (dùng cho Users route).
- * null = quản lý tất cả (root)
+ * Trả về danh sách user IDs mà userId CÓ THỂ QUẢN LÝ (Users page).
+ * null  = quản lý tất cả
+ * array = danh sách IDs cụ thể
  */
 async function getManageableUserIds(userId, role) {
-  if (isRoot({ role })) return null;
+  // root, director, manager: quản lý tất cả
+  if (getRoleLevel(role) >= 3) return null;
 
-  if (role === 'senior_manager') {
-    // Quản lý trực tiếp (managers + employees trực thuộc)
-    const directRes = await db.execute({
-      sql: 'SELECT id FROM users WHERE manager_id = ?',
-      args: [userId],
-    });
-    const directIds = directRes.rows.map(r => r.id);
-
-    // Employees cấp dưới của các managers
-    let indirectIds = [];
-    if (directIds.length > 0) {
-      const placeholders = directIds.map(() => '?').join(',');
-      const indirectRes = await db.execute({
-        sql: `SELECT id FROM users WHERE manager_id IN (${placeholders})`,
-        args: directIds,
-      });
-      indirectIds = indirectRes.rows.map(r => r.id);
-    }
-
-    return [...new Set([...directIds, ...indirectIds])];
-  }
-
-  if (role === 'manager') {
+  // leader: quản lý direct reports (không kể bản thân)
+  if (role === 'leader') {
     const directRes = await db.execute({
       sql: 'SELECT id FROM users WHERE manager_id = ?',
       args: [userId],
@@ -119,24 +110,29 @@ async function getManageableUserIds(userId, role) {
     return directRes.rows.map(r => r.id);
   }
 
-  return []; // employee không quản lý ai
+  return []; // user không quản lý ai
 }
 
-// Danh sách roles hợp lệ để validate
-const VALID_ROLES = ['root', 'senior_manager', 'manager', 'employee'];
-// alias backward-compat
-const ALL_VALID_ROLES = [...VALID_ROLES, 'admin', 'user'];
+// Danh sách roles hợp lệ
+const VALID_ROLES = ['root', 'director', 'manager', 'leader', 'user'];
+// backward-compat aliases
+const ALL_VALID_ROLES = [...VALID_ROLES, 'admin', 'senior_manager', 'employee'];
 
 module.exports = {
   getRoleLevel,
   isRoot,
-  isSeniorManager,
+  isDirector,
   isManager,
-  isEmployee,
+  isLeader,
+  isUser,
   canManageUsers,
+  canAssignRole,
   canManage,
   getVisibleUserIds,
   getManageableUserIds,
   VALID_ROLES,
   ALL_VALID_ROLES,
+  // backward-compat aliases
+  isSeniorManager: isDirector,
+  isEmployee: isUser,
 };

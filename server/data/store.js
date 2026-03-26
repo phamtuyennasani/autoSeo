@@ -262,6 +262,20 @@ async function initDb() {
     { table: 'keywords',       col: 'source', ddl: "ALTER TABLE keywords ADD COLUMN source TEXT" },
     // webhook_events — lưu email CRM1 gửi lên để tìm user
     { table: 'webhook_events', col: 'email',  ddl: 'ALTER TABLE webhook_events ADD COLUMN email TEXT' },
+    // AI provider — hỗ trợ multi-provider (openai, gemini, ...)
+    { table: 'users', col: 'ai_provider',    ddl: 'ALTER TABLE users ADD COLUMN ai_provider TEXT' },
+    { table: 'users', col: 'openai_api_key', ddl: 'ALTER TABLE users ADD COLUMN openai_api_key TEXT' },
+    { table: 'users', col: 'openai_model',   ddl: 'ALTER TABLE users ADD COLUMN openai_model TEXT' },
+    // users — Nasani integration (từ API xác thực Google login)
+    { table: 'users', col: 'employee_code',    ddl: 'ALTER TABLE users ADD COLUMN employee_code TEXT' },
+    { table: 'users', col: 'department_name',  ddl: 'ALTER TABLE users ADD COLUMN department_name TEXT' },
+    { table: 'users', col: 'manager_name',     ddl: 'ALTER TABLE users ADD COLUMN manager_name TEXT' },
+    { table: 'users', col: 'manager_email',    ddl: 'ALTER TABLE users ADD COLUMN manager_email TEXT' },
+    { table: 'users', col: 'nasani_permission',ddl: 'ALTER TABLE users ADD COLUMN nasani_permission TEXT' },
+    { table: 'users', col: 'manager_code',     ddl: 'ALTER TABLE users ADD COLUMN manager_code TEXT' },
+    { table: 'users', col: 'custom_prompt',    ddl: 'ALTER TABLE users ADD COLUMN custom_prompt TEXT' },
+    // companies — per-website article style config
+    { table: 'companies', col: 'article_styles', ddl: 'ALTER TABLE companies ADD COLUMN article_styles TEXT' },
   ];
 
   for (const m of migrations) {
@@ -286,8 +300,10 @@ async function initDb() {
             VALUES ('admin', 'admin', ?, 'root', 1, ?)`,
       args: [adminHash, new Date().toISOString()],
     });
-    // One-time migration: đổi role 'admin' → 'root' cho các user cũ
-    await db.execute(`UPDATE users SET role = 'root' WHERE role = 'admin'`);
+    // One-time migration: đổi role cũ → role mới
+    await db.execute(`UPDATE users SET role = 'root'     WHERE role = 'admin'`);
+    await db.execute(`UPDATE users SET role = 'director' WHERE role = 'senior_manager'`);
+    await db.execute(`UPDATE users SET role = 'user'     WHERE role = 'employee'`);
   } catch (e) {
     console.warn('[store] Seed admin:', e.message);
   }
@@ -303,6 +319,11 @@ async function initDb() {
     { key: 'batch_schedule_time',   value: '', label: 'Giờ chạy batch tự động (HH:MM, để trống = tắt)' },
     { key: 'batch_schedule_lastrun',value: '', label: 'Ngày chạy batch theo lịch lần cuối' },
     { key: 'publish_api_url',           value: '', label: 'URL API đăng bài mặc định (bên thứ 3)' },
+    // AI Provider
+    { key: 'default_ai_provider', value: process.env.DEFAULT_AI_PROVIDER || 'gemini', label: 'AI Provider mặc định (gemini | openai)' },
+    { key: 'openai_api_key',      value: process.env.OPENAI_API_KEY      || '',       label: 'OpenAI API Key' },
+    { key: 'openai_model',        value: process.env.OPENAI_MODEL        || 'gpt-4o-mini', label: 'OpenAI Model' },
+    { key: 'open_key_mode',       value: '0',                                          label: 'Chế độ Open Key — gom key toàn user và xoay vòng' },
   ];
   for (const s of seedSettings) {
     await db.execute({
@@ -313,9 +334,16 @@ async function initDb() {
 
   // Sync API config từ DB → process.env (DB là nguồn sự thật sau lần đầu cấu hình)
   const apiCfg = await db.execute(
-    `SELECT key, value FROM settings WHERE key IN ('gemini_api_key', 'gemini_model', 'serpapi_api_key')`
+    `SELECT key, value FROM settings WHERE key IN ('gemini_api_key', 'gemini_model', 'serpapi_api_key', 'openai_api_key', 'openai_model', 'default_ai_provider')`
   );
-  const envMap = { gemini_api_key: 'GEMINI_API_KEY', gemini_model: 'GEMINI_MODEL', serpapi_api_key: 'SERPAPI_API_KEY' };
+  const envMap = {
+    gemini_api_key:      'GEMINI_API_KEY',
+    gemini_model:        'GEMINI_MODEL',
+    serpapi_api_key:     'SERPAPI_API_KEY',
+    openai_api_key:      'OPENAI_API_KEY',
+    openai_model:        'OPENAI_MODEL',
+    default_ai_provider: 'DEFAULT_AI_PROVIDER',
+  };
   for (const row of apiCfg.rows) {
     if (row.value) process.env[envMap[row.key]] = row.value;
   }

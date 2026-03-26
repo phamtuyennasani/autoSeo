@@ -23,7 +23,8 @@
     "google-auth-library": "^10.6.2",
     "jsonrepair": "^3.13.3",
     "jsonwebtoken": "^9.0.3",
-    "marked": "^17.0.4"
+    "marked": "^17.0.4",
+    "openai": "^4.104.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.14"

@@ -15,19 +15,23 @@ import apiClient from '../config/api';
 
 // ── Role config ────────────────────────────────────────────────────────────────
 const ROLE_CONFIG = {
-  root: { label: 'Root', color: '#818cf8', icon: <Crown size={9} /> },
-  admin: { label: 'Root', color: '#818cf8', icon: <Crown size={9} /> },
-  senior_manager: { label: 'QL Cấp Cao', color: '#f59e0b', icon: <Shield size={9} /> },
-  manager: { label: 'Quản Lý', color: '#06b6d4', icon: <UsersIcon size={9} /> },
-  employee: { label: 'Nhân Viên', color: '#10b981', icon: <User size={9} /> },
-  user: { label: 'Nhân Viên', color: '#10b981', icon: <User size={9} /> },
+  root:     { label: 'Root',     color: '#818cf8', icon: <Crown size={9} /> },
+  admin:    { label: 'Root',     color: '#818cf8', icon: <Crown size={9} /> },
+  director: { label: 'Director', color: '#f59e0b', icon: <Shield size={9} /> },
+  manager:  { label: 'Manager',  color: '#06b6d4', icon: <UsersIcon size={9} /> },
+  leader:   { label: 'Leader',   color: '#8b5cf6', icon: <Activity size={9} /> },
+  user:     { label: 'Nhân Viên',color: '#10b981', icon: <User size={9} /> },
+  // backward-compat
+  senior_manager: { label: 'Director', color: '#f59e0b', icon: <Shield size={9} /> },
+  employee:       { label: 'Nhân Viên',color: '#10b981', icon: <User size={9} /> },
 };
 
 function roleLevelOf(role) {
-  if (role === 'root' || role === 'admin') return 4;
-  if (role === 'senior_manager') return 3;
-  if (role === 'manager') return 2;
-  return 1;
+  if (role === 'root' || role === 'admin')   return 5;
+  if (role === 'director' || role === 'senior_manager') return 4;
+  if (role === 'manager')                    return 3;
+  if (role === 'leader')                     return 2;
+  return 1; // user / employee
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -185,10 +189,12 @@ const StatusBadge = ({ active }) => (
 
 // ── User Modal ────────────────────────────────────────────────────────────────
 function UserModal({ mode, user, onClose, onSave, currentUser, allUsers }) {
-  const isCurrentRoot = roleLevelOf(currentUser?.role) >= 4;
+  const isCurrentRoot    = roleLevelOf(currentUser?.role) >= 5;
+  const isCurrentLeader  = currentUser?.role === 'leader';
   const isCurrentManager = currentUser?.role === 'manager';
-  const isCurrentSeniorManager = currentUser?.role === 'senior_manager';
-  const canShareManagerKey = !isCurrentRoot && (isCurrentManager || isCurrentSeniorManager);
+  // leader và manager tự động là quản lý của user họ tạo
+  const autoAssignSelf   = isCurrentLeader || isCurrentManager;
+  const canShareManagerKey = !isCurrentRoot && (isCurrentManager || currentUser?.role === 'director');
   const myLevel = roleLevelOf(currentUser?.role);
 
   const [form, setForm] = useState({
@@ -197,28 +203,39 @@ function UserModal({ mode, user, onClose, onSave, currentUser, allUsers }) {
     email: user?.email || '',
     phone: user?.phone || '',
     password: '',
-    role: user?.role === 'admin' ? 'root' : (user?.role || 'employee'),
-    // Nếu người tạo là QL, tự động gán manager_id = chính họ (trừ khi đang edit và đã có giá trị khác)
-    manager_id: user?.manager_id || (mode === 'create' && isCurrentManager ? currentUser.id : ''),
+    role: ['admin', 'senior_manager', 'employee'].includes(user?.role)
+      ? (user.role === 'admin' ? 'root' : user.role === 'senior_manager' ? 'director' : 'user')
+      : (user?.role || 'user'),
+    // leader/manager tạo user: tự động gán mình làm manager
+    manager_id: user?.manager_id || (mode === 'create' && autoAssignSelf ? currentUser.id : ''),
     daily_token_limit: String(user?.daily_token_limit ?? 0),
     daily_article_limit: String(user?.daily_article_limit ?? 0),
     use_system_key: user?.use_system_key ?? false,
     use_manager_key: user?.use_manager_key ?? false,
   });
 
-  // Roles mà người đang đăng nhập có thể gán (chỉ cấp thấp hơn mình)
+  // Roles mà người đang đăng nhập có thể gán
+  // - root:     director, manager, leader, user
+  // - director: manager, leader, user
+  // - manager:  leader, user
+  // - leader:   user
   const assignableRoles = [
-    { val: 'employee', label: 'Nhân Viên', icon: <User size={14} />, clr: '#10b981' },
-    { val: 'manager', label: 'Quản Lý', icon: <UsersIcon size={14} />, clr: '#06b6d4' },
-    { val: 'senior_manager', label: 'QL Cấp Cao', icon: <Shield size={14} />, clr: '#f59e0b' },
-    { val: 'root', label: 'Root', icon: <Crown size={14} />, clr: '#818cf8' },
+    { val: 'user',     label: 'Nhân Viên', icon: <User size={14} />,     clr: '#10b981' },
+    { val: 'leader',   label: 'Leader',    icon: <Activity size={14} />, clr: '#8b5cf6' },
+    { val: 'manager',  label: 'Manager',   icon: <UsersIcon size={14} />,clr: '#06b6d4' },
+    { val: 'director', label: 'Director',  icon: <Shield size={14} />,   clr: '#f59e0b' },
+    { val: 'root',     label: 'Root',      icon: <Crown size={14} />,    clr: '#818cf8' },
   ].filter(r => roleLevelOf(r.val) < myLevel);
 
-  // Manager dropdown: chỉ hiện với Root/Senior Manager khi tạo nhân viên
-  // QL (manager) tạo nhân viên thì tự động là QL của họ, không cần chọn
-  const showManagerDropdown = form.role === 'employee' && !isCurrentManager;
+  // Manager dropdown: hiện khi tạo user/leader và người tạo là director/root
+  // leader/manager tạo user thì tự động assign nên không cần dropdown
+  const showManagerDropdown = ['user', 'leader'].includes(form.role) && !autoAssignSelf;
   const managerOptions = showManagerDropdown
-    ? allUsers.filter(u => u.id !== user?.id && u.role === 'manager' && roleLevelOf(u.role) < myLevel)
+    ? allUsers.filter(u => {
+        if (u.id === user?.id) return false;
+        // Chọn manager hoặc leader làm quản lý của user/leader mới
+        return (u.role === 'leader' || u.role === 'manager') && roleLevelOf(u.role) < myLevel;
+      })
     : [];
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -432,7 +449,8 @@ function UserModal({ mode, user, onClose, onSave, currentUser, allUsers }) {
                       key={opt.val} type="button"
                       onClick={() => {
                         set('role')(opt.val);
-                        if (opt.val !== 'employee') set('manager_id')('');
+                        // Xóa manager_id khi chuyển sang role không cần quản lý trực tiếp
+                        if (!['user', 'leader'].includes(opt.val)) set('manager_id')('');
                       }}
                       style={{
                         padding: '10px 14px', borderRadius: 10, cursor: 'pointer',
@@ -736,7 +754,7 @@ const Users = () => {
         {/* Header */}
         <div style={{
           display: 'grid',
-          gridTemplateColumns: '2fr 100px 100px 110px 110px 120px 1fr 110px',
+          gridTemplateColumns: '2fr 120px 120px 120px 120px 120px 1fr 110px',
           padding: '10px 20px',
           borderBottom: '1px solid var(--border)',
           fontSize: 12, fontWeight: 700,
@@ -753,7 +771,7 @@ const Users = () => {
           [1, 2, 3].map(i => (
             <div key={i} style={{
               display: 'grid',
-              gridTemplateColumns: '2fr 100px 100px 110px 110px 120px 1fr 110px',
+              gridTemplateColumns: '2fr 120px 120px 120px 120px 120px 1fr 110px',
               padding: '16px 20px', borderBottom: '1px solid var(--border)',
               alignItems: 'center', gap: 12,
             }}>
@@ -790,7 +808,7 @@ const Users = () => {
                 key={u.id}
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: '2fr 90px 100px 110px 110px 120px 1fr 110px',
+                  gridTemplateColumns: '2fr 120px 120px 120px 120px 120px 1fr 110px',
                   padding: '13px 20px',
                   borderBottom: '1px solid var(--border)',
                   alignItems: 'center',

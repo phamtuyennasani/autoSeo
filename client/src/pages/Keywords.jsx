@@ -22,6 +22,7 @@ const API_COMPANY    = API.companies;
 const API_ARTICLE    = API.articles;
 const API_BATCH_JOBS = API.batchJobs;
 const API_WRITE_QUEUE = API.writeQueue;
+const API_SETTINGS   = API.settings;
 
 const Keywords = () => {
   const [keywords, setKeywords] = useState([]);
@@ -55,6 +56,7 @@ const Keywords = () => {
   const [hasPendingBatch, setHasPendingBatch] = useState(false);  // có job đang pending/scheduled trong DB không?
   const [pendingBatchJob, setPendingBatchJob] = useState(null);   // job object mới nhất nếu có
   const [pendingBatchTitles, setPendingBatchTitles] = useState(new Set()); // tất cả titles đang trong pending/scheduled batch
+  const [currentProvider, setCurrentProvider] = useState('gemini');
   const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
   const [batchModalScheduleEnabled, setBatchModalScheduleEnabled] = useState(false);
   const [batchModalTime, setBatchModalTime] = useState('');
@@ -152,10 +154,12 @@ const Keywords = () => {
       if (search) params.search = search;
       if (companyId) params.companyId = companyId;
       const comParams = (showMultiUser && userId) ? { userId } : {};
-      const [kwRes, comRes] = await Promise.all([
+      const [kwRes, comRes, cfgRes] = await Promise.all([
         apiClient.get(API_KEYWORD, { params }),
-        apiClient.get(API_COMPANY, { params: comParams })
+        apiClient.get(API_COMPANY, { params: comParams }),
+        apiClient.get(`${API_SETTINGS}/api-config`).catch(() => ({ data: {} })),
       ]);
+      setCurrentProvider(cfgRes.data?.default_ai_provider || 'gemini');
       const kwPayload = kwRes.data;
       setKeywords(kwPayload.data ?? kwPayload);
       setKwTotal(kwPayload.pagination?.total ?? (kwPayload.data ?? kwPayload).length);
@@ -544,6 +548,8 @@ const Keywords = () => {
       const data = err.response?.data;
       if (data?.type === 'article_limit') {
         toast.error('Vượt giới hạn bài viết hôm nay!', { description: `Đã dùng: ${data.used}/${data.limit} bài • Còn lại: ${data.remaining ?? 0} bài` });
+      } else if (data?.type === 'provider_not_supported') {
+        toast.error('Batch Job không hỗ trợ provider này', { description: `Batch Job chỉ hoạt động với Gemini. Hệ thống đang dùng provider: ${currentProvider}. Hãy dùng tính năng Viết lẻ hoặc chuyển về Gemini trong Cài đặt.` });
       } else {
         toast.error('Có lỗi: ' + (data?.error || err.message));
       }
@@ -1427,6 +1433,16 @@ const Keywords = () => {
 
                 <div className="modal-body" style={{ padding: '0 22px 18px' }}>
 
+                  {/* Warning: provider không hỗ trợ Batch */}
+                  {currentProvider !== 'gemini' && (
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 14px', background: 'rgba(234,179,8,0.1)', border: '1px solid rgba(234,179,8,0.35)', borderRadius: 'var(--radius-md)', marginTop: 14, marginBottom: 4 }}>
+                      <span style={{ fontSize: 16, flexShrink: 0 }}>⚠️</span>
+                      <div style={{ fontSize: 12, color: 'var(--warning, #b45309)', lineHeight: 1.5 }}>
+                        <strong>Batch Job chỉ hỗ trợ Gemini.</strong> Hệ thống đang dùng provider <strong>{currentProvider}</strong>. Nếu gửi, yêu cầu sẽ bị từ chối. Hãy dùng <em>Viết lẻ</em> hoặc chuyển về Gemini trong Cài đặt.
+                      </div>
+                    </div>
+                  )}
+
                   {/* Title list with checkboxes */}
                   <div style={{ marginTop: 10, marginBottom: 12 }}>
                     {/* List header */}
@@ -1609,7 +1625,8 @@ const Keywords = () => {
                   <button
                     className="btn btn-primary"
                     style={{ gap: 7, minWidth: 150 }}
-                    disabled={(batchModalScheduleEnabled && !batchModalTime) || sendCount === 0}
+                    disabled={(batchModalScheduleEnabled && !batchModalTime) || sendCount === 0 || currentProvider !== 'gemini'}
+                    title={currentProvider !== 'gemini' ? `Batch Job chỉ hỗ trợ Gemini (đang dùng: ${currentProvider})` : undefined}
                     onClick={() => handleWriteAll(scheduledDate ? scheduledDate.toISOString() : null)}
                   >
                     {batchModalScheduleEnabled ? <Clock size={14} /> : <Zap size={14} />}

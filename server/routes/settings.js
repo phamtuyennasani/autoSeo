@@ -114,14 +114,16 @@ router.get('/api-config', async (req, res) => {
 
     // Admin hoặc AUTH tắt → đọc system key từ settings table
     const result = await db.execute(
-      `SELECT key, value FROM settings WHERE key IN ('gemini_api_key', 'gemini_model', 'serpapi_api_key')`
+      `SELECT key, value FROM settings WHERE key IN ('gemini_api_key', 'gemini_model', 'serpapi_api_key', 'default_ai_provider', 'open_key_mode')`
     );
     const map = {};
     for (const row of result.rows) map[row.key] = row.value;
     res.json({
-      gemini_api_key:  map.gemini_api_key  || '',
-      gemini_model:    map.gemini_model    || 'gemini-2.5-flash',
-      serpapi_api_key: map.serpapi_api_key || '',
+      gemini_api_key:      map.gemini_api_key  || '',
+      gemini_model:        map.gemini_model    || 'gemini-2.5-flash',
+      serpapi_api_key:     map.serpapi_api_key || '',
+      default_ai_provider: map.default_ai_provider || process.env.DEFAULT_AI_PROVIDER || 'gemini',
+      open_key_mode:       map.open_key_mode === '1',
       scope: 'system',
     });
   } catch (err) {
@@ -163,7 +165,8 @@ router.put('/api-config', async (req, res) => {
     }
 
     const updatedAt = new Date().toISOString();
-    const fields = { gemini_api_key, gemini_model, serpapi_api_key };
+    const { open_key_mode, ...rest } = req.body;
+    const fields = { gemini_api_key: rest.gemini_api_key, gemini_model: rest.gemini_model, serpapi_api_key: rest.serpapi_api_key };
     const envMap = { gemini_api_key: 'GEMINI_API_KEY', gemini_model: 'GEMINI_MODEL', serpapi_api_key: 'SERPAPI_API_KEY' };
 
     for (const [key, value] of Object.entries(fields)) {
@@ -174,6 +177,16 @@ router.put('/api-config', async (req, res) => {
         args: [key, val, key, updatedAt],
       });
       if (val) process.env[envMap[key]] = val;
+    }
+
+    // Open Key mode
+    if (open_key_mode !== undefined) {
+      const val = open_key_mode ? '1' : '0';
+      await db.execute({
+        sql: `INSERT INTO settings (key, value, label, updatedAt) VALUES ('open_key_mode', ?, 'Chế độ Open Key — gom key toàn user và xoay vòng', ?)
+              ON CONFLICT(key) DO UPDATE SET value = excluded.value, updatedAt = excluded.updatedAt`,
+        args: [val, updatedAt],
+      });
     }
 
     res.json({ success: true, scope: 'system' });

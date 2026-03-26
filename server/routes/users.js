@@ -18,7 +18,7 @@ const router = express.Router();
 const { db } = require('../data/store');
 const { hashPassword } = require('../services/auth');
 const {
-  isRoot, canManage, getRoleLevel,
+  isRoot, canManage, canAssignRole, getRoleLevel,
   getManageableUserIds, ALL_VALID_ROLES,
 } = require('../services/permissions');
 
@@ -94,15 +94,18 @@ router.post('/', async (req, res) => {
     return res.status(400).json({ error: 'Username và password là bắt buộc.' });
   }
 
-  // Normalize role alias
-  const normalizedRole = role === 'user' ? 'employee' : role === 'admin' ? 'root' : role;
+  // Normalize role alias (backward-compat: old → new name)
+  const normalizedRole = role === 'employee' ? 'user'
+    : role === 'admin' ? 'root'
+    : role === 'senior_manager' ? 'director'
+    : role;
 
   if (!ALL_VALID_ROLES.includes(normalizedRole)) {
-    return res.status(400).json({ error: `Role không hợp lệ. Chọn: root, senior_manager, manager, employee.` });
+    return res.status(400).json({ error: `Role không hợp lệ. Chọn: root, director, manager, leader, user.` });
   }
 
-  // Phân quyền: chỉ được tạo user có role thấp hơn mình
-  if (!canManage(me.role, normalizedRole)) {
+  // Phân quyền: kiểm tra người tạo có được gán role này không
+  if (!canAssignRole(me.role, normalizedRole)) {
     return res.status(403).json({ error: 'Bạn không có quyền tạo user với role này.' });
   }
 
@@ -194,11 +197,14 @@ router.put('/:id', async (req, res) => {
     const args = [];
 
     if (role !== undefined) {
-      const normalizedRole = role === 'user' ? 'employee' : role === 'admin' ? 'root' : role;
+      const normalizedRole = role === 'employee' ? 'user'
+        : role === 'admin' ? 'root'
+        : role === 'senior_manager' ? 'director'
+        : role;
       if (!ALL_VALID_ROLES.includes(normalizedRole)) return res.status(400).json({ error: 'Role không hợp lệ.' });
-      // Không được nâng cấp role >= mình (trừ root)
-      if (!isRoot(me) && getRoleLevel(normalizedRole) >= getRoleLevel(me.role)) {
-        return res.status(403).json({ error: 'Bạn không thể gán role cao hơn hoặc bằng mình.' });
+      // Không được gán role không hợp lệ theo quy tắc phân quyền
+      if (!isRoot(me) && !canAssignRole(me.role, normalizedRole)) {
+        return res.status(403).json({ error: 'Bạn không có quyền gán role này.' });
       }
       updates.push('role = ?'); args.push(normalizedRole);
     }

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import apiClient from '../config/api';
-import { Plus, Trash2, Building2, Globe, Pencil, X, Save, User, Upload } from 'lucide-react';
+import { Plus, Trash2, Building2, Globe, Pencil, X, Save, User, Upload, Palette, ChevronDown, ChevronUp } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useConfirm } from '../context/ConfirmContext';
 import { AppMultiSelect } from '../components/AppMultiSelect';
@@ -29,6 +29,8 @@ const INDUSTRIES = [
 ];
 const INDUSTRY_OPTIONS = INDUSTRIES.map(ind => ({ value: ind, label: ind }));
 
+const DEFAULT_STYLES = { fontFamily: '', fontSize: '', lineHeight: '', color: '', h2FontSize: '', h2Color: '', h3FontSize: '', h3Color: '', h4FontSize: '', h4Color: '' };
+
 const Companies = () => {
   const { user: currentUser, authEnabled, canManageUsers } = useAuth();
   const confirm = useConfirm();
@@ -40,13 +42,15 @@ const Companies = () => {
 
   // Add modal
   const [isAddOpen, setIsAddOpen] = useState(false);
-  const [addForm, setAddForm] = useState({ name: '', url: '', info: '', contract_code: '', industry: [], publish_api_url: '', auto_publish: false, internal_links_enabled: false, internal_links_max: 3 });
+  const [addForm, setAddForm] = useState({ name: '', url: '', info: '', contract_code: '', industry: [], publish_api_url: '', auto_publish: false, internal_links_enabled: false, internal_links_max: 3, article_styles: { ...DEFAULT_STYLES } });
   const [submitting, setSubmitting] = useState(false);
+  const [showAddStyles, setShowAddStyles] = useState(false);
 
   // Edit modal
   const [editingCompany, setEditingCompany] = useState(null);
-  const [editForm, setEditForm] = useState({ name: '', url: '', info: '', contract_code: '', industry: [], publish_api_url: '', auto_publish: false, internal_links_enabled: false, internal_links_max: 3 });
+  const [editForm, setEditForm] = useState({ name: '', url: '', info: '', contract_code: '', industry: [], publish_api_url: '', auto_publish: false, internal_links_enabled: false, internal_links_max: 3, article_styles: { ...DEFAULT_STYLES } });
   const [saving, setSaving] = useState(false);
+  const [showEditStyles, setShowEditStyles] = useState(false);
 
   useEffect(() => { fetchCompanies(); }, []);
   useEffect(() => {
@@ -71,8 +75,10 @@ const Companies = () => {
     e.preventDefault();
     setSubmitting(true);
     try {
-      await apiClient.post(API_URL, { ...addForm, industry: addForm.industry.join(','), auto_publish: addForm.auto_publish ? 1 : 0, internal_links_enabled: addForm.internal_links_enabled ? 1 : 0 });
-      setAddForm({ name: '', url: '', info: '', contract_code: '', industry: [], publish_api_url: '', auto_publish: false, internal_links_enabled: false, internal_links_max: 3 });
+      const stylesPayload = Object.values(addForm.article_styles).some(Boolean) ? addForm.article_styles : null;
+      await apiClient.post(API_URL, { ...addForm, industry: addForm.industry.join(','), auto_publish: addForm.auto_publish ? 1 : 0, internal_links_enabled: addForm.internal_links_enabled ? 1 : 0, article_styles: stylesPayload });
+      setAddForm({ name: '', url: '', info: '', contract_code: '', industry: [], publish_api_url: '', auto_publish: false, internal_links_enabled: false, internal_links_max: 3, article_styles: { ...DEFAULT_STYLES } });
+      setShowAddStyles(false);
       setIsAddOpen(false);
       fetchCompanies();
     } catch (error) {
@@ -85,7 +91,8 @@ const Companies = () => {
   // EDIT - open
   const openEdit = (company) => {
     setEditingCompany(company);
-    setEditForm({ name: company.name, url: company.url, info: company.info || '', contract_code: company.contract_code || '', industry: (company.industry || '').split(',').filter(Boolean), publish_api_url: company.publish_api_url || '', auto_publish: !!company.auto_publish, internal_links_enabled: !!company.internal_links_enabled, internal_links_max: company.internal_links_max || 3 });
+    setEditForm({ name: company.name, url: company.url, info: company.info || '', contract_code: company.contract_code || '', industry: (company.industry || '').split(',').filter(Boolean), publish_api_url: company.publish_api_url || '', auto_publish: !!company.auto_publish, internal_links_enabled: !!company.internal_links_enabled, internal_links_max: company.internal_links_max || 3, article_styles: company.article_styles ? { ...DEFAULT_STYLES, ...company.article_styles } : { ...DEFAULT_STYLES } });
+    setShowEditStyles(false);
   };
 
   // EDIT - save
@@ -93,7 +100,8 @@ const Companies = () => {
     e.preventDefault();
     setSaving(true);
     try {
-      await apiClient.put(`${API_URL}/${editingCompany.id}`, { ...editForm, industry: editForm.industry.join(','), auto_publish: editForm.auto_publish ? 1 : 0, internal_links_enabled: editForm.internal_links_enabled ? 1 : 0 });
+      const stylesPayload = Object.values(editForm.article_styles).some(Boolean) ? editForm.article_styles : null;
+      await apiClient.put(`${API_URL}/${editingCompany.id}`, { ...editForm, industry: editForm.industry.join(','), auto_publish: editForm.auto_publish ? 1 : 0, internal_links_enabled: editForm.internal_links_enabled ? 1 : 0, article_styles: stylesPayload });
       setEditingCompany(null);
       fetchCompanies();
     } catch (error) {
@@ -343,15 +351,116 @@ const Companies = () => {
                   </label>
                 </div>
                 {addForm.internal_links_enabled && (
-                  <div className="input-group" style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-                    <label style={{ fontSize: 13, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>Số link tối đa mỗi bài:</label>
-                    <input type="number" min="1" max="10" className="input-field"
-                      value={addForm.internal_links_max}
-                      onChange={e => setAddForm(f => ({ ...f, internal_links_max: e.target.value }))}
-                      style={{ width: 70, textAlign: 'center' }} disabled={submitting} />
-                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>(1–10)</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 46, marginBottom: 8, marginTop: -4 }}>
+                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Tối đa</span>
+                    <div style={{ display: 'flex', alignItems: 'center', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', background: 'var(--bg-panel)' }}>
+                      <button type="button" disabled={submitting || +addForm.internal_links_max <= 1}
+                        onClick={() => setAddForm(f => ({ ...f, internal_links_max: Math.max(1, +f.internal_links_max - 1) }))}
+                        style={{ width: 28, height: 28, border: 'none', background: 'none', cursor: 'pointer', fontSize: 16, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>
+                      <span style={{ minWidth: 24, textAlign: 'center', fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{addForm.internal_links_max}</span>
+                      <button type="button" disabled={submitting || +addForm.internal_links_max >= 10}
+                        onClick={() => setAddForm(f => ({ ...f, internal_links_max: Math.min(10, +f.internal_links_max + 1) }))}
+                        style={{ width: 28, height: 28, border: 'none', background: 'none', cursor: 'pointer', fontSize: 16, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
+                    </div>
+                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>link / bài</span>
                   </div>
                 )}
+
+                {/* Tùy chỉnh style bài viết */}
+                <div style={{ borderTop: '1px solid var(--border)', marginTop: 4, paddingTop: 12 }}>
+                  <button type="button" onClick={() => setShowAddStyles(v => !v)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', padding: 0, cursor: 'pointer', width: '100%', marginBottom: showAddStyles ? 12 : 0 }}>
+                    <Palette size={14} color="var(--accent)" />
+                    <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-primary)' }}>Tùy chỉnh giao diện bài viết</span>
+                    <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 'auto' }}>để trống = dùng mặc định</span>
+                    {showAddStyles ? <ChevronUp size={14} color="var(--text-muted)" /> : <ChevronDown size={14} color="var(--text-muted)" />}
+                  </button>
+                  {showAddStyles && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 12px' }}>
+                      <div className="input-group" style={{ marginBottom: 0 }}>
+                        <label className="input-label" style={{ fontSize: 11 }}>Font chữ</label>
+                        <input className="input-field" style={{ fontSize: 12 }} placeholder="VD: Arial, sans-serif"
+                          value={addForm.article_styles.fontFamily}
+                          onChange={e => setAddForm(f => ({ ...f, article_styles: { ...f.article_styles, fontFamily: e.target.value } }))} />
+                      </div>
+                      <div className="input-group" style={{ marginBottom: 0 }}>
+                        <label className="input-label" style={{ fontSize: 11 }}>Font size tổng</label>
+                        <input className="input-field" style={{ fontSize: 12 }} placeholder="VD: 16px"
+                          value={addForm.article_styles.fontSize}
+                          onChange={e => setAddForm(f => ({ ...f, article_styles: { ...f.article_styles, fontSize: e.target.value } }))} />
+                      </div>
+                      <div className="input-group" style={{ marginBottom: 0 }}>
+                        <label className="input-label" style={{ fontSize: 11 }}>Line height</label>
+                        <input className="input-field" style={{ fontSize: 12 }} placeholder="VD: 1.8"
+                          value={addForm.article_styles.lineHeight}
+                          onChange={e => setAddForm(f => ({ ...f, article_styles: { ...f.article_styles, lineHeight: e.target.value } }))} />
+                      </div>
+                      <div className="input-group" style={{ marginBottom: 0 }}>
+                        <label className="input-label" style={{ fontSize: 11 }}>Màu chữ tổng</label>
+                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                          <input type="color" value={addForm.article_styles.color || '#333333'}
+                            onChange={e => setAddForm(f => ({ ...f, article_styles: { ...f.article_styles, color: e.target.value } }))}
+                            style={{ width: 32, height: 32, padding: 2, border: '1px solid var(--border)', borderRadius: 6, cursor: 'pointer', background: 'none' }} />
+                          <input className="input-field" style={{ fontSize: 12, flex: 1 }} placeholder="#333333"
+                            value={addForm.article_styles.color}
+                            onChange={e => setAddForm(f => ({ ...f, article_styles: { ...f.article_styles, color: e.target.value } }))} />
+                        </div>
+                      </div>
+                      <div className="input-group" style={{ marginBottom: 0 }}>
+                        <label className="input-label" style={{ fontSize: 11 }}>H2 font size</label>
+                        <input className="input-field" style={{ fontSize: 12 }} placeholder="VD: 20px"
+                          value={addForm.article_styles.h2FontSize}
+                          onChange={e => setAddForm(f => ({ ...f, article_styles: { ...f.article_styles, h2FontSize: e.target.value } }))} />
+                      </div>
+                      <div className="input-group" style={{ marginBottom: 0 }}>
+                        <label className="input-label" style={{ fontSize: 11 }}>H2 màu chữ</label>
+                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                          <input type="color" value={addForm.article_styles.h2Color || '#111111'}
+                            onChange={e => setAddForm(f => ({ ...f, article_styles: { ...f.article_styles, h2Color: e.target.value } }))}
+                            style={{ width: 32, height: 32, padding: 2, border: '1px solid var(--border)', borderRadius: 6, cursor: 'pointer', background: 'none' }} />
+                          <input className="input-field" style={{ fontSize: 12, flex: 1 }} placeholder="#111111"
+                            value={addForm.article_styles.h2Color}
+                            onChange={e => setAddForm(f => ({ ...f, article_styles: { ...f.article_styles, h2Color: e.target.value } }))} />
+                        </div>
+                      </div>
+                      <div className="input-group" style={{ marginBottom: 0 }}>
+                        <label className="input-label" style={{ fontSize: 11 }}>H3 font size</label>
+                        <input className="input-field" style={{ fontSize: 12 }} placeholder="VD: 17px"
+                          value={addForm.article_styles.h3FontSize}
+                          onChange={e => setAddForm(f => ({ ...f, article_styles: { ...f.article_styles, h3FontSize: e.target.value } }))} />
+                      </div>
+                      <div className="input-group" style={{ marginBottom: 0 }}>
+                        <label className="input-label" style={{ fontSize: 11 }}>H3 màu chữ</label>
+                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                          <input type="color" value={addForm.article_styles.h3Color || '#222222'}
+                            onChange={e => setAddForm(f => ({ ...f, article_styles: { ...f.article_styles, h3Color: e.target.value } }))}
+                            style={{ width: 32, height: 32, padding: 2, border: '1px solid var(--border)', borderRadius: 6, cursor: 'pointer', background: 'none' }} />
+                          <input className="input-field" style={{ fontSize: 12, flex: 1 }} placeholder="#222222"
+                            value={addForm.article_styles.h3Color}
+                            onChange={e => setAddForm(f => ({ ...f, article_styles: { ...f.article_styles, h3Color: e.target.value } }))} />
+                        </div>
+                      </div>
+                      <div className="input-group" style={{ marginBottom: 0 }}>
+                        <label className="input-label" style={{ fontSize: 11 }}>H4 font size</label>
+                        <input className="input-field" style={{ fontSize: 12 }} placeholder="VD: 15px"
+                          value={addForm.article_styles.h4FontSize}
+                          onChange={e => setAddForm(f => ({ ...f, article_styles: { ...f.article_styles, h4FontSize: e.target.value } }))} />
+                      </div>
+                      <div className="input-group" style={{ marginBottom: 0 }}>
+                        <label className="input-label" style={{ fontSize: 11 }}>H4 màu chữ</label>
+                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                          <input type="color" value={addForm.article_styles.h4Color || '#333333'}
+                            onChange={e => setAddForm(f => ({ ...f, article_styles: { ...f.article_styles, h4Color: e.target.value } }))}
+                            style={{ width: 32, height: 32, padding: 2, border: '1px solid var(--border)', borderRadius: 6, cursor: 'pointer', background: 'none' }} />
+                          <input className="input-field" style={{ fontSize: 12, flex: 1 }} placeholder="#333333"
+                            value={addForm.article_styles.h4Color}
+                            onChange={e => setAddForm(f => ({ ...f, article_styles: { ...f.article_styles, h4Color: e.target.value } }))} />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '8px' }}>
                   <button type="button" className="btn btn-outline" onClick={() => setIsAddOpen(false)} disabled={submitting}>Hủy</button>
                   <button type="submit" className="btn btn-primary" disabled={submitting}>
@@ -456,15 +565,116 @@ const Companies = () => {
                   </label>
                 </div>
                 {editForm.internal_links_enabled && (
-                  <div className="input-group" style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-                    <label style={{ fontSize: 13, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>Số link tối đa mỗi bài:</label>
-                    <input type="number" min="1" max="10" className="input-field"
-                      value={editForm.internal_links_max}
-                      onChange={e => setEditForm(f => ({ ...f, internal_links_max: e.target.value }))}
-                      style={{ width: 70, textAlign: 'center' }} disabled={saving} />
-                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>(1–10)</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 46, marginBottom: 8, marginTop: -4 }}>
+                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Tối đa</span>
+                    <div style={{ display: 'flex', alignItems: 'center', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', background: 'var(--bg-panel)' }}>
+                      <button type="button" disabled={saving || +editForm.internal_links_max <= 1}
+                        onClick={() => setEditForm(f => ({ ...f, internal_links_max: Math.max(1, +f.internal_links_max - 1) }))}
+                        style={{ width: 28, height: 28, border: 'none', background: 'none', cursor: 'pointer', fontSize: 16, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>
+                      <span style={{ minWidth: 24, textAlign: 'center', fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{editForm.internal_links_max}</span>
+                      <button type="button" disabled={saving || +editForm.internal_links_max >= 10}
+                        onClick={() => setEditForm(f => ({ ...f, internal_links_max: Math.min(10, +f.internal_links_max + 1) }))}
+                        style={{ width: 28, height: 28, border: 'none', background: 'none', cursor: 'pointer', fontSize: 16, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
+                    </div>
+                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>link / bài</span>
                   </div>
                 )}
+
+                {/* Tùy chỉnh style bài viết */}
+                <div style={{ borderTop: '1px solid var(--border)', marginTop: 4, paddingTop: 12 }}>
+                  <button type="button" onClick={() => setShowEditStyles(v => !v)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', padding: 0, cursor: 'pointer', width: '100%', marginBottom: showEditStyles ? 12 : 0 }}>
+                    <Palette size={14} color="var(--accent)" />
+                    <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-primary)' }}>Tùy chỉnh giao diện bài viết</span>
+                    <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 'auto' }}>để trống = dùng mặc định</span>
+                    {showEditStyles ? <ChevronUp size={14} color="var(--text-muted)" /> : <ChevronDown size={14} color="var(--text-muted)" />}
+                  </button>
+                  {showEditStyles && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 12px' }}>
+                      <div className="input-group" style={{ marginBottom: 0 }}>
+                        <label className="input-label" style={{ fontSize: 11 }}>Font chữ</label>
+                        <input className="input-field" style={{ fontSize: 12 }} placeholder="VD: Arial, sans-serif"
+                          value={editForm.article_styles.fontFamily}
+                          onChange={e => setEditForm(f => ({ ...f, article_styles: { ...f.article_styles, fontFamily: e.target.value } }))} />
+                      </div>
+                      <div className="input-group" style={{ marginBottom: 0 }}>
+                        <label className="input-label" style={{ fontSize: 11 }}>Font size tổng</label>
+                        <input className="input-field" style={{ fontSize: 12 }} placeholder="VD: 16px"
+                          value={editForm.article_styles.fontSize}
+                          onChange={e => setEditForm(f => ({ ...f, article_styles: { ...f.article_styles, fontSize: e.target.value } }))} />
+                      </div>
+                      <div className="input-group" style={{ marginBottom: 0 }}>
+                        <label className="input-label" style={{ fontSize: 11 }}>Line height</label>
+                        <input className="input-field" style={{ fontSize: 12 }} placeholder="VD: 1.8"
+                          value={editForm.article_styles.lineHeight}
+                          onChange={e => setEditForm(f => ({ ...f, article_styles: { ...f.article_styles, lineHeight: e.target.value } }))} />
+                      </div>
+                      <div className="input-group" style={{ marginBottom: 0 }}>
+                        <label className="input-label" style={{ fontSize: 11 }}>Màu chữ tổng</label>
+                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                          <input type="color" value={editForm.article_styles.color || '#333333'}
+                            onChange={e => setEditForm(f => ({ ...f, article_styles: { ...f.article_styles, color: e.target.value } }))}
+                            style={{ width: 32, height: 32, padding: 2, border: '1px solid var(--border)', borderRadius: 6, cursor: 'pointer', background: 'none' }} />
+                          <input className="input-field" style={{ fontSize: 12, flex: 1 }} placeholder="#333333"
+                            value={editForm.article_styles.color}
+                            onChange={e => setEditForm(f => ({ ...f, article_styles: { ...f.article_styles, color: e.target.value } }))} />
+                        </div>
+                      </div>
+                      <div className="input-group" style={{ marginBottom: 0 }}>
+                        <label className="input-label" style={{ fontSize: 11 }}>H2 font size</label>
+                        <input className="input-field" style={{ fontSize: 12 }} placeholder="VD: 20px"
+                          value={editForm.article_styles.h2FontSize}
+                          onChange={e => setEditForm(f => ({ ...f, article_styles: { ...f.article_styles, h2FontSize: e.target.value } }))} />
+                      </div>
+                      <div className="input-group" style={{ marginBottom: 0 }}>
+                        <label className="input-label" style={{ fontSize: 11 }}>H2 màu chữ</label>
+                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                          <input type="color" value={editForm.article_styles.h2Color || '#111111'}
+                            onChange={e => setEditForm(f => ({ ...f, article_styles: { ...f.article_styles, h2Color: e.target.value } }))}
+                            style={{ width: 32, height: 32, padding: 2, border: '1px solid var(--border)', borderRadius: 6, cursor: 'pointer', background: 'none' }} />
+                          <input className="input-field" style={{ fontSize: 12, flex: 1 }} placeholder="#111111"
+                            value={editForm.article_styles.h2Color}
+                            onChange={e => setEditForm(f => ({ ...f, article_styles: { ...f.article_styles, h2Color: e.target.value } }))} />
+                        </div>
+                      </div>
+                      <div className="input-group" style={{ marginBottom: 0 }}>
+                        <label className="input-label" style={{ fontSize: 11 }}>H3 font size</label>
+                        <input className="input-field" style={{ fontSize: 12 }} placeholder="VD: 17px"
+                          value={editForm.article_styles.h3FontSize}
+                          onChange={e => setEditForm(f => ({ ...f, article_styles: { ...f.article_styles, h3FontSize: e.target.value } }))} />
+                      </div>
+                      <div className="input-group" style={{ marginBottom: 0 }}>
+                        <label className="input-label" style={{ fontSize: 11 }}>H3 màu chữ</label>
+                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                          <input type="color" value={editForm.article_styles.h3Color || '#222222'}
+                            onChange={e => setEditForm(f => ({ ...f, article_styles: { ...f.article_styles, h3Color: e.target.value } }))}
+                            style={{ width: 32, height: 32, padding: 2, border: '1px solid var(--border)', borderRadius: 6, cursor: 'pointer', background: 'none' }} />
+                          <input className="input-field" style={{ fontSize: 12, flex: 1 }} placeholder="#222222"
+                            value={editForm.article_styles.h3Color}
+                            onChange={e => setEditForm(f => ({ ...f, article_styles: { ...f.article_styles, h3Color: e.target.value } }))} />
+                        </div>
+                      </div>
+                      <div className="input-group" style={{ marginBottom: 0 }}>
+                        <label className="input-label" style={{ fontSize: 11 }}>H4 font size</label>
+                        <input className="input-field" style={{ fontSize: 12 }} placeholder="VD: 15px"
+                          value={editForm.article_styles.h4FontSize}
+                          onChange={e => setEditForm(f => ({ ...f, article_styles: { ...f.article_styles, h4FontSize: e.target.value } }))} />
+                      </div>
+                      <div className="input-group" style={{ marginBottom: 0 }}>
+                        <label className="input-label" style={{ fontSize: 11 }}>H4 màu chữ</label>
+                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                          <input type="color" value={editForm.article_styles.h4Color || '#333333'}
+                            onChange={e => setEditForm(f => ({ ...f, article_styles: { ...f.article_styles, h4Color: e.target.value } }))}
+                            style={{ width: 32, height: 32, padding: 2, border: '1px solid var(--border)', borderRadius: 6, cursor: 'pointer', background: 'none' }} />
+                          <input className="input-field" style={{ fontSize: 12, flex: 1 }} placeholder="#333333"
+                            value={editForm.article_styles.h4Color}
+                            onChange={e => setEditForm(f => ({ ...f, article_styles: { ...f.article_styles, h4Color: e.target.value } }))} />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '8px' }}>
                   <button type="button" className="btn btn-outline" onClick={() => setEditingCompany(null)} disabled={saving}>Hủy</button>
                   <button type="submit" className="btn btn-primary" disabled={saving}>

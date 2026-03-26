@@ -104,17 +104,22 @@ export function AuthProvider({ children }) {
   };
 
   // ── Role helpers ──────────────────────────────────────────────────────────
-  const isRoot          = ['root', 'admin'].includes(user?.role);
-  const isSeniorManager = user?.role === 'senior_manager';
-  const isManager       = user?.role === 'manager';
-  const isEmployee      = ['employee', 'user'].includes(user?.role);
-  const canManageUsers  = isRoot || isSeniorManager || isManager;
+  const isRoot      = ['root', 'admin'].includes(user?.role);
+  const isDirector  = user?.role === 'director';
+  const isManager   = user?.role === 'manager';
+  const isLeader    = user?.role === 'leader';
+  const isEmployee  = ['user', 'employee'].includes(user?.role);
+  // canManageUsers: leader trở lên được vào trang Users
+  const canManageUsers = isRoot || isDirector || isManager || isLeader;
+  // backward-compat alias
+  const isSeniorManager = isDirector;
 
   return (
     <AuthContext.Provider value={{
       user, token, loading, authEnabled,
       login, loginWithGoogle, logout, updateUser,
-      isRoot, isSeniorManager, isManager, isEmployee, canManageUsers,
+      isRoot, isDirector, isManager, isLeader, isEmployee, canManageUsers,
+      isSeniorManager,
     }}>
       {children}
     </AuthContext.Provider>

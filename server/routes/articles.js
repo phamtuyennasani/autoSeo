@@ -265,9 +265,19 @@ router.put('/:id', async (req, res) => {
     // Lưu phiên bản cũ trước khi ghi đè
     await saveVersion(id, check.rows[0], user.id);
 
+    // Lấy article_styles của company để apply inline styles đúng brand
+    let articleStyles = {};
+    if (content !== undefined && check.rows[0].companyId) {
+      try {
+        const companyRes = await db.execute({ sql: 'SELECT article_styles FROM companies WHERE id = ?', args: [check.rows[0].companyId] });
+        const raw = companyRes.rows[0]?.article_styles;
+        if (raw) articleStyles = JSON.parse(raw);
+      } catch { /* giữ default nếu lỗi */ }
+    }
+
     const updates = [];
     const args = [];
-    if (content !== undefined)         { updates.push('content = ?');         args.push(applyInlineStyles(content)); }
+    if (content !== undefined)         { updates.push('content = ?');         args.push(applyInlineStyles(content, articleStyles)); }
     if (seo_title !== undefined)       { updates.push('seo_title = ?');       args.push(seo_title); }
     if (seo_description !== undefined) { updates.push('seo_description = ?'); args.push(seo_description); }
 
@@ -486,7 +496,7 @@ router.post('/batch', async (req, res) => {
 });
 
 // ─── Helper dùng chung: lưu 1 bài từ kết quả Batch API ───────────────────────
-async function saveArticleFromBatch(jobKeyword, jobCompanyId, result, createdBy = null, jobKeywordId = null, chuki = null) {
+async function saveArticleFromBatch(jobKeyword, jobCompanyId, result, createdBy = null, jobKeywordId = null, chuki = null, writtenBy = null) {
   if (result.error) return { saved: false, message: `AI error: ${result.error}` };
 
   const { seo_title = result.title, seo_description = '', image_prompts = [] } = result;
@@ -511,10 +521,10 @@ async function saveArticleFromBatch(jobKeyword, jobCompanyId, result, createdBy 
     : [jobKeyword, result.title, jobCompanyId];
 
   const insertResult = await db.execute({
-    sql: `INSERT INTO articles (id, keyword, title, companyId, content, seo_title, seo_description, image_prompts, createdAt, createdBy, keywordId, chuki)
-          SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+    sql: `INSERT INTO articles (id, keyword, title, companyId, content, seo_title, seo_description, image_prompts, createdAt, createdBy, keywordId, chuki, writtenBy)
+          SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
           WHERE NOT EXISTS (${existsCheck})`,
-    args: [id, jobKeyword, result.title, jobCompanyId, content, seo_title, seo_description, JSON.stringify(image_prompts), createdAt, createdBy, jobKeywordId, chuki,
+    args: [id, jobKeyword, result.title, jobCompanyId, content, seo_title, seo_description, JSON.stringify(image_prompts), createdAt, createdBy, jobKeywordId, chuki, writtenBy,
            ...existsArgs],
   });
 

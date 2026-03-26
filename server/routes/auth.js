@@ -8,10 +8,49 @@
 
 const express = require('express');
 const router = express.Router();
+const crypto = require('crypto');
 const { db } = require('../data/store');
 const { comparePassword, signToken, hashPassword } = require('../services/auth');
 const authenticate = require('../middleware/authenticate');
 const axios = require('axios');
+
+// ── Nasani helpers ────────────────────────────────────────────────────────────
+function stripDots(email) {
+  const [local, domain] = email.split('@');
+  return local.replace(/\./g, '') + '@' + domain;
+}
+
+function createNasaniToken(timestamp) {
+  const secret = process.env.NASANI_API_SECRET;
+  if (!secret) throw new Error('NASANI_API_SECRET chưa được cấu hình trong .env');
+  return crypto.createHmac('sha256', secret).update(timestamp.toString()).digest('base64');
+}
+
+async function checkNasaniAccess(email) {
+  const emailNoDots = stripDots(email);
+  const timestamp = Math.floor(Date.now() / 1000).toString();
+  const token = createNasaniToken(timestamp);
+
+  const params = new URLSearchParams();
+  params.append('time_post', timestamp);
+  params.append('token', token);
+  params.append('email', emailNoDots);
+
+  const res = await axios.post('https://user.nasani.vn/api/checkUserByEmailAI', params, {
+    timeout: 10000,
+  });
+  return res.data; // { success, data: { info, department, group, parent } }
+}
+
+// Mapping is_admin.value từ Nasani → role AutoSEO
+// 0 = Director | 1 = User | 3 = Leader | 4 = Manager
+function nasaniPermissionToRole(isAdminValue) {
+  const v = parseInt(isAdminValue, 10);
+  if (v === 0) return 'director';
+  if (v === 4) return 'manager';
+  if (v === 3) return 'leader';
+  return 'user'; // 1 hoặc bất kỳ giá trị khác = Nhân viên
+}
 
 // POST /login
 router.post('/login', async (req, res) => {
@@ -77,7 +116,11 @@ router.get('/me', authenticate, async (req, res) => {
     }
 
     const result = await db.execute({
-      sql: 'SELECT id, username, full_name, email, phone, role, is_active, daily_token_limit, daily_article_limit, publish_api_url, createdAt, lastLoginAt FROM users WHERE id = ?',
+      sql: `SELECT id, username, full_name, email, phone, role, is_active,
+                   daily_token_limit, daily_article_limit, publish_api_url,
+                   employee_code, department_name, manager_name, manager_email, nasani_permission,
+                   custom_prompt, google_id, createdAt, lastLoginAt
+            FROM users WHERE id = ?`,
       args: [req.user.id],
     });
     const user = result.rows[0];
@@ -120,20 +163,37 @@ router.put('/change-password', authenticate, async (req, res) => {
   }
 });
 
-// PUT /profile — Cập nhật thông tin cá nhân (full_name, email, phone)
+// PUT /profile — Cập nhật thông tin cá nhân (full_name, email, phone, custom_prompt)
 router.put('/profile', authenticate, async (req, res) => {
   if (process.env.AUTH_ENABLED !== 'true') {
     return res.status(400).json({ error: 'Chức năng này chỉ khả dụng khi bật xác thực.' });
   }
-  const full_name = (req.body.full_name || '').trim() || null;
-  const email     = (req.body.email     || '').trim() || null;
-  const phone     = (req.body.phone     || '').trim() || null;
+  const full_name     = (req.body.full_name     || '').trim() || null;
+  const email         = (req.body.email         || '').trim() || null;
+  const phone         = (req.body.phone         || '').trim() || null;
+  const custom_prompt = (req.body.custom_prompt || '').trim() || null;
+
+  // Validate: custom_prompt không được yêu cầu trả về JSON
+  if (custom_prompt) {
+    const lower = custom_prompt.toLowerCase();
+    const forbidden = ['json', '```', '"key":', '"value":', 'trả về dạng', 'output format', 'return format'];
+    const found = forbidden.find(p => lower.includes(p));
+    if (found) {
+      return res.status(400).json({
+        error: 'Prompt không được chứa yêu cầu định dạng JSON hoặc code block. Hãy chỉ mô tả phong cách viết.',
+      });
+    }
+    if (custom_prompt.length > 2000) {
+      return res.status(400).json({ error: 'Prompt tối đa 2000 ký tự.' });
+    }
+  }
+
   try {
     await db.execute({
-      sql: 'UPDATE users SET full_name = ?, email = ?, phone = ? WHERE id = ?',
-      args: [full_name, email, phone, req.user.id],
+      sql: 'UPDATE users SET full_name = ?, email = ?, phone = ?, custom_prompt = ? WHERE id = ?',
+      args: [full_name, email, phone, custom_prompt, req.user.id],
     });
-    res.json({ full_name, email, phone });
+    res.json({ full_name, email, phone, custom_prompt });
   } catch (err) {
     console.error('[auth/profile]', err.message);
     res.status(500).json({ error: 'Lỗi cập nhật: ' + err.message });
@@ -150,7 +210,7 @@ router.post('/logout', (req, res) => {
   res.json({ success: true, message: 'Đã đăng xuất.' });
 });
 
-// POST /google — Đăng nhập bằng Google access token
+// POST /google — Đăng nhập bằng Google access token + xác thực Nasani
 router.post('/google', async (req, res) => {
   if (process.env.AUTH_ENABLED !== 'true') {
     return res.status(400).json({ error: 'Chức năng này chỉ khả dụng khi bật xác thực.' });
@@ -162,17 +222,54 @@ router.post('/google', async (req, res) => {
   }
 
   try {
-    // Lấy thông tin user từ Google userinfo API
+    // 1. Lấy thông tin user từ Google
     const googleRes = await axios.get('https://www.googleapis.com/oauth2/v3/userinfo', {
       headers: { Authorization: `Bearer ${access_token}` },
     });
-    const { sub: googleId, email } = googleRes.data;
+    const { sub: googleId, email, name: googleName } = googleRes.data;
 
     if (!email) {
       return res.status(400).json({ error: 'Tài khoản Google không có email.' });
     }
 
-    // Tìm user theo google_id hoặc email
+    // 2. Xác thực với Nasani
+    let nasaniData;
+    try {
+      nasaniData = await checkNasaniAccess(email);
+    } catch (nasaniErr) {
+      console.error('[auth/google] Nasani API error:', nasaniErr.message);
+      return res.status(500).json({ error: 'Không thể kết nối hệ thống xác thực nội bộ. Vui lòng thử lại.' });
+    }
+
+    if (!nasaniData.success) {
+      return res.status(403).json({ error: 'Tài khoản không có quyền truy cập hệ thống. Vui lòng liên hệ quản trị viên.' });
+    }
+
+    // 3. Trích xuất thông tin từ Nasani
+    const info   = nasaniData.data?.info       || {};
+    const dept   = nasaniData.data?.department || {};
+    const parent = nasaniData.data?.parent     || {};
+
+    const employeeCode    = info.code                    || null;
+    const fullName        = info.name     || googleName  || null;
+    const departmentName  = dept.name                    || null;
+    const managerCode     = parent.code                  || null;
+    const managerName     = parent.name                  || null;
+    const managerEmail    = parent.email                 || null;
+    const nasaniPermission= info.is_admin?.value != null ? String(info.is_admin.value) : null;
+    const nasaniRole      = nasaniPermissionToRole(nasaniPermission);
+
+    // 4. Tìm manager trong DB theo employee_code của parent
+    let managerId = null;
+    if (managerCode) {
+      const mgResult = await db.execute({
+        sql: 'SELECT id FROM users WHERE employee_code = ? LIMIT 1',
+        args: [managerCode],
+      });
+      managerId = mgResult.rows[0]?.id || null;
+    }
+
+    // 5. Tìm user trong DB
     let result = await db.execute({
       sql: 'SELECT * FROM users WHERE google_id = ? OR email = ?',
       args: [googleId, email],
@@ -180,32 +277,50 @@ router.post('/google', async (req, res) => {
     let user = result.rows[0];
 
     if (!user) {
-      // Tự động tạo tài khoản mới từ Google
-      const { name } = googleRes.data;
+      // Tự động tạo tài khoản mới
       const newId = `google_${googleId}`;
       const username = email.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '_') + '_' + Date.now().toString().slice(-4);
       await db.execute({
-        sql: `INSERT INTO users (id, username, password_hash, role, is_active, google_id, email, full_name, createdAt)
-              VALUES (?, ?, '', 'user', 1, ?, ?, ?, ?)`,
-        args: [newId, username, googleId, email, name || null, new Date().toISOString()],
+        sql: `INSERT INTO users
+                (id, username, password_hash, role, is_active, google_id, email, full_name,
+                 employee_code, department_name, manager_code, manager_name, manager_email,
+                 manager_id, nasani_permission, createdAt)
+              VALUES (?, ?, '', ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [newId, username, nasaniRole, googleId, email, fullName,
+               employeeCode, departmentName, managerCode, managerName, managerEmail,
+               managerId, nasaniPermission, new Date().toISOString()],
       });
       const newResult = await db.execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [newId] });
       user = newResult.rows[0];
+    } else {
+      // Cập nhật đầy đủ thông tin Nasani mỗi lần đăng nhập
+      // Không ghi đè role nếu đang là root/admin
+      const keepRole = user.role === 'root' || user.role === 'admin';
+      await db.execute({
+        sql: `UPDATE users
+              SET google_id        = COALESCE(google_id, ?),
+                  full_name        = ?,
+                  employee_code    = ?,
+                  department_name  = ?,
+                  manager_code     = ?,
+                  manager_name     = ?,
+                  manager_email    = ?,
+                  manager_id       = ?,
+                  nasani_permission= ?,
+                  role             = CASE WHEN role IN ('root','admin') THEN role ELSE ? END
+              WHERE id = ?`,
+        args: [googleId, fullName, employeeCode, departmentName,
+               managerCode, managerName, managerEmail, managerId,
+               nasaniPermission, nasaniRole, user.id],
+      });
+      if (!keepRole) user = { ...user, role: nasaniRole };
     }
 
     if (!user.is_active) {
       return res.status(403).json({ error: 'Tài khoản đã bị khóa. Liên hệ admin để được hỗ trợ.' });
     }
 
-    // Gắn google_id nếu chưa có
-    if (!user.google_id) {
-      await db.execute({
-        sql: 'UPDATE users SET google_id = ? WHERE id = ?',
-        args: [googleId, user.id],
-      });
-    }
-
-    // Cập nhật lastLoginAt
+    // 5. Cập nhật lastLoginAt
     await db.execute({
       sql: 'UPDATE users SET lastLoginAt = ? WHERE id = ?',
       args: [new Date().toISOString(), user.id],
