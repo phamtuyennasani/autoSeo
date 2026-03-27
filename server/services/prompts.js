@@ -49,7 +49,17 @@ ${company.info || ''}
 - Tóm tắt nội dung bài viết, chứa từ khóa chính
 - Độ dài: 150-160 ký tự
 
-## 3. content (QUAN TRỌNG - ĐỌC KỸ)
+## 3. thumbnail_prompt
+- Mô tả ảnh đại diện cho bài viết, dùng để tạo ảnh bằng AI image generator
+- Viết bằng tiếng Anh, độ dài 80-150 ký tự
+- Phong cách: **realistic photography only** — như ảnh chụp thật bằng máy ảnh DSLR/mirrorless
+- BẮT BUỘC bao gồm: chủ thể rõ ràng + ánh sáng tự nhiên + góc chụp thực tế + môi trường thật
+- TUYỆT ĐỐI KHÔNG dùng: "digital art", "illustration", "3D render", "cartoon", "painting", "fantasy", "futuristic", "glowing", "neon"
+- Không chứa text, logo, chữ viết trong mô tả
+- Ví dụ tốt: "RAW photo, Vietnamese woman consulting a doctor in a clean modern clinic, natural window light, 50mm lens, shallow depth of field, photorealistic"
+- Ví dụ tốt: "DSLR photo, fresh Vietnamese food ingredients on wooden table, soft daylight from window, close-up shot, food photography style"
+
+## 4. content (QUAN TRỌNG - ĐỌC KỸ)
 - Định dạng: Markdown
 - Độ dài: Khoảng 1400 từ (±10%)
 - Không có thẻ <hr>, không có thẻ <h1>
@@ -86,7 +96,7 @@ ${optionsPromt}
 - Bắt đầu ngay bằng dấu { và kết thúc bằng dấu }
 
 ## Mẫu JSON chuẩn (format chính xác phải theo):
-{"seo_title":"Tiêu đề SEO ngắn gọn","seo_description":"Mô tả SEO 150-160 ký tự chứa từ khóa chính và tóm tắt nội dung bài viết một cách hấp dẫn.","content":"## H2 Tiêu đề thứ nhất\\n\\nĐoạn văn mở đầu ngắn gọn.\\n\\n- Ý 1\\n- Ý 2\\n- Ý 3\\n\\n### H3 Tiêu đề con\\n\\nNội dung chi tiết...\\n\\n## H2 Tiêu đề thứ hai\\n\\nNội dung tiếp theo..."}`;
+{"seo_title":"Tiêu đề SEO ngắn gọn","seo_description":"Mô tả SEO 150-160 ký tự chứa từ khóa chính và tóm tắt nội dung bài viết một cách hấp dẫn.","thumbnail_prompt":"RAW photo, [subject related to article topic], natural lighting, realistic environment, DSLR 50mm lens, photorealistic, no text","content":"## H2 Tiêu đề thứ nhất\\n\\nĐoạn văn mở đầu ngắn gọn.\\n\\n- Ý 1\\n- Ý 2\\n- Ý 3\\n\\n### H3 Tiêu đề con\\n\\nNội dung chi tiết...\\n\\n## H2 Tiêu đề thứ hai\\n\\nNội dung tiếp theo..."}`;
 }
 
 // ─── Prompt tạo tiêu đề ───────────────────────────────────────────────────────

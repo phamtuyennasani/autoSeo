@@ -57,8 +57,7 @@ ${companyInfo.info}
 2. Lập dàn ý (Outline): Tạo cấu trúc bài viết logic với H2, H3. Đảm bảo từ khóa chính xuất hiện tự nhiên.
 3. Viết nội dung (Content Writing): Viết bài chi tiết, chuyên sâu, giọng văn chuyên nghiệp nhưng gần gũi.
 4. Tối ưu SEO On-page: Từ khóa chính ("${keyword}") phải xuất hiện trong ít nhất 2 thẻ tiêu đề H2.
-5. Tạo Image Prompts: Dựa trên ngữ cảnh từng phần H2 và keyword chính.
-6. Đóng gói JSON: Trả về kết quả cuối cùng dưới dạng JSON hợp lệ.
+5. Đóng gói JSON: Trả về kết quả cuối cùng dưới dạng JSON hợp lệ.
 
 # YÊU CẦU CHI TIẾT
 
@@ -86,11 +85,6 @@ ${companyInfo.info}
 - Những vị trí cần ảnh thì thêm dòng ghi chú: <!-- image: mô tả ngắn -->
 - Cấu trúc: Mở bài → 2-4 thẻ H2 (mỗi H2 có 1-3 H3) → Phần kết CTA
 
-## 4. image_prompts
-- Ngôn ngữ: Tiếng Anh
-- Số lượng: 1 prompt feature image + 1 prompt cho mỗi H2
-- Style: Photorealistic, cinematic lighting, 4K, detail, aspect ratio 16:9
-
 # QUY TẮC JSON BẮT BUỘC - TUYỆT ĐỐI TUÂN THỦ
 Đây là phần quan trọng nhất. Bạn phải tạo ra JSON hợp lệ có thể parse được bằng JSON.parse().
 
@@ -108,7 +102,7 @@ ${companyInfo.info}
 - Bắt đầu ngay bằng dấu { và kết thúc bằng dấu }
 
 ## Mẫu JSON chuẩn (format chính xác phải theo):
-{"seo_title":"Tiêu đề SEO ngắn gọn","seo_description":"Mô tả SEO 150-160 ký tự chứa từ khóa chính và tóm tắt nội dung bài viết một cách hấp dẫn.","content":"## H2 Tiêu đề thứ nhất\\n\\nĐoạn văn mở đầu ngắn gọn.\\n\\n- Ý 1\\n- Ý 2\\n- Ý 3\\n\\n### H3 Tiêu đề con\\n\\nNội dung chi tiết...\\n\\n## H2 Tiêu đề thứ hai\\n\\nNội dung tiếp theo...","image_prompts":["Feature image prompt in English, photorealistic, cinematic lighting, 4K, 16:9","H2 section 1 image prompt, photorealistic, cinematic lighting, 4K, 16:9","H2 section 2 image prompt, photorealistic, cinematic lighting, 4K, 16:9"]}`;
+{"seo_title":"Tiêu đề SEO ngắn gọn","seo_description":"Mô tả SEO 150-160 ký tự chứa từ khóa chính và tóm tắt nội dung bài viết một cách hấp dẫn.","thumbnail_prompt":"RAW photo, [subject related to article topic], natural lighting, realistic environment, DSLR 50mm lens, photorealistic, no text","content":"## H2 Tiêu đề thứ nhất\\n\\nĐoạn văn mở đầu ngắn gọn.\\n\\n- Ý 1\\n- Ý 2\\n- Ý 3\\n\\n### H3 Tiêu đề con\\n\\nNội dung chi tiết...\\n\\n## H2 Tiêu đề thứ hai\\n\\nNội dung tiếp theo..."}`;
 
   const chatCompletion = await groq.chat.completions.create({
     messages: [
@@ -159,8 +153,8 @@ OUTPUT RULES (MUST FOLLOW 100%):
   const fallback = {
     seo_title: title,
     seo_description: '',
+    thumbnail_prompt: '',
     content: raw,
-    image_prompts: [],
   };
   const messageChat = chatCompletion.choices[0]?.message;
   const rawContent = messageChat?.content?.trim() ?? '';
@@ -177,10 +171,10 @@ OUTPUT RULES (MUST FOLLOW 100%):
   try {
     const parsed = JSON.parse(jsonrepair(jsonStr));
     return {
-      seo_title: typeof parsed.seo_title === 'string' ? parsed.seo_title : title,
-      seo_description: typeof parsed.seo_description === 'string' ? parsed.seo_description : '',
-      content: typeof parsed.content === 'string' ? parsed.content : '',
-      image_prompts: Array.isArray(parsed.image_prompts) ? parsed.image_prompts : [],
+      seo_title:        typeof parsed.seo_title === 'string'        ? parsed.seo_title        : title,
+      seo_description:  typeof parsed.seo_description === 'string'  ? parsed.seo_description  : '',
+      thumbnail_prompt: typeof parsed.thumbnail_prompt === 'string' ? parsed.thumbnail_prompt : '',
+      content:          typeof parsed.content === 'string'          ? parsed.content          : '',
     };
   } catch (err) {
     console.error("Lỗi parse JSON:", err.message);

@@ -12,6 +12,7 @@ import TokenStats from './pages/TokenStats';
 import HopDong from './pages/HopDong';
 import WebhookEvents from './pages/WebhookEvents';
 import KeywordPlanner from './pages/KeywordPlanner';
+import WebsiteAnalysis from './pages/WebsiteAnalysis';
 import { Toaster } from 'sonner';
 import { ThemeProvider } from './context/ThemeContext';
 import { TokenProvider } from './context/TokenContext';
@@ -84,7 +85,8 @@ function AppRoutes() {
         <Route path="users"          element={<Users />} />
         <Route path="hop-dong"       element={<RootRoute><HopDong /></RootRoute>} />
         <Route path="webhook-events" element={<RootRoute><WebhookEvents /></RootRoute>} />
-        <Route path="keyword-planner" element={<KeywordPlanner />} />
+        <Route path="keyword-planner"   element={<KeywordPlanner />} />
+        <Route path="website-analysis"  element={<WebsiteAnalysis />} />
       </Route>
     </Routes>
   );

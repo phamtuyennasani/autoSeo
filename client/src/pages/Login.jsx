@@ -88,7 +88,7 @@ const Login = () => {
       : 'rgba(255,255,255,0.04)',
     border: `1.5px solid ${focusedField === field ? 'rgba(99,102,241,0.6)' : 'rgba(255,255,255,0.08)'}`,
     borderRadius: '12px',
-    color: 'var(--text-primary)',
+    color: '#f1f5f9',
     fontSize: '14px',
     outline: 'none',
     boxSizing: 'border-box',
@@ -290,6 +290,7 @@ const Login = () => {
                 placeholder="Nhập tên đăng nhập..."
                 autoFocus
                 required
+                className="login-input"
                 style={inputStyle('username')}
               />
             </div>
@@ -311,6 +312,7 @@ const Login = () => {
                   onBlur={() => setFocusedField(null)}
                   placeholder="Nhập mật khẩu..."
                   required
+                  className="login-input"
                   style={{ ...inputStyle('password'), paddingRight: '44px' }}
                 />
                 <button
@@ -474,6 +476,8 @@ const Login = () => {
 
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
+        .login-input::placeholder { color: #475569 !important; opacity: 1; }
+        .login-input { color: #f1f5f9 !important; }
         @keyframes slideIn {
           from { opacity: 0; transform: translateY(-6px); }
           to   { opacity: 1; transform: translateY(0); }

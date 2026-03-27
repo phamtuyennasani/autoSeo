@@ -134,18 +134,18 @@ async function generateAndSave(keyword, title, companyId, company, createdBy = n
     });
   }
 
-  let content, seo_title, seo_description, image_prompts;
+  let content, seo_title, seo_description, thumbnail_prompt;
   if (isFanpage) {
     const hashtagStr = Array.isArray(result.hashtags) ? result.hashtags.join(' ') : '';
-    content         = result.caption || '';
-    seo_title       = result.post_type || title;
-    seo_description = hashtagStr;
-    image_prompts   = result.image_prompt ? [result.image_prompt] : [];
+    content          = result.caption || '';
+    seo_title        = result.post_type || title;
+    seo_description  = hashtagStr;
+    thumbnail_prompt = result.image_prompt || '';
   } else {
-    content         = result.content         || '';
-    seo_title       = result.seo_title       || title;
-    seo_description = result.seo_description || '';
-    image_prompts   = result.image_prompts   || [];
+    content          = result.content          || '';
+    seo_title        = result.seo_title        || title;
+    seo_description  = result.seo_description  || '';
+    thumbnail_prompt = result.thumbnail_prompt || '';
   }
 
   // Step 6: Inject internal links (chỉ cho blog, bỏ qua fanpage)
@@ -161,20 +161,20 @@ async function generateAndSave(keyword, title, companyId, company, createdBy = n
   if (existing.rows[0]) {
     await saveVersion(existing.rows[0].id, existing.rows[0], createdBy);
     await db.execute({
-      sql: 'UPDATE articles SET content = ?, seo_title = ?, seo_description = ?, image_prompts = ?, keywordId = ? WHERE id = ?',
-      args: [content, seo_title, seo_description, JSON.stringify(image_prompts), keywordId, existing.rows[0].id],
+      sql: 'UPDATE articles SET content = ?, seo_title = ?, seo_description = ?, thumbnail_prompt = ?, keywordId = ? WHERE id = ?',
+      args: [content, seo_title, seo_description, thumbnail_prompt, keywordId, existing.rows[0].id],
     });
-    return { ...existing.rows[0], content, seo_title, seo_description, image_prompts, keywordId };
+    return { ...existing.rows[0], content, seo_title, seo_description, thumbnail_prompt, keywordId };
   }
 
   // Bài chưa tồn tại → INSERT mới
   const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   const createdAt = new Date().toISOString();
   await db.execute({
-    sql: 'INSERT INTO articles (id, keyword, title, companyId, content, seo_title, seo_description, image_prompts, createdAt, createdBy, keywordId, writtenBy) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    args: [id, keyword, title, companyId, content, seo_title, seo_description, JSON.stringify(image_prompts), createdAt, createdBy, keywordId, writtenBy],
+    sql: 'INSERT INTO articles (id, keyword, title, companyId, content, seo_title, seo_description, thumbnail_prompt, createdAt, createdBy, keywordId, writtenBy) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    args: [id, keyword, title, companyId, content, seo_title, seo_description, thumbnail_prompt, createdAt, createdBy, keywordId, writtenBy],
   });
-  const newArticle = { id, keyword, title, companyId, content, seo_title, seo_description, image_prompts, createdAt, createdBy, writtenBy, keywordId, publish_status: 'unpublished' };
+  const newArticle = { id, keyword, title, companyId, content, seo_title, seo_description, thumbnail_prompt, createdAt, createdBy, writtenBy, keywordId, publish_status: 'unpublished' };
 
   // Auto-publish nếu công ty bật tính năng này
   if (company.auto_publish) {
@@ -311,6 +311,20 @@ router.put('/:id', async (req, res) => {
   } catch (err) {
     console.error('[articles] PUT /:id', err.message);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── GET /:id — Lấy 1 bài viết theo ID ───────────────────────────────────────
+router.get('/:id', async (req, res) => {
+  try {
+    const result = await db.execute({
+      sql: 'SELECT * FROM articles WHERE id = ?',
+      args: [req.params.id],
+    });
+    if (!result.rows[0]) return res.status(404).json({ error: 'Không tìm thấy bài viết.' });
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -534,7 +548,7 @@ router.post('/batch', async (req, res) => {
 async function saveArticleFromBatch(jobKeyword, jobCompanyId, result, createdBy = null, jobKeywordId = null, chuki = null, writtenBy = null) {
   if (result.error) return { saved: false, message: `AI error: ${result.error}` };
 
-  const { seo_title = result.title, seo_description = '', image_prompts = [] } = result;
+  const { seo_title = result.title, seo_description = '', thumbnail_prompt = '' } = result;
   // Inject internal links cho batch articles
   let content = result.content || '';
   try {
@@ -556,10 +570,10 @@ async function saveArticleFromBatch(jobKeyword, jobCompanyId, result, createdBy 
     : [jobKeyword, result.title, jobCompanyId];
 
   const insertResult = await db.execute({
-    sql: `INSERT INTO articles (id, keyword, title, companyId, content, seo_title, seo_description, image_prompts, createdAt, createdBy, keywordId, chuki, writtenBy)
+    sql: `INSERT INTO articles (id, keyword, title, companyId, content, seo_title, seo_description, thumbnail_prompt, createdAt, createdBy, keywordId, chuki, writtenBy)
           SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
           WHERE NOT EXISTS (${existsCheck})`,
-    args: [id, jobKeyword, result.title, jobCompanyId, content, seo_title, seo_description, JSON.stringify(image_prompts), createdAt, createdBy, jobKeywordId, chuki, writtenBy,
+    args: [id, jobKeyword, result.title, jobCompanyId, content, seo_title, seo_description, thumbnail_prompt, createdAt, createdBy, jobKeywordId, chuki, writtenBy,
            ...existsArgs],
   });
 

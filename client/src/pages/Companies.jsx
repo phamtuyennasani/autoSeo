@@ -10,25 +10,38 @@ import { FontPicker } from '../components/FontPicker';
 import { API } from '../config/api';
 const API_URL = API.companies;
 
-const INDUSTRIES = [
-  'Bất động sản',
-  'Công nghệ thông tin',
-  'Thương mại điện tử',
-  'Giáo dục & Đào tạo',
-  'Y tế & Sức khỏe',
-  'Tài chính & Ngân hàng',
-  'Xây dựng & Nội thất',
-  'Du lịch & Khách sạn',
-  'Thực phẩm & Đồ uống',
-  'Thời trang & Làm đẹp',
-  'Vận tải & Logistics',
-  'Nông nghiệp',
-  'Năng lượng',
-  'Truyền thông & Marketing',
-  'Pháp lý',
-  'Khác',
+const INDUSTRY_OPTIONS = [
+  { value: 4,  label: 'Xây dựng' },
+  { value: 5,  label: 'Studio' },
+  { value: 6,  label: 'Nông nghiệp' },
+  { value: 7,  label: 'Vận tải' },
+  { value: 8,  label: 'Nhà hàng' },
+  { value: 9,  label: 'Y tế - Y khoa' },
+  { value: 10, label: 'Gia dụng' },
+  { value: 11, label: 'Tổ chức sự kiện' },
+  { value: 12, label: 'Thể thao' },
+  { value: 13, label: 'Bánh - Trà Sữa Thức Uống' },
+  { value: 14, label: 'Nội Ngoại Thất' },
+  { value: 15, label: 'Thực Phẩm' },
+  { value: 16, label: 'Mỹ phẩm' },
+  { value: 17, label: 'Landing Page' },
+  { value: 18, label: 'Ô tô - Xe máy' },
+  { value: 19, label: 'Khách sạn' },
+  { value: 20, label: 'Du lịch' },
+  { value: 21, label: 'Bất động sản' },
+  { value: 22, label: 'Doanh nghiệp' },
+  { value: 23, label: 'Bán hàng' },
+  { value: 24, label: 'NASANI' },
+  { value: 25, label: 'Spa - Làm đẹp' },
+  { value: 26, label: 'Giáo dục' },
+  { value: 27, label: 'Đào tạo' },
+  { value: 28, label: 'Nghệ thuật' },
+  { value: 29, label: 'Khác' },
+  { value: 30, label: 'Công nghiệp' },
+  { value: 31, label: 'Máy móc - Thiết bị' },
+  { value: 32, label: 'Dược phẩm' },
+  { value: 33, label: 'Thuốc' },
 ];
-const INDUSTRY_OPTIONS = INDUSTRIES.map(ind => ({ value: ind, label: ind }));
 
 const DEFAULT_STYLES = { fontFamily: '', fontSize: '', lineHeight: '', color: '', accentColor: '', h2FontSize: '', h2Color: '', h3FontSize: '', h3Color: '', h4FontSize: '', h4Color: '' };
 
@@ -124,7 +137,7 @@ const Companies = () => {
   // EDIT - open
   const openEdit = (company) => {
     setEditingCompany(company);
-    setEditForm({ name: company.name, url: company.url, info: company.info || '', contract_code: company.contract_code || '', industry: (company.industry || '').split(',').filter(Boolean), publish_api_url: company.publish_api_url || '', auto_publish: !!company.auto_publish, internal_links_enabled: !!company.internal_links_enabled, internal_links_max: company.internal_links_max || 3, article_styles: company.article_styles ? { ...DEFAULT_STYLES, ...company.article_styles } : { ...DEFAULT_STYLES } });
+    setEditForm({ name: company.name, url: company.url, info: company.info || '', contract_code: company.contract_code || '', industry: (company.industry || '').split(',').filter(Boolean).map(v => isNaN(v) ? v : Number(v)), publish_api_url: company.publish_api_url || '', auto_publish: !!company.auto_publish, internal_links_enabled: !!company.internal_links_enabled, internal_links_max: company.internal_links_max || 3, article_styles: company.article_styles ? { ...DEFAULT_STYLES, ...company.article_styles } : { ...DEFAULT_STYLES } });
     setShowEditStyles(false);
   };
 
@@ -238,15 +251,19 @@ const Companies = () => {
                     <Globe size={11} style={{ flexShrink: 0 }} />
                     {company.url.replace(/^https?:\/\//, '')}
                   </a>
-                  {company.industry && company.industry.split(',').filter(Boolean).map(ind => (
+                  {company.industry && company.industry.split(',').filter(Boolean).map(ind => {
+                    const num = isNaN(ind) ? ind : Number(ind);
+                    const label = INDUSTRY_OPTIONS.find(o => o.value === num)?.label ?? ind;
+                    return (
                     <span key={ind} style={{
                       fontSize: '10px', fontWeight: 600, padding: '1px 7px', borderRadius: 99,
                       background: 'rgba(99,102,241,0.08)', color: 'var(--accent)',
                       border: '1px solid rgba(99,102,241,0.2)', whiteSpace: 'nowrap', flexShrink: 0,
                     }}>
-                      {ind}
+                      {label}
                     </span>
-                  ))}
+                  );
+                  })}
                   {company.auto_publish ? (
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: '10px', fontWeight: 600, padding: '1px 7px', borderRadius: 99, background: 'rgba(34,197,94,0.08)', color: 'var(--success)', border: '1px solid rgba(34,197,94,0.2)', whiteSpace: 'nowrap', flexShrink: 0 }}>
                       <Upload size={9} /> Auto-post

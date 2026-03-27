@@ -32,19 +32,19 @@ function parseResponse(raw, titleFallback) {
 
   const jsonStr = extract(raw);
   if (!jsonStr) {
-    return { seo_title: titleFallback, seo_description: '', content: raw || '', image_prompts: [] };
+    return { seo_title: titleFallback, seo_description: '', thumbnail_prompt: '', content: raw || '' };
   }
 
   try {
     const p = JSON.parse(jsonrepair(jsonStr));
     return {
-      seo_title:       typeof p.seo_title === 'string'       ? p.seo_title       : titleFallback,
-      seo_description: typeof p.seo_description === 'string' ? p.seo_description : '',
-      content:         typeof p.content === 'string'         ? p.content         : '',
-      image_prompts:   Array.isArray(p.image_prompts)        ? p.image_prompts   : [],
+      seo_title:        typeof p.seo_title === 'string'        ? p.seo_title        : titleFallback,
+      seo_description:  typeof p.seo_description === 'string'  ? p.seo_description  : '',
+      thumbnail_prompt: typeof p.thumbnail_prompt === 'string' ? p.thumbnail_prompt : '',
+      content:          typeof p.content === 'string'          ? p.content          : '',
     };
   } catch {
-    return { seo_title: titleFallback, seo_description: '', content: raw || '', image_prompts: [] };
+    return { seo_title: titleFallback, seo_description: '', thumbnail_prompt: '', content: raw || '' };
   }
 }
 

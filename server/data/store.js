@@ -187,6 +187,45 @@ async function initDb() {
       updatedAt   TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS website_analyses (
+      id          TEXT PRIMARY KEY,
+      companyId   TEXT,
+      url         TEXT NOT NULL,
+      status      TEXT NOT NULL DEFAULT 'pending',
+      totalPages  INTEGER DEFAULT 0,
+      config      TEXT,
+      summary     TEXT,
+      createdAt   TEXT NOT NULL,
+      createdBy   TEXT,
+      finishedAt  TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS website_analysis_pages (
+      id          TEXT PRIMARY KEY,
+      analysisId  TEXT NOT NULL,
+      url         TEXT NOT NULL,
+      title       TEXT,
+      h1          TEXT,
+      h2s         TEXT,
+      metaDesc    TEXT,
+      wordCount   INTEGER DEFAULT 0,
+      depth       INTEGER DEFAULT 0,
+      statusCode  INTEGER DEFAULT 200,
+      crawledAt   TEXT NOT NULL,
+      FOREIGN KEY (analysisId) REFERENCES website_analyses(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS website_analysis_keywords (
+      id          TEXT PRIMARY KEY,
+      analysisId  TEXT NOT NULL,
+      keyword     TEXT NOT NULL,
+      reason      TEXT,
+      intent      TEXT,
+      priority    TEXT DEFAULT 'medium',
+      cluster     TEXT,
+      FOREIGN KEY (analysisId) REFERENCES website_analyses(id)
+    );
+
     CREATE TABLE IF NOT EXISTS keyword_plan_items (
       id            TEXT PRIMARY KEY,
       planId        TEXT NOT NULL,
@@ -279,6 +318,8 @@ async function initDb() {
     { table: 'companies', col: 'article_styles', ddl: 'ALTER TABLE companies ADD COLUMN article_styles TEXT' },
     { table: 'keyword_plan_items', col: 'variants', ddl: "ALTER TABLE keyword_plan_items ADD COLUMN variants TEXT NOT NULL DEFAULT '[]'" },
     { table: 'keyword_plan_items', col: 'recommended_word_count', ddl: 'ALTER TABLE keyword_plan_items ADD COLUMN recommended_word_count INTEGER NOT NULL DEFAULT 0' },
+    { table: 'articles',          col: 'thumbnail_prompt', ddl: 'ALTER TABLE articles ADD COLUMN thumbnail_prompt TEXT' },
+    { table: 'website_analyses', col: 'progress_log',     ddl: 'ALTER TABLE website_analyses ADD COLUMN progress_log TEXT' },
   ];
 
   for (const m of migrations) {

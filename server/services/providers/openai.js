@@ -115,10 +115,10 @@ async function generateArticle(keyword, title, companyInfo, config = {}) {
     try {
       const parsed = JSON.parse(jsonrepair(jsonStr));
       return {
-        seo_title:       typeof parsed.seo_title === 'string'       ? parsed.seo_title                                : title,
-        seo_description: typeof parsed.seo_description === 'string' ? parsed.seo_description                         : '',
-        content:         typeof parsed.content === 'string'         ? applyInlineStyles(marked.parse(parsed.content), companyInfo?.article_styles || {}) : '',
-        image_prompts:   Array.isArray(parsed.image_prompts)        ? parsed.image_prompts                            : [],
+        seo_title:        typeof parsed.seo_title === 'string'        ? parsed.seo_title                                                                 : title,
+        seo_description:  typeof parsed.seo_description === 'string'  ? parsed.seo_description                                                             : '',
+        thumbnail_prompt: typeof parsed.thumbnail_prompt === 'string' ? parsed.thumbnail_prompt                                                            : '',
+        content:          typeof parsed.content === 'string'          ? applyInlineStyles(marked.parse(parsed.content), companyInfo?.article_styles || {}) : '',
         usage,
       };
     } catch (err) {

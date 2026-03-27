@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Plus, Trash2, ChevronDown, ChevronRight, FileText, Download, Search, Brain, CheckCircle2, Clock, AlertCircle, Circle, Star, Copy, X, Loader, ExternalLink, Hash, Check } from 'lucide-react';
 import { toast } from 'sonner';
+import { useConfirm } from '../context/ConfirmContext';
 
 import { API } from '../config/api';
 import { AppSelect } from '../components/AppSelect';
@@ -196,7 +197,7 @@ function CreatePlanModal({ onClose, onCreated }) {
 }
 
 // ─── Cluster Accordion ────────────────────────────────────────────────────────
-function ClusterAccordion({ clusterIdx, clusterName, items, onEditItem, onCreateArticle, onDeleteItem, onRemoveVariant, creating, selectedIds, onToggleSelect }) {
+function ClusterAccordion({ clusterIdx, clusterName, items, onEditItem, onCreateArticle, onDeleteItem, onRemoveVariant, onViewArticle, creating, selectedIds, onToggleSelect }) {
   const [open, setOpen] = useState(true);
   const pillar   = items.find(i => i.item_type === 'pillar');
   const children = items.filter(i => i.item_type !== 'pillar');
@@ -288,11 +289,13 @@ function ClusterAccordion({ clusterIdx, clusterName, items, onEditItem, onCreate
           {pillar && (
             <KeywordItem item={pillar} isPillar
               onEdit={onEditItem} onCreateArticle={onCreateArticle} onDeleteItem={onDeleteItem}
+              onViewArticle={onViewArticle}
               creating={creating} selected={selectedIds.has(pillar.id)} onToggleSelect={onToggleSelect} />
           )}
           {children.map(item => (
             <KeywordItem key={item.id} item={item}
               onEdit={onEditItem} onCreateArticle={onCreateArticle} onDeleteItem={onDeleteItem}
+              onViewArticle={onViewArticle}
               creating={creating} selected={selectedIds.has(item.id)} onToggleSelect={onToggleSelect} />
           ))}
         </div>
@@ -302,7 +305,7 @@ function ClusterAccordion({ clusterIdx, clusterName, items, onEditItem, onCreate
 }
 
 // ─── Keyword Item Row ─────────────────────────────────────────────────────────
-function KeywordItem({ item, isPillar, onEdit, onCreateArticle, onDeleteItem, creating, selected, onToggleSelect }) {
+function KeywordItem({ item, isPillar, onEdit, onCreateArticle, onDeleteItem, onViewArticle, creating, selected, onToggleSelect }) {
   const [editingIntent, setEditingIntent] = useState(false);
   const intents     = ['Informational', 'Commercial', 'Navigational', 'Transactional'];
   const isProcessing = item.status === 'in_queue';
@@ -407,7 +410,12 @@ function KeywordItem({ item, isPillar, onEdit, onCreateArticle, onDeleteItem, cr
           <span style={{ fontSize: 11, color: '#8b5cf6' }}>⏳</span>
         )}
         {item.articleId && item.status === 'created' && (
-          <span style={{ fontSize: 11, color: '#22c55e' }}>✓</span>
+          <button
+            onClick={e => { e.stopPropagation(); onViewArticle && onViewArticle(item.articleId); }}
+            title="Xem bài viết"
+            style={{ padding: '3px 10px', borderRadius: 6, border: '1px solid rgba(34,197,94,0.4)', background: 'rgba(34,197,94,0.08)', color: '#22c55e', cursor: 'pointer', fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap' }}>
+            Xem bài
+          </button>
         )}
 
         {/* delete */}
@@ -494,17 +502,20 @@ function ProgressPanel({ planId }) {
 
 // ─── Plan Detail View ─────────────────────────────────────────────────────────
 function PlanDetail({ planId, companies, onBack }) {
+  const confirm = useConfirm();
   const [plan, setPlan] = useState(null);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
   const [creating, setCreating] = useState(null); // itemId đang tạo bài
+  const [viewingArticle, setViewingArticle] = useState(null); // article đang xem
   const [activeTab, setActiveTab] = useState('clusters'); // clusters | progress
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterCluster, setFilterCluster] = useState('all');
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [batchCreating, setBatchCreating] = useState(false);
   const [showSchedule, setShowSchedule] = useState(false);
+  const [changingCompany, setChangingCompany] = useState(false);
   const [scheduleHours, setScheduleHours] = useState(24);
 
   const load = useCallback(async () => {
@@ -521,8 +532,24 @@ function PlanDetail({ planId, companies, onBack }) {
 
   useEffect(() => { load(); }, [load]);
 
+  const handleChangeCompany = async (newCompanyId) => {
+    setChangingCompany(true);
+    try {
+      await apiFetch(`${API.keywordPlans}/${planId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ companyId: newCompanyId || null }),
+      });
+      await load();
+      toast.success('Đã cập nhật công ty');
+    } catch (err) {
+      toast.error('Lỗi: ' + err.message);
+    } finally {
+      setChangingCompany(false);
+    }
+  };
+
   const handleAnalyze = async () => {
-    if (!window.confirm('Chạy AI phân tích sẽ xóa kết quả cũ. Tiếp tục?')) return;
+    if (!await confirm({ title: 'Chạy AI phân tích?', message: 'Kết quả clustering cũ sẽ bị xóa và chạy lại từ đầu.', confirmText: 'Phân tích', danger: false })) return;
     setAnalyzing(true);
     try {
       const data = await apiFetch(`${API.keywordPlans}/${planId}/analyze`, { method: 'POST' });
@@ -555,7 +582,7 @@ function PlanDetail({ planId, companies, onBack }) {
   };
 
   const handleDeleteItem = async (itemId) => {
-    if (!window.confirm('Xóa keyword này khỏi plan?')) return;
+    if (!await confirm({ title: 'Xóa keyword?', message: 'Keyword này sẽ bị xóa khỏi plan.', confirmText: 'Xóa', danger: true })) return;
     try {
       await apiFetch(`${API.keywordPlans}/${planId}/items/${itemId}`, { method: 'DELETE' });
       setItems(prev => prev.filter(i => i.id !== itemId));
@@ -582,6 +609,17 @@ function PlanDetail({ planId, companies, onBack }) {
     }
   };
 
+  const handleViewArticle = async (articleId) => {
+    setViewingArticle({ id: articleId, _loading: true });
+    try {
+      const data = await apiFetch(`${API.articles}/${articleId}`);
+      setViewingArticle(data);
+    } catch (err) {
+      toast.error('Không tải được bài viết: ' + err.message);
+      setViewingArticle(null);
+    }
+  };
+
   const handleExport = (format) => {
     const token = localStorage.getItem('autoseo_token');
     const url = `${API.keywordPlans}/${planId}/export?format=${format}`;
@@ -604,7 +642,7 @@ function PlanDetail({ planId, companies, onBack }) {
   const handleBatchCreate = async () => {
     if (selectedIds.size === 0) return toast.error('Chưa chọn keyword nào');
     if (!plan.companyId) return toast.error('Plan chưa chọn công ty');
-    if (!window.confirm(`Tạo bài cho ${selectedIds.size} keyword đã chọn?`)) return;
+    if (!await confirm({ title: `Tạo bài cho ${selectedIds.size} keyword?`, message: 'Các keyword đã chọn sẽ được thêm vào hàng đợi tạo bài.', confirmText: 'Tạo bài' })) return;
     setBatchCreating(true);
     try {
       const result = await apiFetch(`${API.keywordPlans}/${planId}/batch-create`, {
@@ -673,14 +711,22 @@ function PlanDetail({ planId, companies, onBack }) {
             <h1 style={{ margin: '0 0 6px', fontSize: 20, fontWeight: 800, color: 'var(--text-primary)' }}>{plan.name}</h1>
             <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
               <PlanStatusBadge status={plan.status} />
-              {plan.companyName && <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>🏢 {plan.companyName}</span>}
+              <select
+                value={plan.companyId || ''}
+                onChange={e => handleChangeCompany(e.target.value)}
+                disabled={changingCompany}
+                style={{ fontSize: 12, padding: '2px 6px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-panel)', color: plan.companyId ? 'var(--text-primary)' : 'var(--text-secondary)', cursor: 'pointer' }}>
+                <option value=''>— Chọn công ty —</option>
+                {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
               <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Tổng: <strong style={{ color: 'var(--text-primary)' }}>{totalItems}</strong> keywords · Đã tạo: <strong style={{ color: '#3b82f6' }}>{createdItems}</strong> · Đã publish: <strong style={{ color: '#22c55e' }}>{publishedItems}</strong></span>
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button onClick={handleAnalyze} disabled={analyzing}
-              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: '1px solid #8b5cf6', background: 'rgba(139,92,246,0.1)', color: '#8b5cf6', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>
-              <Brain size={14} /> {analyzing ? 'Đang phân tích...' : 'AI Phân tích'}
+              className={analyzing ? 'kp-analyze-btn kp-analyze-btn--running' : 'kp-analyze-btn'}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: '1px solid #8b5cf6', background: analyzing ? 'rgba(139,92,246,0.2)' : 'rgba(139,92,246,0.1)', color: '#8b5cf6', cursor: analyzing ? 'not-allowed' : 'pointer', fontSize: 12, fontWeight: 600 }}>
+              <Brain size={14} className={analyzing ? 'kp-brain-pulse' : ''} /> {analyzing ? 'Đang phân tích...' : 'AI Phân tích'}
             </button>
             <button onClick={() => handleExport('csv')}
               style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-panel)', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 12 }}>
@@ -806,7 +852,7 @@ function PlanDetail({ planId, companies, onBack }) {
             Object.entries(clusters).map(([clusterName, clusterItems], idx) => (
               <ClusterAccordion key={clusterName} clusterIdx={idx} clusterName={clusterName} items={clusterItems}
                 onEditItem={handleEditItem} onCreateArticle={handleCreateArticle} onDeleteItem={handleDeleteItem}
-                onRemoveVariant={handleRemoveVariant} creating={creating}
+                onRemoveVariant={handleRemoveVariant} onViewArticle={handleViewArticle} creating={creating}
                 selectedIds={selectedIds} onToggleSelect={handleToggleSelect} />
             ))
           )}
@@ -814,12 +860,74 @@ function PlanDetail({ planId, companies, onBack }) {
       )}
 
       {activeTab === 'progress' && <ProgressPanel planId={planId} />}
+
+      {/* ── Modal xem bài viết ── */}
+      {viewingArticle && (
+        <div className="kp-modal-overlay" style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '40px 20px', overflowY: 'auto' }}>
+          <div style={{ background: 'var(--bg-modal)', borderRadius: 14, width: '100%', maxWidth: 820, border: '1px solid var(--border)', boxShadow: '0 24px 80px rgba(0,0,0,0.5)', position: 'relative' }}>
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid var(--border)' }}>
+              <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--text-primary)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingRight: 12 }}>
+                {viewingArticle._loading ? 'Đang tải...' : (viewingArticle.title || 'Bài viết')}
+              </div>
+              <button onClick={() => setViewingArticle(null)} style={{ padding: 6, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', flexShrink: 0 }}>
+                <X size={18} />
+              </button>
+            </div>
+
+            {viewingArticle._loading ? (
+              <div style={{ padding: 60, textAlign: 'center', color: 'var(--text-secondary)' }}>
+                <Loader size={24} style={{ animation: 'spin 1s linear infinite', marginBottom: 12 }} />
+                <div>Đang tải bài viết...</div>
+              </div>
+            ) : (
+              <div style={{ padding: '20px 24px' }}>
+                {/* Meta info */}
+                {(viewingArticle.seo_title || viewingArticle.seo_description || viewingArticle.keyword) && (
+                  <div style={{ background: 'var(--bg-main)', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 16px', marginBottom: 20, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {viewingArticle.keyword && (
+                      <div style={{ fontSize: 12 }}>
+                        <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>Keyword: </span>
+                        <span style={{ color: 'var(--text-primary)' }}>{viewingArticle.keyword}</span>
+                      </div>
+                    )}
+                    {viewingArticle.seo_title && (
+                      <div style={{ fontSize: 12 }}>
+                        <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>SEO Title: </span>
+                        <span style={{ color: 'var(--text-primary)' }}>{viewingArticle.seo_title}</span>
+                      </div>
+                    )}
+                    {viewingArticle.seo_description && (
+                      <div style={{ fontSize: 12 }}>
+                        <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>Meta Desc: </span>
+                        <span style={{ color: 'var(--text-secondary)' }}>{viewingArticle.seo_description}</span>
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', gap: 12, fontSize: 11, color: 'var(--text-muted)', paddingTop: 4, borderTop: '1px solid var(--border)' }}>
+                      {viewingArticle.wordCount > 0 && <span>{viewingArticle.wordCount.toLocaleString('vi-VN')} từ</span>}
+                      {viewingArticle.createdAt && <span>{new Date(viewingArticle.createdAt).toLocaleString('vi-VN')}</span>}
+                    </div>
+                  </div>
+                )}
+                {/* Content */}
+                <div style={{ background: 'var(--bg-main)', border: '1px solid var(--border)', borderRadius: 10, padding: '20px 24px', maxHeight: '62vh', overflowY: 'auto' }}>
+                  <div
+                    className="kp-article-body"
+                    dangerouslySetInnerHTML={{ __html: viewingArticle.content || '<p>Không có nội dung</p>' }}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 // ─── Plans List ───────────────────────────────────────────────────────────────
 function PlansList({ onSelect, refreshKey }) {
+  const confirm = useConfirm();
   const [plans, setPlans] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -840,7 +948,7 @@ function PlansList({ onSelect, refreshKey }) {
 
   const handleDelete = async (plan, e) => {
     e.stopPropagation();
-    if (!window.confirm(`Xóa plan "${plan.name}"? (Bài viết đã tạo sẽ không bị xóa)`)) return;
+    if (!await confirm({ title: `Xóa plan "${plan.name}"?`, message: 'Bài viết đã tạo sẽ không bị xóa.', confirmText: 'Xóa', danger: true })) return;
     try {
       await apiFetch(`${API.keywordPlans}/${plan.id}`, { method: 'DELETE' });
       toast.success('Đã xóa plan');
@@ -995,6 +1103,39 @@ export default function KeywordPlanner() {
       {showCreate && (
         <CreatePlanModal onClose={() => setShowCreate(false)} onCreated={handleCreated} />
       )}
+
+      <style>{`
+        .kp-modal-overlay { backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); background: rgba(0,0,0,0.55); }
+        [data-theme="light"] .kp-modal-overlay { background: rgba(0,0,0,0.25); }
+        @keyframes kp-glow-pulse {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(139,92,246,0.4); }
+          50% { box-shadow: 0 0 0 6px rgba(139,92,246,0); }
+        }
+        @keyframes kp-brain-shake {
+          0%, 100% { transform: rotate(0deg); }
+          20% { transform: rotate(-10deg); }
+          40% { transform: rotate(10deg); }
+          60% { transform: rotate(-6deg); }
+          80% { transform: rotate(6deg); }
+        }
+        .kp-analyze-btn--running { animation: kp-glow-pulse 1.4s ease-in-out infinite; }
+        .kp-brain-pulse { animation: kp-brain-shake 1.2s ease-in-out infinite; }
+        .kp-article-body { font-size: 14px; line-height: 1.8; }
+        .kp-article-body,
+        .kp-article-body p,
+        .kp-article-body li,
+        .kp-article-body td,
+        .kp-article-body span { color: var(--text-primary) !important; background: transparent !important; }
+        .kp-article-body h1,
+        .kp-article-body h2,
+        .kp-article-body h3,
+        .kp-article-body h4 { color: var(--text-primary) !important; background: transparent !important; margin: 1em 0 0.4em; }
+        .kp-article-body a { color: var(--accent) !important; }
+        .kp-article-body strong, .kp-article-body b { color: var(--text-primary) !important; }
+        .kp-article-body blockquote { border-left: 3px solid var(--accent); padding-left: 12px; color: var(--text-secondary) !important; }
+        .kp-article-body table { border-collapse: collapse; width: 100%; }
+        .kp-article-body th, .kp-article-body td { border: 1px solid var(--border) !important; padding: 6px 10px; color: var(--text-primary) !important; background: transparent !important; }
+      `}</style>
     </div>
   );
 }

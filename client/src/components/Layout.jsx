@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { Search, Building2, Zap, Settings, HelpCircle, Sun, Moon, Cpu, TrendingUp, Layers, Users, LogOut, BarChart3, FileSignature, Webhook, ListTodo } from 'lucide-react';
+import { Search, Building2, Zap, Settings, HelpCircle, Sun, Moon, Cpu, TrendingUp, Layers, Users, LogOut, BarChart3, FileSignature, Webhook, ListTodo, Globe } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { useToken } from '../context/TokenContext';
 import { useAuth } from '../context/AuthContext';
@@ -15,7 +15,8 @@ const pageTitles = {
   '/users':           'Quản Lý Users',
   '/hop-dong':        'Quản Lý Hợp Đồng',
   '/webhook-events':  'Lịch Sử Webhook',
-  '/keyword-planner': 'Keyword Planner',
+  '/keyword-planner':  'Keyword Planner',
+  '/website-analysis': 'Phân Tích Website',
 };
 
 // Format số token lớn cho dễ đọc: 1234567 → 1.23M, 12345 → 12.3K
@@ -76,6 +77,9 @@ const Layout = () => {
           </NavLink>
           <NavLink to="/keyword-planner" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
             <ListTodo size={17} className="nav-icon" /> Keyword Planner
+          </NavLink>
+          <NavLink to="/website-analysis" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+            <Globe size={17} className="nav-icon" /> Phân Tích Website
           </NavLink>
         </div>
 
