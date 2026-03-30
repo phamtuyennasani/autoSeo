@@ -117,7 +117,6 @@ async function getManageableUserIds(userId, role) {
 const VALID_ROLES = ['root', 'director', 'manager', 'leader', 'user'];
 // backward-compat aliases
 const ALL_VALID_ROLES = [...VALID_ROLES, 'admin', 'senior_manager', 'employee'];
-
 module.exports = {
   getRoleLevel,
   isRoot,
@@ -132,7 +131,6 @@ module.exports = {
   getManageableUserIds,
   VALID_ROLES,
   ALL_VALID_ROLES,
-  // backward-compat aliases
   isSeniorManager: isDirector,
   isEmployee: isUser,
 };
