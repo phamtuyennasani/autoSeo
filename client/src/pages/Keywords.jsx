@@ -109,6 +109,10 @@ const Keywords = () => {
   const sseRef = useRef(null); // giữ EventSource để có thể đóng khi cần
   const articleContentRef = useRef(null);
 
+  // Chỉnh sửa tiêu đề inline
+  const [editingTitleIdx, setEditingTitleIdx] = useState(null);
+  const [editingTitleValue, setEditingTitleValue] = useState('');
+
   // Áp dụng inline styles vào các thẻ HTML sau khi markdown được render
   useEffect(() => {
     const el = articleContentRef.current;
@@ -146,7 +150,7 @@ const Keywords = () => {
   }, [showMultiUser]);
 
   useEffect(() => { fetchData(); }, []);
-  useEffect(() => { setCheckedTitles(new Set()); }, [selectedKeyword?.id]);
+  useEffect(() => { setCheckedTitles(new Set()); setEditingTitleIdx(null); }, [selectedKeyword?.id]);
 
   const fetchData = async (userId = filterUserId, page = kwPage, search = searchText, companyId = filterCompanyId) => {
     try {
@@ -458,6 +462,24 @@ const Keywords = () => {
       toast.error(err.response?.data?.error || 'Publish hàng loạt thất bại');
     } finally {
       setIsBatchPublishing(false);
+    }
+  };
+
+  // Lưu chỉnh sửa tiêu đề inline
+  const handleSaveTitleEdit = async (idx, oldTitle) => {
+    const newTitle = editingTitleValue.trim();
+    setEditingTitleIdx(null);
+    if (!newTitle || newTitle === oldTitle) return;
+    try {
+      const res = await apiClient.patch(`${API_KEYWORD}/${selectedKeyword.id}/title`, { titleIndex: idx, newTitle });
+      setSelectedKeyword(prev => ({ ...prev, titles: res.data.titles }));
+      // Nếu title cũ đang được check → đổi sang title mới
+      if (checkedTitles.has(oldTitle)) {
+        setCheckedTitles(prev => { const next = new Set(prev); next.delete(oldTitle); next.add(newTitle); return next; });
+      }
+      toast.success('Đã cập nhật tiêu đề');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Cập nhật tiêu đề thất bại');
     }
   };
 
@@ -1138,10 +1160,11 @@ const Keywords = () => {
               const isChecked = checkedTitles.has(title);
               // Checkable: chưa có bài + không có queue đang chạy + không trong batch + không trong SSE queue hiện tại
               const isCheckable = !article && !writeQueueJob && !pendingBatchTitles.has(title) && !isInQueue;
+              const isEditingThis = editingTitleIdx === idx;
               return (
                 <div
                   key={idx}
-                  onClick={isCheckable ? () => setCheckedTitles(prev => { const next = new Set(prev); isChecked ? next.delete(title) : next.add(title); return next; }) : undefined}
+                  onClick={isCheckable && !isEditingThis ? () => setCheckedTitles(prev => { const next = new Set(prev); isChecked ? next.delete(title) : next.add(title); return next; }) : undefined}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -1203,19 +1226,38 @@ const Keywords = () => {
                               : <Clock size={16} color="var(--text-muted)" style={{ flexShrink: 0 }} />
                   }
 
-                  {/* Title + Topic tag */}
-                  <span style={{ fontSize: '14px', lineHeight: '1.5', color: 'var(--text-primary)', flex: 1, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                    {title}
-                    {topic && (
-                      <span style={{
-                        fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 20,
-                        background: 'var(--accent-subtle)', color: 'var(--accent)',
-                        border: '1px solid rgba(99,102,241,0.2)', whiteSpace: 'nowrap', flexShrink: 0,
-                      }}>
-                        {topic}
-                      </span>
-                    )}
-                  </span>
+                  {/* Title + Topic tag / Input khi edit */}
+                  {isEditingThis ? (
+                    <input
+                      autoFocus
+                      value={editingTitleValue}
+                      onChange={e => setEditingTitleValue(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') handleSaveTitleEdit(idx, title);
+                        if (e.key === 'Escape') setEditingTitleIdx(null);
+                      }}
+                      onClick={e => e.stopPropagation()}
+                      style={{
+                        flex: 1, fontSize: '14px', lineHeight: '1.5', padding: '3px 8px',
+                        border: '1.5px solid var(--accent)', borderRadius: 6,
+                        background: 'var(--bg-input, var(--bg-panel))',
+                        color: 'var(--text-primary)', outline: 'none',
+                      }}
+                    />
+                  ) : (
+                    <span style={{ fontSize: '14px', lineHeight: '1.5', color: 'var(--text-primary)', flex: 1, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      {title}
+                      {topic && (
+                        <span style={{
+                          fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 20,
+                          background: 'var(--accent-subtle)', color: 'var(--accent)',
+                          border: '1px solid rgba(99,102,241,0.2)', whiteSpace: 'nowrap', flexShrink: 0,
+                        }}>
+                          {topic}
+                        </span>
+                      )}
+                    </span>
+                  )}
 
                   {/* Date written */}
                   {article && (
@@ -1238,7 +1280,25 @@ const Keywords = () => {
 
                   {/* Actions */}
                   <div onClick={e => e.stopPropagation()} style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
-                    {article ? (
+                    {isEditingThis ? (
+                      <>
+                        <button
+                          onClick={() => handleSaveTitleEdit(idx, title)}
+                          className="btn btn-sm btn-primary"
+                          style={{ gap: 4 }}
+                          title="Lưu (Enter)"
+                        >
+                          <Check size={13} /> Lưu
+                        </button>
+                        <button
+                          onClick={() => setEditingTitleIdx(null)}
+                          className="btn btn-sm btn-outline"
+                          title="Hủy (Esc)"
+                        >
+                          <X size={13} />
+                        </button>
+                      </>
+                    ) : article ? (
                       <>
                         <button
                           onClick={() => setViewingArticle(article)}
@@ -1314,6 +1374,17 @@ const Keywords = () => {
                           ? <><Loader2 className="animate-spin" size={13} /> Đang viết...</>
                           : <><PenTool size={13} /> Viết bài</>
                         }
+                      </button>
+                    )}
+                    {/* Nút sửa tiêu đề — chỉ hiện khi chưa có bài, không trong queue/batch */}
+                    {!isEditingThis && !article && !isQueueWritingThis && !isInQueue && !pendingBatchTitles.has(title) && (
+                      <button
+                        onClick={() => { setEditingTitleIdx(idx); setEditingTitleValue(title); }}
+                        className="btn btn-sm btn-outline"
+                        title="Chỉnh sửa tiêu đề"
+                        style={{ padding: '3px 7px', color: 'var(--text-muted)' }}
+                      >
+                        <Edit3 size={12} />
                       </button>
                     )}
                   </div>
