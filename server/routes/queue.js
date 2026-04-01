@@ -7,12 +7,15 @@
  * POST /api/queue/retry-failed   — retry tất cả job failed
  * POST /api/queue/pause          — dừng workers
  * POST /api/queue/resume         — khởi động lại workers
+ * POST /api/queue/spawn-kw       — tạo thêm 1 keyword worker
+ * POST /api/queue/spawn-tl       — tạo thêm 1 title worker
  */
 
 const express = require('express');
 const router  = express.Router();
 const { db }  = require('../data/store');
-const { getQueueStats, retryFailed, startQueueWorkers, stopQueueWorkers, getWebhookRetryStats } = require('../services/crmQueueWorker');
+const { getQueueStats, retryFailed, startQueueWorkers, stopQueueWorkers,
+        getWebhookRetryStats, spawnKeywordWorker, spawnTitleWorker } = require('../services/crmQueueWorker');
 
 // GET /api/queue/status
 router.get('/status', async (req, res) => {
@@ -75,8 +78,41 @@ router.post('/pause', (req, res) => {
 
 // POST /api/queue/resume
 router.post('/resume', (req, res) => {
-  startQueueWorkers();
-  res.json({ success: true, message: 'Workers đã khởi động lại.' });
+  const { getQueueStats } = require('../services/crmQueueWorker');
+  getQueueStats().then(stats => {
+    if (stats.running) {
+      return res.json({ success: true, message: 'Workers đang chạy rồi.' });
+    }
+    startQueueWorkers();
+    res.json({ success: true, message: 'Workers đã khởi động lại.' });
+  }).catch(() => {
+    startQueueWorkers();
+    res.json({ success: true, message: 'Workers đã khởi động lại.' });
+  });
+});
+
+// POST /api/queue/spawn-kw — tạo thêm 1 keyword worker
+router.post('/spawn-kw', (req, res) => {
+  const { getQueueStats } = require('../services/crmQueueWorker');
+  const stats = getQueueStats(); // sync — activeWorkers là sync
+  if (!stats.running) {
+    return res.status(400).json({ error: 'Workers đang dừng. Nhấn Resume trước.' });
+  }
+  const id = spawnKeywordWorker();
+  if (!id) return res.status(400).json({ error: 'Không thể tạo worker.' });
+  res.json({ success: true, worker_id: id, message: `Đã tạo thêm KW-Worker-${id}` });
+});
+
+// POST /api/queue/spawn-tl — tạo thêm 1 title worker
+router.post('/spawn-tl', (req, res) => {
+  const { getQueueStats } = require('../services/crmQueueWorker');
+  const stats = getQueueStats();
+  if (!stats.running) {
+    return res.status(400).json({ error: 'Workers đang dừng. Nhấn Resume trước.' });
+  }
+  const id = spawnTitleWorker();
+  if (!id) return res.status(400).json({ error: 'Không thể tạo worker.' });
+  res.json({ success: true, worker_id: id, message: `Đã tạo thêm TL-Worker-${id}` });
 });
 
 module.exports = router;

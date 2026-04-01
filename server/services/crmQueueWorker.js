@@ -33,6 +33,10 @@ const LOG = (...args) => console.log('[CRMQueue]', ...args);
 
 let running = false;
 
+// Dynamic worker pool — workers có thể được thêm/bớt lúc runtime
+const activeKeywordWorkers = new Set(); // Set of worker IDs currently running
+const activeTitleWorkers   = new Set();
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
@@ -224,21 +228,27 @@ async function processKeywordJob(job) {
 }
 
 async function runKeywordWorker(workerId) {
-  LOG(`[KW-Worker-${workerId}] Khởi động`);
-  while (running) {
-    try {
-      const job = await claimKeywordJob(`kw-${workerId}`);
-      if (job) {
-        await processKeywordJob(job);
-      } else {
+  const wid = `kw-${workerId}`;
+  activeKeywordWorkers.add(wid);
+  LOG(`[KW-Worker-${wid}] Khởi động (active KW: ${activeKeywordWorkers.size})`);
+  try {
+    while (running) {
+      try {
+        const job = await claimKeywordJob(wid);
+        if (job) {
+          await processKeywordJob(job);
+        } else {
+          await sleep(POLL_MS);
+        }
+      } catch (e) {
+        LOG(`[KW-Worker-${wid}] Lỗi vòng lặp:`, e.message);
         await sleep(POLL_MS);
       }
-    } catch (e) {
-      LOG(`[KW-Worker-${workerId}] Lỗi vòng lặp:`, e.message);
-      await sleep(POLL_MS);
     }
+  } finally {
+    activeKeywordWorkers.delete(wid);
+    LOG(`[KW-Worker-${wid}] Dừng (active KW: ${activeKeywordWorkers.size})`);
   }
-  LOG(`[KW-Worker-${workerId}] Dừng`);
 }
 
 // Chạy reset stuck jobs định kỳ (mỗi 1 phút)
@@ -388,21 +398,27 @@ async function processTitleJob(job) {
 }
 
 async function runTitleWorker(workerId) {
-  LOG(`[TL-Worker-${workerId}] Khởi động`);
-  while (running) {
-    try {
-      const job = await claimTitleJob(`tl-${workerId}`);
-      if (job) {
-        await processTitleJob(job);
-      } else {
+  const wid = `tl-${workerId}`;
+  activeTitleWorkers.add(wid);
+  LOG(`[TL-Worker-${wid}] Khởi động (active TL: ${activeTitleWorkers.size})`);
+  try {
+    while (running) {
+      try {
+        const job = await claimTitleJob(wid);
+        if (job) {
+          await processTitleJob(job);
+        } else {
+          await sleep(POLL_MS);
+        }
+      } catch (e) {
+        LOG(`[TL-Worker-${wid}] Lỗi vòng lặp:`, e.message);
         await sleep(POLL_MS);
       }
-    } catch (e) {
-      LOG(`[TL-Worker-${workerId}] Lỗi vòng lặp:`, e.message);
-      await sleep(POLL_MS);
     }
+  } finally {
+    activeTitleWorkers.delete(wid);
+    LOG(`[TL-Worker-${wid}] Dừng (active TL: ${activeTitleWorkers.size})`);
   }
-  LOG(`[TL-Worker-${workerId}] Dừng`);
 }
 
 // ─── Khởi động / Dừng ────────────────────────────────────────────────────────
@@ -432,6 +448,46 @@ function stopQueueWorkers() {
   LOG('Đang dừng tất cả workers...');
 }
 
+// ─── Dynamic worker management ─────────────────────────────────────────────────
+
+/**
+ * spawnKeywordWorker — tạo thêm 1 keyword worker lúc runtime
+ * Trả về worker ID hoặc null nếu không thể
+ */
+function spawnKeywordWorker() {
+  if (!running) return null;
+  // Tìm workerId nhỏ nhất chưa dùng (để tránh trùng khi worker cũ đã stop)
+  let i = 1;
+  while (activeKeywordWorkers.has(`kw-${i}`)) i++;
+  runKeywordWorker(i).catch(e => LOG(`[Spawned KW-Worker-${i}] crash:`, e.message));
+  LOG(`[Spawner] Added KW-Worker-${i} (total active KW: ${activeKeywordWorkers.size})`);
+  return i;
+}
+
+/**
+ * spawnTitleWorker — tạo thêm 1 title worker lúc runtime
+ */
+function spawnTitleWorker() {
+  if (!running) return null;
+  let i = 1;
+  while (activeTitleWorkers.has(`tl-${i}`)) i++;
+  runTitleWorker(i).catch(e => LOG(`[Spawned TL-Worker-${i}] crash:`, e.message));
+  LOG(`[Spawner] Added TL-Worker-${i} (total active TL: ${activeTitleWorkers.size})`);
+  return i;
+}
+
+/**
+ * getActiveWorkers — trả về số workers đang chạy thực tế
+ */
+function getActiveWorkers() {
+  return {
+    keyword: activeKeywordWorkers.size,
+    keyword_total: activeKeywordWorkers.size,
+    title:   activeTitleWorkers.size,
+    title_total:   activeTitleWorkers.size,
+  };
+}
+
 // ─── Stats ────────────────────────────────────────────────────────────────────
 
 async function getQueueStats() {
@@ -449,6 +505,7 @@ async function getQueueStats() {
   return {
     running,
     workers: { keyword: KEYWORD_WORKERS, title: TITLE_WORKERS },
+    active_workers: getActiveWorkers(),
     keyword_queue: toMap(kw.rows),
     title_queue:   toMap(tl.rows),
   };
@@ -466,13 +523,15 @@ async function retryFailed() {
 
 // ─── DLQ Stats ────────────────────────────────────────────────────────────────
 async function getDlqStats() {
-  const [kwDlq, tlDlq] = await Promise.all([
+  const [kwDlq, tlDlq, totalReplayed] = await Promise.all([
     db.execute(`SELECT COUNT(*) AS cnt FROM keyword_queue_dlq`),
     db.execute(`SELECT COUNT(*) AS cnt FROM title_queue_dlq`),
+    db.execute(`SELECT COUNT(*) AS cnt FROM keyword_queue_dlq WHERE replayed_at IS NOT NULL`),
   ]);
   return {
-    keyword_queue_dlq: Number(kwDlq.rows[0]?.cnt || 0),
-    title_queue_dlq:   Number(tlDlq.rows[0]?.cnt || 0),
+    keyword_dlq_count: Number(kwDlq.rows[0]?.cnt || 0),
+    title_dlq_count:   Number(tlDlq.rows[0]?.cnt || 0),
+    total_replayed:    Number(totalReplayed.rows[0]?.cnt || 0),
   };
 }
 
@@ -567,4 +626,5 @@ module.exports = {
   getQueueStats, retryFailed,
   getWebhookRetryStats,
   getDlqStats, replayFromDlq, purgeFromDlq,
+  spawnKeywordWorker, spawnTitleWorker, getActiveWorkers,
 };
