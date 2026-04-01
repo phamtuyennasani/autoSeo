@@ -92,7 +92,7 @@ router.get('/', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     const user = req.user || { id: 'admin', role: 'admin' };
-    const { keyword, companyId, titleCount, manualTitles, contentType } = req.body;
+    const { keyword, companyId, titleCount, manualTitles, contentType, keywordRequirements } = req.body;
     if (!keyword || !companyId) return res.status(400).json({ error: 'Keyword và Company ID là bắt buộc' });
     const resolvedContentType = contentType === 'fanpage' ? 'fanpage' : 'blog';
 
@@ -115,7 +115,7 @@ router.post('/', async (req, res) => {
 
       try {
         console.log(`Đang dùng AI tạo ${count} titles...`);
-        const result = await generateTitles(keyword, searchContext, count, { ...apiConfig, contentType: resolvedContentType });
+        const result = await generateTitles(keyword, searchContext, count, { ...apiConfig, contentType: resolvedContentType, keywordRequirements });
         titles = result.titles.slice(0, count);
 
         if (result.usage) {

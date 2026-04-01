@@ -8,6 +8,15 @@ dotenv.config({ path: path.join(__dirname, '.env'), override: true });
 
 const app = express();
 app.use(cors());
+
+// ── Prometheus metrics endpoint (không cần auth) ───────────────────────────────
+const { metricsHandler } = require('./services/metricsService');
+app.get('/metrics', metricsHandler);
+
+// IMPORTANT: webhooks route phải đặt TRƯỚC express.json() để express.raw() nhận được Buffer thô,
+// nếu không HMAC verification sẽ không hoạt động (body đã bị parse rồi).
+app.use('/api/webhooks', require('./routes/webhooks'));
+
 app.use(express.json());
 
 // ── Middleware xác thực (global, trước tất cả routes) ─────────────────────────
@@ -37,9 +46,6 @@ app.use('/api/chat',         require('./routes/chat'));
 app.use('/api/fonts',        require('./routes/fonts'));
 app.use('/api/images',            require('./routes/images'));
 app.use('/api/website-analysis',  require('./routes/website-analysis'));
-
-// ── Webhook nhận từ CRM1 (không cần login, bảo mật bằng HMAC) ────────────────
-app.use('/api/webhooks', require('./routes/webhooks'));
 
 // ── Hợp Đồng & Webhook Events (root-only) ────────────────────────────────────
 app.use('/api/hop-dong',       requireRoot, require('./routes/hopDong'));

@@ -4,6 +4,12 @@ const { db } = require('../data/store');
 const requireAdmin = require('../middleware/requireAdmin');
 const { isRoot } = require('../services/permissions');
 
+/* Ẩn key, chỉ hiện 4 ký tự đầu + 4 ký tự cuối */
+function maskKey(key) {
+  if (!key || key.length < 12) return '••••';
+  return key.slice(0, 6) + '••••••••' + key.slice(-4);
+}
+
 // ─── Helper: đọc 1 setting ────────────────────────────────────────────────────
 async function getSetting(key) {
   const result = await db.execute({ sql: 'SELECT value FROM settings WHERE key = ?', args: [key] });
@@ -104,9 +110,11 @@ router.get('/api-config', async (req, res) => {
       });
       const row = result.rows[0] || {};
       return res.json({
-        gemini_api_key:  row.gemini_api_key  || '',
+        gemini_api_key:  row.gemini_api_key  ? maskKey(row.gemini_api_key)  : '',
+        gemini_api_key_set:  !!row.gemini_api_key,
         gemini_model:    row.gemini_model    || 'gemini-2.5-flash',
-        serpapi_api_key: row.serpapi_api_key || '',
+        serpapi_api_key: row.serpapi_api_key ? maskKey(row.serpapi_api_key) : '',
+        serpapi_api_key_set: !!row.serpapi_api_key,
         publish_api_url: row.publish_api_url || '',
         scope: 'user',
       });
@@ -119,9 +127,11 @@ router.get('/api-config', async (req, res) => {
     const map = {};
     for (const row of result.rows) map[row.key] = row.value;
     res.json({
-      gemini_api_key:      map.gemini_api_key  || '',
+      gemini_api_key:      map.gemini_api_key      ? maskKey(map.gemini_api_key)      : '',
+      gemini_api_key_set:  !!map.gemini_api_key,
       gemini_model:        map.gemini_model    || 'gemini-2.5-flash',
-      serpapi_api_key:     map.serpapi_api_key || '',
+      serpapi_api_key:     map.serpapi_api_key ? maskKey(map.serpapi_api_key) : '',
+      serpapi_api_key_set: !!map.serpapi_api_key,
       default_ai_provider: map.default_ai_provider || process.env.DEFAULT_AI_PROVIDER || 'gemini',
       open_key_mode:       map.open_key_mode === '1',
       scope: 'system',
@@ -144,9 +154,11 @@ router.put('/api-config', async (req, res) => {
     if (authEnabled && !isRoot(user)) {
       const updates = [];
       const args    = [];
-      if (gemini_api_key  !== undefined) { updates.push('gemini_api_key = ?');  args.push(String(gemini_api_key).trim()); }
+      /* Bỏ qua key bị mask (•••) → giữ nguyên key cũ trong DB */
+      const skipMasked = (v) => !v || String(v).includes('•••');
+      if (gemini_api_key  !== undefined && !skipMasked(gemini_api_key)) { updates.push('gemini_api_key = ?');  args.push(String(gemini_api_key).trim()); }
       if (gemini_model    !== undefined) { updates.push('gemini_model = ?');    args.push(String(gemini_model).trim()); }
-      if (serpapi_api_key !== undefined) { updates.push('serpapi_api_key = ?'); args.push(String(serpapi_api_key).trim()); }
+      if (serpapi_api_key !== undefined && !skipMasked(serpapi_api_key)) { updates.push('serpapi_api_key = ?'); args.push(String(serpapi_api_key).trim()); }
       if (publish_api_url !== undefined) { updates.push('publish_api_url = ?'); args.push(String(publish_api_url).trim()); }
 
       if (updates.length > 0) {
@@ -172,11 +184,13 @@ router.put('/api-config', async (req, res) => {
     for (const [key, value] of Object.entries(fields)) {
       if (value === undefined) continue;
       const val = String(value).trim();
+      /* Bỏ qua key bị mask (•••) → giữ nguyên key cũ trong DB */
+      if (!val || val.includes('•••')) continue;
       await db.execute({
         sql: 'INSERT INTO settings (key, value, label, updatedAt) VALUES (?, ?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updatedAt = excluded.updatedAt',
         args: [key, val, key, updatedAt],
       });
-      if (val) process.env[envMap[key]] = val;
+      process.env[envMap[key]] = val;
     }
 
     // Open Key mode

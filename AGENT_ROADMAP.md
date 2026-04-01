@@ -7,7 +7,7 @@
 
 ## Trạng thái hiện tại
 
-### Tools đang hoạt động (v1.1)
+### Tools đang hoạt động (v1.2)
 
 | Tool | Mô tả | Trạng thái |
 |---|---|---|
@@ -20,6 +20,10 @@
 | `list_articles` | Liệt kê bài viết, filter theo công ty/từ khóa/status | ✅ Done |
 | `get_keyword_detail` | Chi tiết từ khóa: titles, bài đã viết/còn lại | ✅ Done |
 | `check_write_job` | Kiểm tra tiến độ job viết bài nền | ✅ Done |
+| `analyze_website` | Crawl website + gợi ý từ khóa SEO | ✅ Done |
+| `get_analysis_results` | Lấy kết quả phân tích website | ✅ Done |
+| `publish_article` | Đăng bài lên website qua API | ✅ Done |
+| `delete_keyword` | Xóa từ khóa (cảnh báo nếu có bài viết) | ✅ Done |
 
 ### Hạ tầng sẵn có
 
@@ -35,7 +39,7 @@
 
 > Mục tiêu: Agent có thể trả lời mọi câu hỏi về bài viết và từ khóa.
 > Impact: Cao | Effort: Thấp
-> **Triển khai:** 2026-03-31
+> **Triển khai:** 2026-04-01
 
 ### 1.1 `list_articles` — Xem danh sách bài viết ✅
 
@@ -91,12 +95,13 @@
 
 ---
 
-## Giai đoạn 2 — Workflow đầy đủ (v1.2)
+## Giai đoạn 2 — Workflow đầy đủ (v1.2) ✅ HOÀN THÀNH
 
 > Mục tiêu: Agent có thể thực hiện toàn bộ quy trình SEO end-to-end.
 > Impact: Cao | Effort: Trung bình
+> **Triển khai:** 2026-04-01
 
-### 2.1 `analyze_website` — Phân tích website, gợi ý từ khóa
+### 2.1 `analyze_website` — Phân tích website, gợi ý từ khóa ✅
 
 **Khi user nói:** "phân tích website [URL]", "tìm từ khóa cho [domain]"
 
@@ -117,7 +122,7 @@
 
 ---
 
-### 2.2 `get_analysis_results` — Lấy kết quả phân tích website
+### 2.2 `get_analysis_results` — Lấy kết quả phân tích website ✅
 
 **Khi user nói:** "kết quả phân tích", "từ khóa gợi ý từ website [X]"
 
@@ -135,7 +140,7 @@
 
 ---
 
-### 2.3 `publish_article` — Đăng bài lên website
+### 2.3 `publish_article` — Đăng bài lên website ✅
 
 **Khi user nói:** "đăng bài [tiêu đề]", "publish bài [X] lên [website]"
 
@@ -155,7 +160,7 @@
 
 ---
 
-### 2.4 `delete_keyword` — Xóa từ khóa
+### 2.4 `delete_keyword` — Xóa từ khóa ✅
 
 **Khi user nói:** "xóa từ khóa [X]", "bỏ từ khóa [X] đi"
 
@@ -287,10 +292,9 @@
 ## Tóm tắt lộ trình
 
 ```
-v1.0 (hiện tại) ────► v1.1 (Giai đoạn 1) ────► v1.2 (Giai đoạn 2) ────► v1.3+ 
-  6 tools              +3 tools                   +4 tools               +5 tools
-  Tạo & list           Xem chi tiết               Workflow đầy đủ         Nâng cao
-  cơ bản               bài viết & job             phân tích & publish
+v1.0 ────► v1.1 ────► v1.2 ✅ ────► v1.3
+  6        9          13              5
+  tools    tools      tools          tools
 ```
 
 ### Ưu tiên triển khai
@@ -298,7 +302,7 @@ v1.0 (hiện tại) ────► v1.1 (Giai đoạn 1) ────► v1.2 (
 | Giai đoạn | Tools | Lý do ưu tiên |
 |---|---|---|
 | **v1.1** ✅ | list_articles, get_keyword_detail, check_write_job | Gap lớn nhất trong UX hiện tại |
-| **v1.2** | analyze_website, get_analysis_results, publish_article, delete_keyword | Hoàn thiện workflow end-to-end |
+| **v1.2** ✅ | analyze_website, get_analysis_results, publish_article, delete_keyword | Hoàn thiện workflow end-to-end |
 | **v1.3** | get_token_usage, create_keyword_plan, submit_batch_job | Tối ưu chi phí, lập kế hoạch |
 | **v2.0** | manage_users, search_articles, regenerate_article | Khi hệ thống scale lớn hơn |
 
@@ -337,4 +341,4 @@ const TOOL_IMPLS = {
 
 ---
 
-*Cập nhật lần cuối: 2026-03-31 — v1.1 hoàn thành*
+*Cập nhật lần cuối: 2026-04-01 — v1.2 hoàn thành (13 tools)*

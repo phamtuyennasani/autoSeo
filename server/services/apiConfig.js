@@ -41,7 +41,7 @@ function buildSystemConfig(provider) {
   return {
     provider:       'gemini',
     apiKey:         geminiKey,
-    modelName:      process.env.GEMINI_MODEL    || 'gemini-2.5-flash',
+    modelName:      process.env.GEMINI_MODEL    || 'gemini-2.5-flash-lite',
     serpApiKey:     process.env.SERPAPI_API_KEY || '',
     usingSystemKey: true,
     blocked:        !geminiKey,
@@ -62,7 +62,8 @@ async function getEffectiveApiConfig(userId) {
   try {
     const result = await db.execute({
       sql: `SELECT gemini_api_key, gemini_model, serpapi_api_key, openai_model,
-                   use_system_key, use_manager_key, manager_id, role, ai_provider, custom_prompt
+                   use_system_key, use_manager_key, manager_id, role, ai_provider, custom_prompt,
+                   anthropic_api_key
             FROM users WHERE id = ?`,
       args: [userId],
     });
@@ -137,12 +138,30 @@ async function getEffectiveApiConfig(userId) {
   }
 
   // ── Non-Gemini provider: dùng system key, nhưng dùng model riêng của user nếu có
-  if (effectiveProvider !== 'gemini') {
-    if (effectiveProvider === 'openai' && row.openai_model) {
+  if (effectiveProvider === 'openai') {
+    if (row.openai_model) {
       return { ...effectiveSystemConfig, modelName: row.openai_model, customPrompt };
     }
     return { ...effectiveSystemConfig, customPrompt };
   }
+
+  if (effectiveProvider === 'anthropic') {
+    const userKey = row.anthropic_api_key;
+    if (userKey) {
+      return {
+        provider:    'anthropic',
+        apiKey:      userKey,
+        modelName:   'claude-sonnet-4-6',
+        usingSystemKey: false,
+        blocked:     false,
+        customPrompt,
+      };
+    }
+    // Fallback: dùng system env
+    return { ...effectiveSystemConfig, customPrompt };
+  }
+
+  // Mặc định gemini → key hierarchy (giữ nguyên logic cũ)
 
   // ── Gemini: key hierarchy (user → manager → system) ──────────────────────
   const geminiSystemKey  = effectiveSystemConfig.apiKey;

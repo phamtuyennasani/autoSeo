@@ -12,13 +12,16 @@
 const express = require('express');
 const router  = express.Router();
 const { db }  = require('../data/store');
-const { getQueueStats, retryFailed, startQueueWorkers, stopQueueWorkers } = require('../services/crmQueueWorker');
+const { getQueueStats, retryFailed, startQueueWorkers, stopQueueWorkers, getWebhookRetryStats } = require('../services/crmQueueWorker');
 
 // GET /api/queue/status
 router.get('/status', async (req, res) => {
   try {
-    const stats = await getQueueStats();
-    res.json(stats);
+    const [queueStats, webhookRetryStats] = await Promise.all([
+      getQueueStats(),
+      getWebhookRetryStats(),
+    ]);
+    res.json({ ...queueStats, webhook_events: webhookRetryStats });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

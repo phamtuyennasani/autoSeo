@@ -40,8 +40,8 @@ async function generateTitles(keyword, searchContext, count = 10, config = {}) {
 
   const modelName = resolveModel(config);
   const prompt = config.contentType === 'fanpage'
-    ? buildFanpagePostsPrompt(keyword, searchContext, count)
-    : buildTitlesPrompt(keyword, searchContext, count);
+    ? buildFanpagePostsPrompt(keyword, searchContext, count, config.keywordRequirements)
+    : buildTitlesPrompt(keyword, searchContext, count, config.keywordRequirements);
 
   return withKeyFallback(keysStr, async (key) => {
     const client = new OpenAI({ apiKey: key });

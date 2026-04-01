@@ -1,27 +1,38 @@
 /**
  * webhooks.js — Nhận dữ liệu từ CRM1 qua POST /api/webhooks/crm
  *
- * Bảo mật: HMAC-SHA256 trên header x-crm-signature (nếu CRM_WEBHOOK_SECRET được cấu hình)
- * Idempotency: kiểm tra MaHD trước khi xử lý
+ * Xác thực: SHA256(secret + MaHD + email) trên header x-crm-signature
+ * Idempotency: kiểm tra MaHD trước khi xử lý (cùng MaHD + pending/processing → skip)
  * Non-blocking: trả về response ngay, xử lý async
+ * Validation:  Dùng Zod schema thay vì manual validate
  */
 
 const express = require('express');
-const router = express.Router();
-const crypto = require('crypto');
-const { db } = require('../data/store');
+const router  = express.Router();
+const crypto  = require('crypto');
+const { db }  = require('../data/store');
+const { validateWebhookPayload } = require('../services/webhookValidation');
 
 const genId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-// ─── HMAC Verify ─────────────────────────────────────────────────────────────
-function verifyHmac(rawBody, signature) {
+// ─── Verify: SHA256(secret + MaHD + email) ─────────────────────────────────
+function verifySignature(maHD, email, signature) {
   const secret = process.env.CRM_WEBHOOK_SECRET;
-  if (!secret) return true; // nếu chưa cấu hình secret → bỏ qua kiểm tra
-  if (!signature) return false;
+
+  // Chưa cấu hình secret → bỏ qua (dev mode)
+  if (!secret) return true;
+
+  // Đã cấu hình secret nhưng không gửi signature → từ chối
+  if (!signature) {
+    console.warn('[webhook] CRM_WEBHOOK_SECRET đã cấu hình nhưng không có signature');
+    return false;
+  }
+
   const expected = crypto
-    .createHmac('sha256', secret)
-    .update(rawBody)
+    .createHash('sha256')
+    .update(secret + (maHD || '') + (email || ''))
     .digest('hex');
+
   try {
     return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
   } catch {
@@ -29,63 +40,77 @@ function verifyHmac(rawBody, signature) {
   }
 }
 
+// ─── Idempotency: kiểm tra MaHD đang xử lý hoặc đã hoàn tất gần đây ──────────
+async function checkIdempotency(maHD) {
+  const active = await db.execute({
+    sql: `SELECT id FROM webhook_events WHERE ma_hd = ? AND status IN ('pending','processing') LIMIT 1`,
+    args: [maHD],
+  });
+  if (active.rows[0]) return active.rows[0].id;
+
+  const recentDone = await db.execute({
+    sql: `SELECT id FROM webhook_events WHERE ma_hd = ? AND status = 'done' AND createdAt > datetime('now', '-5 minutes') LIMIT 1`,
+    args: [maHD],
+  });
+  if (recentDone.rows[0]) return 'already_done';
+
+  return null;
+}
+
 // ─── POST /api/webhooks/crm ───────────────────────────────────────────────────
-router.post('/crm', express.raw({ type: 'application/json' }), async (req, res) => {
-  // 1. Xác thực HMAC
-  // express.json() global có thể đã parse body trước → req.body là Object thay vì Buffer
+router.post('/crm', express.json(), async (req, res) => {
   const signature = req.headers['x-crm-signature'];
-  const rawBody = req.body;
+  const rawPayload = req.body;
 
-  let payload;
-  if (Buffer.isBuffer(rawBody)) {
-    // Trường hợp lý tưởng: express.raw() nhận được Buffer gốc → HMAC verify được
-    if (!verifyHmac(rawBody, signature)) {
-      return res.status(401).json({ error: 'Chữ ký không hợp lệ.' });
-    }
-    try {
-      payload = JSON.parse(rawBody.toString());
-    } catch {
-      return res.status(400).json({ error: 'Payload JSON không hợp lệ.' });
-    }
-  } else if (rawBody && typeof rawBody === 'object') {
-    // express.json() đã parse trước → dùng trực tiếp, bỏ qua HMAC (không còn raw bytes)
-    if (process.env.CRM_WEBHOOK_SECRET) {
-      return res.status(401).json({ error: 'Không thể xác thực chữ ký: body đã bị parse trước.' });
-    }
-    payload = rawBody;
-  } else {
-    return res.status(400).json({ error: 'Payload JSON không hợp lệ.' });
+  // 1. Lấy MaHD + email từ raw payload để verify signature
+  const rawThongtinHD = rawPayload?.thongtinHD;
+  const rawEmail      = rawPayload?.email;
+
+  if (!rawThongtinHD?.MaHD) {
+    return res.status(400).json({ error: 'Thiếu field bắt buộc: thongtinHD.MaHD' });
   }
 
-  // 3. Validate các field bắt buộc
-  const { tukhoa, thongtinHD, thongtincongtyvietbai } = payload;
-  if (!tukhoa || !thongtinHD?.MaHD || !thongtincongtyvietbai) {
-    return res.status(400).json({
-      error: 'Thiếu field bắt buộc: tukhoa, thongtinHD.MaHD, thongtincongtyvietbai',
-    });
+  // 2. Verify signature: SHA256(secret + MaHD + email)
+  if (!verifySignature(rawThongtinHD.MaHD, rawEmail, signature)) {
+    return res.status(401).json({ error: 'Chữ ký không hợp lệ.' });
   }
 
-  // 4. Ghi log vào webhook_events (status = pending)
+  // 3. Zod schema validation — thay thế manual validate
+  const { success, data, error: schemaError } = validateWebhookPayload(rawPayload);
+  if (!success) {
+    return res.status(400).json({ error: `Schema validation failed: ${schemaError}` });
+  }
+
+  // 4. Idempotency check (dùng MaHD từ validated data)
+  const existingEventId = await checkIdempotency(data.thongtinHD.MaHD);
+  if (existingEventId === 'already_done') {
+    return res.json({ success: true, message: 'Đã xử lý gần đây, bỏ qua.' });
+  }
+  if (existingEventId) {
+    return res.json({ success: true, eventId: existingEventId, message: 'Event đang xử lý.' });
+  }
+
+  // 5. Ghi log vào webhook_events (status = pending) — dùng rawPayload để lưu đúng format CRM1 gửi
   const eventId = genId();
   try {
     await db.execute({
-      sql: `INSERT INTO webhook_events (id, ma_hd, payload, status, createdAt)
-            VALUES (?, ?, ?, 'pending', ?)`,
-      args: [eventId, thongtinHD.MaHD, JSON.stringify(payload), new Date().toISOString()],
+      sql: `INSERT INTO webhook_events (id, ma_hd, payload, status, email, createdAt)
+            VALUES (?, ?, ?, 'pending', ?, ?)`,
+      args: [eventId, data.thongtinHD.MaHD, JSON.stringify(rawPayload), rawEmail || null, new Date().toISOString()],
     });
   } catch (e) {
     console.error('[webhook] Lỗi ghi webhook_events:', e.message);
     return res.status(500).json({ error: 'Lỗi ghi log sự kiện.' });
   }
 
-  // 5. Trả về ngay (non-blocking)
+  // 6. Trả về ngay (non-blocking)
   res.json({ success: true, eventId });
 
-  // 6. Xử lý async (không block response)
+  // 7. Xử lý async — truyền rawPayload để giữ nguyên format (crmIntegration tự parse)
   setImmediate(async () => {
     try {
       const { processWebhookEvent } = require('../services/crmIntegration');
-      await processWebhookEvent(eventId, payload);
+      await processWebhookEvent(eventId, rawPayload);
     } catch (e) {
       console.error('[webhook] processWebhookEvent error:', e.message);
     }

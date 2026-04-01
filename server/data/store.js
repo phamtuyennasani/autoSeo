@@ -302,6 +302,9 @@ async function initDb() {
     { table: 'keywords',       col: 'content_type',  ddl: "ALTER TABLE keywords ADD COLUMN content_type TEXT DEFAULT 'blog'" },
     // webhook_events — lưu email CRM1 gửi lên để tìm user
     { table: 'webhook_events', col: 'email',  ddl: 'ALTER TABLE webhook_events ADD COLUMN email TEXT' },
+    // webhook_events — auto-retry sau 5 phút khi failed
+    { table: 'webhook_events', col: 'retry_count',  ddl: 'ALTER TABLE webhook_events ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0' },
+    { table: 'webhook_events', col: 'retry_at',    ddl: 'ALTER TABLE webhook_events ADD COLUMN retry_at TEXT' },
     // AI provider — hỗ trợ multi-provider (openai, gemini, ...)
     { table: 'users', col: 'ai_provider',    ddl: 'ALTER TABLE users ADD COLUMN ai_provider TEXT' },
     { table: 'users', col: 'openai_api_key', ddl: 'ALTER TABLE users ADD COLUMN openai_api_key TEXT' },
@@ -320,6 +323,9 @@ async function initDb() {
     { table: 'keyword_plan_items', col: 'recommended_word_count', ddl: 'ALTER TABLE keyword_plan_items ADD COLUMN recommended_word_count INTEGER NOT NULL DEFAULT 0' },
     { table: 'articles',          col: 'thumbnail_prompt', ddl: 'ALTER TABLE articles ADD COLUMN thumbnail_prompt TEXT' },
     { table: 'website_analyses', col: 'progress_log',     ddl: 'ALTER TABLE website_analyses ADD COLUMN progress_log TEXT' },
+    // keyword_queue — batch webhook (nhiều từ khóa 1 lần)
+    { table: 'keyword_queue', col: 'yeucau',           ddl: 'ALTER TABLE keyword_queue ADD COLUMN yeucau TEXT' },
+    { table: 'keyword_queue', col: 'tieudecodinh_json', ddl: 'ALTER TABLE keyword_queue ADD COLUMN tieudecodinh_json TEXT' },
   ];
 
   for (const m of migrations) {

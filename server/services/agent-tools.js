@@ -267,6 +267,88 @@ const TOOL_DECLARATIONS = [
       required: ['job_id'],
     },
   },
+  {
+    name: 'analyze_website',
+    description: 'Bắt đầu phân tích website để gợi ý từ khóa SEO. Crawl website → AI phân tích → trả về danh sách từ khóa gợi ý. GỌI KHI: user nói "phân tích website [URL]", "tìm từ khóa cho [domain]", "crawl [URL]"',
+    parameters: {
+      type: 'object',
+      properties: {
+        company_name: {
+          type: 'string',
+          description: 'Tên hoặc ID công ty. Lấy URL từ company. BẮT BUỘC.',
+        },
+        url: {
+          type: 'string',
+          description: 'URL cần phân tích (tùy chọn, mặc định lấy từ company).',
+        },
+        max_pages: {
+          type: 'integer',
+          description: 'Số trang tối đa crawl. Mặc định: 100. Tối đa: 500.',
+          default: 100,
+        },
+      },
+      required: ['company_name'],
+    },
+  },
+  {
+    name: 'get_analysis_results',
+    description: 'Lấy kết quả phân tích website: danh sách từ khóa gợi ý kèm priority, search intent, cluster. GỌI KHI: user nói "kết quả phân tích", "từ khóa gợi ý", "xem phân tích của [công ty]"',
+    parameters: {
+      type: 'object',
+      properties: {
+        company_name: {
+          type: 'string',
+          description: 'Tên hoặc ID công ty. BẮT BUỘC.',
+        },
+        analysis_id: {
+          type: 'string',
+          description: 'ID của job phân tích (tùy chọn). Mặc định: lấy phân tích mới nhất.',
+        },
+        priority: {
+          type: 'string',
+          description: 'Lọc theo mức ưu tiên: "Cao", "Trung bình", "Thấp".',
+        },
+      },
+      required: ['company_name'],
+    },
+  },
+  {
+    name: 'publish_article',
+    description: 'Đăng bài viết lên website qua API. GỌI KHI: user nói "đăng bài [tiêu đề]", "publish bài", "đăng bài lên website".',
+    parameters: {
+      type: 'object',
+      properties: {
+        article_title: {
+          type: 'string',
+          description: 'Tiêu đề bài cần đăng. Tìm bài theo tiêu đề. BẮT BUỘC.',
+        },
+        company_name: {
+          type: 'string',
+          description: 'Tên hoặc ID công ty (tùy chọn, để xác định publish_api_url).',
+        },
+      },
+      required: ['article_title'],
+    },
+  },
+  {
+    name: 'delete_keyword',
+    description: 'Xóa từ khóa khỏi hệ thống. Sẽ cảnh báo nếu có bài viết liên quan và không xóa được. GỌI KHI: user nói "xóa từ khóa [tên]", "bỏ từ khóa [tên]".',
+    parameters: {
+      type: 'object',
+      properties: {
+        keyword_name: {
+          type: 'string',
+          description: 'Tên hoặc ID từ khóa cần xóa. BẮT BUỘC.',
+        },
+        confirm: {
+          type: 'boolean',
+          description: 'Xác nhận xóa. Nếu có bài viết liên quan, cần confirm=true mới xóa.',
+          default: false,
+        },
+      },
+      required: ['keyword_name'],
+    },
+  },
 ];
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -690,6 +772,207 @@ async function toolCheckWriteJob({ job_id }, _user) {
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
+   TOOL: analyze_website
+───────────────────────────────────────────────────────────────────────────── */
+async function toolAnalyzeWebsite({ company_name, url, max_pages = 100 }, user) {
+  if (!company_name) return { error: 'Cần cung cấp tên công ty (company_name).' };
+
+  const { company, error } = await resolveCompany(company_name, user);
+  if (error) return { error };
+
+  const targetUrl = url?.trim() || company?.url;
+  if (!targetUrl) return { error: 'Không có URL website để phân tích.' };
+
+  try { new URL(targetUrl); } catch {
+    return { error: `URL không hợp lệ: ${targetUrl}` };
+  }
+
+  const { db } = require('../data/store');
+  const { runAnalysis } = require('../services/websiteAnalyzer');
+
+  const id        = `wa-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  const createdAt = new Date().toISOString();
+  const maxPages  = Math.min(Math.max(1, parseInt(max_pages) || 100), 500);
+
+  await db.execute({
+    sql:  `INSERT INTO website_analyses (id, companyId, url, status, config, createdAt, createdBy)
+           VALUES (?, ?, ?, 'pending', ?, ?, ?)`,
+    args: [id, company.id, targetUrl, JSON.stringify({ maxPages: maxPages, maxDepth: 3 }), createdAt, user.id],
+  });
+
+  runAnalysis(id, targetUrl, { name: company.name, info: company.info }, {
+    maxPages: maxPages,
+    maxDepth: 3,
+    delayMs: 300,
+    userId: user.id,
+  }).catch(err => console.error('[agent] analyze_website background error:', err.message));
+
+  return {
+    analysis_id: id,
+    url: targetUrl,
+    company: company.name,
+    max_pages: maxPages,
+    status: 'pending',
+    message: `Đã bắt đầu phân tích website ${targetUrl}. Dùng tool **get_analysis_results** sau 1-2 phút để xem kết quả.`,
+  };
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   TOOL: get_analysis_results
+───────────────────────────────────────────────────────────────────────────── */
+async function toolGetAnalysisResults({ company_name, analysis_id, priority }, user) {
+  const { db } = require('../data/store');
+
+  let resolvedAnalysisId = analysis_id;
+
+  if (!resolvedAnalysisId && company_name) {
+    const { company, error } = await resolveCompany(company_name, user);
+    if (error) return { error };
+
+    const visibleIds = await getVisibleUserIds(user.id, user.role);
+    let sql = 'SELECT id FROM website_analyses WHERE companyId = ?';
+    const args = [company.id];
+
+    if (visibleIds !== null) {
+      sql += ` AND createdBy IN (${visibleIds.map(() => '?').join(',')})`;
+      args.push(...visibleIds);
+    }
+    sql += ' ORDER BY createdAt DESC LIMIT 1';
+
+    const r = await db.execute({ sql, args });
+    if (!r.rows[0]) return { error: `Chưa có phân tích nào cho công ty "${company.name}".` };
+    resolvedAnalysisId = r.rows[0].id;
+  }
+
+  if (!resolvedAnalysisId) return { error: 'Cần cung cấp company_name hoặc analysis_id.' };
+
+  const [metaR, kwR] = await Promise.all([
+    db.execute({ sql: 'SELECT * FROM website_analyses WHERE id = ?', args: [resolvedAnalysisId] }),
+    (async () => {
+      let sql = 'SELECT * FROM website_analysis_keywords WHERE analysisId = ?';
+      const args = [resolvedAnalysisId];
+      if (priority) { sql += ' AND priority = ?'; args.push(priority); }
+      sql += " ORDER BY CASE priority WHEN 'Cao' THEN 1 WHEN 'Trung bình' THEN 2 ELSE 3 END";
+      return db.execute({ sql, args });
+    })(),
+  ]);
+
+  if (!metaR.rows[0]) return { error: 'Không tìm thấy phân tích.' };
+
+  const meta = metaR.rows[0];
+  const summary = meta.summary ? (typeof meta.summary === 'string' ? JSON.parse(meta.summary) : meta.summary) : {};
+
+  return {
+    analysis_id: resolvedAnalysisId,
+    url: meta.url,
+    status: meta.status,
+    total_pages: meta.totalPages || 0,
+    summary: summary,
+    keywords_count: kwR.rows.length,
+    keywords: kwR.rows,
+  };
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   TOOL: publish_article
+───────────────────────────────────────────────────────────────────────────── */
+async function toolPublishArticle({ article_title }, user) {
+  if (!article_title) return { error: 'Cần cung cấp tiêu đề bài viết (article_title).' };
+
+  const { db } = require('../data/store');
+
+  // Tìm article theo title (LIKE %title%)
+  let sql  = `SELECT a.*, c.name as company_name, c.publish_api_url, c.url as company_url
+              FROM articles a LEFT JOIN companies c ON a.companyId = c.id WHERE a.title LIKE ?`;
+  const args = [`%${article_title}%`];
+
+  const visibleIds = await getVisibleUserIds(user.id, user.role);
+  if (visibleIds !== null) {
+    sql += ` AND a.createdBy IN (${visibleIds.map(() => '?').join(',')})`;
+    args.push(...visibleIds);
+  }
+  sql += ' LIMIT 5';
+
+  const result = await db.execute({ sql, args });
+  if (result.rows.length === 0) return { error: `Không tìm thấy bài viết nào với tiêu đề "${article_title}".` };
+
+  let article = result.rows[0];
+  if (result.rows.length > 1) {
+    return {
+      ambiguous: true,
+      options: result.rows.map(a => ({ id: a.id, title: a.title, company: a.company_name })),
+      error: `Có ${result.rows.length} bài viết phù hợp. Vui lòng cho biết chính xác tiêu đề.` };
+  }
+
+  if (article.publish_status === 'published') {
+    return { error: `Bài "${article.title}" đã được đăng rồi. Không cần đăng lại.` };
+  }
+
+  // Xác định publish_api_url
+  let userApiUrl = '';
+  if (user.id && user.id !== 'admin') {
+    const u = await db.execute({ sql: 'SELECT publish_api_url FROM users WHERE id = ?', args: [user.id] });
+    userApiUrl = u.rows[0]?.publish_api_url || '';
+  }
+
+  const apiUrl = article.publish_api_url || userApiUrl;
+  if (!apiUrl) {
+    return { error: 'Chưa cấu hình publish API URL. Vui lòng cập nhật trong Cài Đặt → Cấu Hình API.' };
+  }
+
+  const { publishArticle } = require('../routes/articles');
+  const company = { url: article.company_url, publish_api_url: article.publish_api_url };
+  const email = await (async () => {
+    try {
+      const r = await db.execute({ sql: 'SELECT u.email FROM keywords k LEFT JOIN users u ON k.createdBy = u.id WHERE k.id = ?', args: [article.keywordId] });
+      return r.rows[0]?.email || '';
+    } catch { return ''; }
+  })();
+
+  try {
+    await publishArticle(article.id, article, company, apiUrl, email);
+    return { success: true, article_id: article.id, title: article.title, message: `Đã đăng bài "${article.title}" thành công.` };
+  } catch (e) {
+    return { error: `Đăng bài thất bại: ${e.message}` };
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   TOOL: delete_keyword
+───────────────────────────────────────────────────────────────────────────── */
+async function toolDeleteKeyword({ keyword_name, confirm = false }, user) {
+  if (!keyword_name) return { error: 'Cần cung cấp tên từ khóa (keyword_name).' };
+
+  const { keyword, error, ambiguous, options } = await resolveKeyword(keyword_name, user);
+  if (error && !ambiguous) return { error };
+  if (ambiguous) return { error, options };
+
+  // Check số articles liên quan
+  const articlesResult = await db.execute({
+    sql: 'SELECT COUNT(*) as n FROM articles WHERE keywordId = ?',
+    args: [keyword.id],
+  });
+  const articleCount = Number(articlesResult.rows[0]?.n || 0);
+
+  if (articleCount > 0 && !confirm) {
+    return {
+      warning: true,
+      article_count: articleCount,
+      message: `Từ khóa "${keyword.keyword}" có ${articleCount} bài viết liên quan. Nếu muốn xóa, hãy xác nhận với confirm=true. Bài viết sẽ vẫn giữ nguyên nhưng mất liên kết từ khóa.`,
+    };
+  }
+
+  await db.execute({ sql: 'DELETE FROM keywords WHERE id = ?', args: [keyword.id] });
+
+  return {
+    success: true,
+    keyword: keyword.keyword,
+    deleted_articles_linked: articleCount,
+    message: `Đã xóa từ khóa "${keyword.keyword}" cùng ${articleCount} bài viết (bài viết không bị xóa).`,
+  };
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
    DISPATCHER
 ───────────────────────────────────────────────────────────────────────────── */
 const TOOL_IMPLS = {
@@ -702,6 +985,10 @@ const TOOL_IMPLS = {
   list_articles: toolListArticles,
   get_keyword_detail: toolGetKeywordDetail,
   check_write_job: toolCheckWriteJob,
+  analyze_website: toolAnalyzeWebsite,
+  get_analysis_results: toolGetAnalysisResults,
+  publish_article: toolPublishArticle,
+  delete_keyword: toolDeleteKeyword,
 };
 
 async function executeTool(name, args, user) {

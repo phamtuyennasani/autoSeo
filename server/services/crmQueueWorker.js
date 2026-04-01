@@ -17,6 +17,7 @@
 const { db }                 = require('../data/store');
 const { generateTitles }     = require('./gemini');
 const { getEffectiveApiConfig } = require('./apiConfig');
+const { recordKeywordProcessed, recordTitleProcessed } = require('./metricsService');
 
 const genId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -24,6 +25,9 @@ const KEYWORD_WORKERS = parseInt(process.env.KEYWORD_QUEUE_WORKERS || '2', 10);
 const TITLE_WORKERS   = parseInt(process.env.TITLE_QUEUE_WORKERS   || '1', 10);
 const POLL_MS         = parseInt(process.env.QUEUE_POLL_MS         || '2000', 10);
 const MAX_RETRIES     = parseInt(process.env.QUEUE_MAX_RETRIES     || '3', 10);
+const PROCESSING_TIMEOUT_MS = parseInt(process.env.QUEUE_PROCESSING_TIMEOUT_MS || '300000', 10); // 5 phút mặc định
+const WEBHOOK_RETRY_DELAY_MS = parseInt(process.env.WEBHOOK_RETRY_DELAY_MS || '300000', 10); // 5 phút mặc định
+const WEBHOOK_MAX_RETRIES    = parseInt(process.env.WEBHOOK_MAX_RETRIES    || '3', 10);
 
 const LOG = (...args) => console.log('[CRMQueue]', ...args);
 
@@ -31,6 +35,26 @@ let running = false;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+// Reset stuck jobs (processing quá lâu → về pending để worker khác pick up)
+async function resetStuckJobs() {
+  const cutoff = new Date(Date.now() - PROCESSING_TIMEOUT_MS).toISOString();
+  const [kw, tl] = await Promise.all([
+    db.execute({
+      sql: `UPDATE keyword_queue SET status = 'pending', worker_id = NULL, started_at = NULL
+            WHERE status = 'processing' AND started_at < ?`,
+      args: [cutoff],
+    }),
+    db.execute({
+      sql: `UPDATE title_queue SET status = 'pending', worker_id = NULL, started_at = NULL
+            WHERE status = 'processing' AND started_at < ?`,
+      args: [cutoff],
+    }),
+  ]);
+  if (kw.rowsAffected > 0 || tl.rowsAffected > 0) {
+    LOG(`[StuckJobs] Reset ${kw.rowsAffected} keyword + ${tl.rowsAffected} title jobs`);
+  }
+}
 
 async function getApiConfig(userId) {
   if (!userId || userId === 'system') {
@@ -66,13 +90,37 @@ async function claimKeywordJob(workerId) {
 }
 
 async function processKeywordJob(job) {
+  const start = Date.now();
   LOG(`[KW-Worker] Đang xử lý keyword="${job.keyword}" id=${job.id}`);
   try {
     const apiConfig = await getApiConfig(job.created_by);
     const count     = job.so_tieude || 10;
 
-    // Sinh tiêu đề
-    const { titles } = await generateTitles(job.keyword, '', count, apiConfig);
+    let titles = [];
+
+    // ── Kiểm tra tieudecodinh (tiêu đề do CRM1 cung cấp sẵn) ──────────────────
+    let predefinedTitles = [];
+    if (job.tieudecodinh_json) {
+      try {
+        const td = JSON.parse(job.tieudecodinh_json);
+        // Chuyển object { tieude1, tieude2, ... } → array
+        predefinedTitles = Object.values(td).filter(v => typeof v === 'string' && v.trim());
+      } catch {
+        LOG(`[KW-Worker] ⚠️  tieudecodinh_json không parse được cho keyword="${job.keyword}"`);
+      }
+    }
+
+    if (predefinedTitles.length > 0) {
+      // Đã có tiêu đề cố định → dùng trực tiếp, không gọi AI
+      titles = predefinedTitles;
+      LOG(`[KW-Worker] ℹ️  Dùng ${titles.length} tiêu đề cố định từ CRM1 cho keyword="${job.keyword}"`);
+    } else {
+      // Chưa có tiêu đề → gọi AI sinh tiêu đề (truyền yeucau vào searchContext)
+      const yeucau = job.yeucau || '';
+      const { titles: generated } = await generateTitles(job.keyword, yeucau, count, apiConfig);
+      titles = generated;
+      LOG(`[KW-Worker] 🤖 AI sinh ${titles.length} tiêu đề cho keyword="${job.keyword}" (yeucau="${yeucau}")`);
+    }
 
     // Lưu vào bảng keywords
     const keywordId = genId();
@@ -96,6 +144,7 @@ async function processKeywordJob(job) {
       args: [keywordId, new Date().toISOString(), job.id],
     });
 
+    recordKeywordProcessed((Date.now() - start) / 1000, true);
     LOG(`[KW-Worker] ✅ Xong keyword="${job.keyword}" → ${titles.length} tiêu đề`);
   } catch (e) {
     const retries = (job.retries || 0) + 1;
@@ -104,6 +153,7 @@ async function processKeywordJob(job) {
       sql: `UPDATE keyword_queue SET status = ?, retries = ?, error = ?, worker_id = NULL, started_at = NULL WHERE id = ?`,
       args: [status, retries, e.message, job.id],
     });
+    recordKeywordProcessed((Date.now() - start) / 1000, false);
     LOG(`[KW-Worker] ❌ Lỗi keyword="${job.keyword}" (retry ${retries}/${MAX_RETRIES}): ${e.message}`);
   }
 }
@@ -126,6 +176,74 @@ async function runKeywordWorker(workerId) {
   LOG(`[KW-Worker-${workerId}] Dừng`);
 }
 
+// Chạy reset stuck jobs định kỳ (mỗi 1 phút)
+async function runStuckJobChecker() {
+  while (running) {
+    await sleep(60000);
+    if (running) await resetStuckJobs();
+  }
+}
+
+// ─── WEBHOOK AUTO-RETRY ───────────────────────────────────────────────────────
+
+// Lấy các webhook_events đã đến lúc retry
+async function getRetryableWebhookEvents() {
+  const now = new Date().toISOString();
+  const res = await db.execute({
+    sql: `SELECT * FROM webhook_events
+          WHERE status = 'failed'
+            AND retry_count < ?
+            AND retry_at IS NOT NULL
+            AND retry_at <= ?
+          ORDER BY retry_at ASC
+          LIMIT 10`,
+    args: [WEBHOOK_MAX_RETRIES, now],
+  });
+  return res.rows;
+}
+
+// Retry 1 webhook event: đánh dấu đang xử lý + gọi lại processWebhookEvent
+async function retryWebhookEvent(event) {
+  const { processWebhookEvent } = require('./crmIntegration');
+
+  await db.execute({
+    sql: `UPDATE webhook_events
+          SET status = 'pending', retry_at = NULL
+          WHERE id = ?`,
+    args: [event.id],
+  });
+
+  const payload = JSON.parse(event.payload);
+  LOG(`[WebhookRetry] Retry #${event.retry_count + 1}/${WEBHOOK_MAX_RETRIES} event=${event.id} maHD=${event.ma_hd}`);
+  await processWebhookEvent(event.id, payload);
+}
+
+// Worker: kiểm tra và retry các webhook_events failed mỗi 1 phút
+async function runWebhookRetryWorker() {
+  while (running) {
+    await sleep(60000);
+    if (!running) break;
+
+    try {
+      const events = await getRetryableWebhookEvents();
+      if (events.length === 0) continue;
+
+      LOG(`[WebhookRetry] Có ${events.length} event(s) cần retry`);
+
+      for (const event of events) {
+        try {
+          await retryWebhookEvent(event);
+        } catch (e) {
+          LOG(`[WebhookRetry] ❌ Retry event ${event.id} thất bại: ${e.message}`);
+        }
+      }
+    } catch (e) {
+      LOG(`[WebhookRetry] Lỗi vòng lặp: ${e.message}`);
+    }
+  }
+  LOG('[WebhookRetry] Dừng');
+}
+
 // ─── TẦNG 2: title_queue ──────────────────────────────────────────────────────
 
 async function claimTitleJob(workerId) {
@@ -146,6 +264,7 @@ async function claimTitleJob(workerId) {
 }
 
 async function processTitleJob(job) {
+  const start = Date.now();
   const titles = JSON.parse(job.titles_json || '[]');
   LOG(`[TL-Worker] Đang xử lý ${titles.length} tiêu đề cho keyword="${job.keyword}" id=${job.id}`);
 
@@ -185,6 +304,7 @@ async function processTitleJob(job) {
       args: [new Date().toISOString(), job.id],
     });
 
+    recordTitleProcessed((Date.now() - start) / 1000, failed === 0);
     LOG(`[TL-Worker] ✅ Xong keyword="${job.keyword}" — thành công: ${succeeded}, lỗi: ${failed}`);
   } catch (e) {
     const retries = (job.retries || 0) + 1;
@@ -193,6 +313,7 @@ async function processTitleJob(job) {
       sql: `UPDATE title_queue SET status = ?, retries = ?, error = ?, worker_id = NULL, started_at = NULL WHERE id = ?`,
       args: [status, retries, e.message, job.id],
     });
+    recordTitleProcessed((Date.now() - start) / 1000, false);
     LOG(`[TL-Worker] ❌ Lỗi (retry ${retries}/${MAX_RETRIES}): ${e.message}`);
   }
 }
@@ -229,6 +350,12 @@ function startQueueWorkers() {
   for (let i = 1; i <= TITLE_WORKERS; i++) {
     runTitleWorker(i).catch(e => LOG(`TL-Worker-${i} crash:`, e.message));
   }
+
+  // Stuck job checker chạy nền, kiểm tra mỗi 1 phút
+  runStuckJobChecker().catch(e => LOG('[StuckJobChecker] crash:', e.message));
+
+  // Webhook auto-retry: kiểm tra và retry failed events mỗi 1 phút
+  runWebhookRetryWorker().catch(e => LOG('[WebhookRetry] crash:', e.message));
 }
 
 function stopQueueWorkers() {
@@ -259,7 +386,6 @@ async function getQueueStats() {
 }
 
 async function retryFailed() {
-  const now = new Date().toISOString();
   const [kw, tl] = await Promise.all([
     db.execute(`UPDATE keyword_queue SET status = 'pending', retries = 0, error = NULL, worker_id = NULL, started_at = NULL WHERE status = 'failed'`),
     db.execute(`UPDATE title_queue   SET status = 'pending', retries = 0, error = NULL, worker_id = NULL, started_at = NULL WHERE status = 'failed'`),
@@ -267,4 +393,22 @@ async function retryFailed() {
   return { keyword_queue: kw.rowsAffected, title_queue: tl.rowsAffected };
 }
 
-module.exports = { startQueueWorkers, stopQueueWorkers, getQueueStats, retryFailed };
+// ─── Webhook Retry Stats ──────────────────────────────────────────────────────
+async function getWebhookRetryStats() {
+  const [failed, pendingRetry, waitingRetry] = await Promise.all([
+    db.execute(`SELECT COUNT(*) AS cnt FROM webhook_events WHERE status = 'failed'`),
+    db.execute(`SELECT COUNT(*) AS cnt FROM webhook_events WHERE status = 'pending' OR status = 'processing'`),
+    db.execute(`SELECT COUNT(*) AS cnt FROM webhook_events
+                WHERE status = 'failed' AND retry_count < ? AND retry_at IS NOT NULL AND retry_at <= ?`,
+      [WEBHOOK_MAX_RETRIES, new Date().toISOString()]),
+  ]);
+  return {
+    failed:          Number(failed.rows[0]?.cnt || 0),
+    pending_or_processing: Number(pendingRetry.rows[0]?.cnt || 0),
+    ready_to_retry:  Number(waitingRetry.rows[0]?.cnt || 0),
+    max_retries:     WEBHOOK_MAX_RETRIES,
+    retry_delay_sec: Math.round(WEBHOOK_RETRY_DELAY_MS / 1000),
+  };
+}
+
+module.exports = { startQueueWorkers, stopQueueWorkers, getQueueStats, retryFailed, getWebhookRetryStats };
