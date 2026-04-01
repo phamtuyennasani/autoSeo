@@ -23,6 +23,7 @@ import { TokenProvider } from './context/TokenContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ConfirmProvider } from './context/ConfirmContext';
 import ChatBot from './components/ChatBot';
+import apiClient from './config/api';
 
 // PrivateRoute: redirect /login nếu AUTH=true và chưa đăng nhập
 function PrivateRoute({ children }) {
@@ -66,11 +67,31 @@ function RootRoute({ children }) {
   return children;
 }
 
-// ChatBotWrapper: chỉ hiển thị khi đã đăng nhập (hoặc AUTH tắt)
+// ChatBotWrapper: chỉ hiển thị khi đã đăng nhập + có API key
 function ChatBotWrapper() {
   const { user, loading, authEnabled } = useAuth();
-  if (loading) return null;
-  if (authEnabled && !user) return null;
+  const [available, setAvailable] = React.useState(null); // null=loading, true/false
+
+  React.useEffect(() => {
+    async function checkStatus() {
+      try {
+        const res = await apiClient.get('/api/chat/status');
+        setAvailable(res.data.available);
+      } catch {
+        setAvailable(false);
+      }
+    }
+    if (!loading) {
+      if (!authEnabled || user) {
+        checkStatus();
+      } else {
+        setAvailable(false);
+      }
+    }
+  }, [loading, user, authEnabled]);
+
+  if (loading || available === null) return null;
+  if (!available) return null;
   return <ChatBot />;
 }
 

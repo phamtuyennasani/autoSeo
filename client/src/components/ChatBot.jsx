@@ -19,9 +19,16 @@ marked.setOptions({ breaks: true });
 
 // ─── Tool display config ───────────────────────────────────────────────────────
 const TOOL_LABELS = {
-  create_company:   { icon: '🏗️', label: 'Tạo công ty',     color: '#0ea5e9' },
-  create_keywords:  { icon: '🔑', label: 'Tạo từ khóa SEO', color: '#6366f1' },
-  write_articles:   { icon: '✍️', label: 'Viết bài viết',   color: '#10b981' },
+  create_company:         { icon: '🏗️', label: 'Tạo công ty',       color: '#0ea5e9' },
+  create_keywords:         { icon: '🔑', label: 'Tạo từ khóa SEO',   color: '#6366f1' },
+  write_articles:         { icon: '✍️', label: 'Viết bài viết',     color: '#10b981' },
+  list_articles:          { icon: '📝', label: 'Danh sách bài viết', color: '#f59e0b' },
+  get_keyword_detail:     { icon: '🔍', label: 'Chi tiết từ khóa',  color: '#8b5cf6' },
+  check_write_job:         { icon: '⏳', label: 'Tiến độ job',      color: '#ec4899' },
+  analyze_website:         { icon: '🌐', label: 'Phân tích website', color: '#06b6d4' },
+  get_analysis_results:   { icon: '📋', label: 'Kết quả phân tích', color: '#14b8a6' },
+  publish_article:         { icon: '🚀', label: 'Đăng bài',          color: '#22c55e' },
+  delete_keyword:          { icon: '🗑️', label: 'Xóa từ khóa',      color: '#ef4444' },
   list_companies:   { icon: '🏢', label: 'Liệt kê công ty', color: '#f59e0b' },
   list_keywords:    { icon: '📋', label: 'Liệt kê từ khóa', color: '#8b5cf6' },
   get_stats:        { icon: '📊', label: 'Thống kê hệ thống', color: '#ef4444' },
@@ -87,11 +94,22 @@ function IconZap() {
 
 // ─── Quick action chips ────────────────────────────────────────────────────────
 const QUICK_ACTIONS = [
+  // Công ty
   { label: '🏗️ Tạo công ty mới', prompt: 'Tạo công ty mới tên ' },
-  { label: '🔑 Tạo từ khóa mới', prompt: 'Tạo 5 từ khóa về ' },
-  { label: '📊 Xem thống kê', prompt: 'Cho tôi xem thống kê hệ thống' },
   { label: '🏢 Danh sách công ty', prompt: 'Liệt kê các công ty của tôi' },
+  // Từ khóa
+  { label: '🔑 Tạo từ khóa mới', prompt: 'Tạo 5 từ khóa về ' },
+  { label: '🔍 Chi tiết từ khóa', prompt: 'Chi tiết từ khóa ' },
+  { label: '🗑️ Xóa từ khóa', prompt: 'Xóa từ khóa ' },
+  // Bài viết
   { label: '✍️ Viết bài viết', prompt: 'Viết bài cho từ khóa ' },
+  { label: '📝 Danh sách bài viết', prompt: 'Xem danh sách bài viết của tôi' },
+  { label: '🚀 Đăng bài viết', prompt: 'Đăng bài viết ' },
+  // Website
+  { label: '🌐 Phân tích website', prompt: 'Phân tích website ' },
+  { label: '📋 Kết quả phân tích', prompt: 'Kết quả phân tích website ' },
+  // Thống kê
+  { label: '📊 Xem thống kê', prompt: 'Cho tôi xem thống kê hệ thống' },
 ];
 
 // ─── Render tool result as card ───────────────────────────────────────────────
@@ -275,6 +293,245 @@ function ToolResultCard({ tool, result }) {
             </div>
           </div>
         ))}
+      </div>
+    );
+  }
+
+  if (tool === 'list_articles') {
+    const articles = result.articles || [];
+    return (
+      <div className="agent-tool-card" style={{ borderLeft: `3px solid ${config.color}` }}>
+        <div className="agent-tool-header">
+          <span className="agent-tool-icon">{config.icon}</span>
+          <span className="agent-tool-label">{config.label} ({articles.length})</span>
+        </div>
+        {articles.map((a, i) => (
+          <div key={i} className="agent-tool-list-item">
+            <IconCheck />
+            <div>
+              <strong>{a.title}</strong>
+              <span className="agent-tool-meta"> · {a.keyword} · {a.publish_status === 'published' ? '✅ Đã đăng' : '⏳ Chưa đăng'}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (tool === 'get_keyword_detail') {
+    if (result.error) {
+      return (
+        <div className="agent-tool-card" style={{ borderLeft: '3px solid #ef4444' }}>
+          <div className="agent-tool-header">
+            <span className="agent-tool-icon">{config.icon}</span>
+            <span className="agent-tool-label">{config.label}</span>
+          </div>
+          <div className="agent-tool-error-item"><IconError /><span>{result.error}</span></div>
+        </div>
+      );
+    }
+    const { keyword, total_titles = 0, written_count = 0, remaining_count = 0, titles = [] } = result;
+    return (
+      <div className="agent-tool-card" style={{ borderLeft: `3px solid ${config.color}` }}>
+        <div className="agent-tool-header">
+          <span className="agent-tool-icon">{config.icon}</span>
+          <span className="agent-tool-label">{config.label}: {keyword}</span>
+        </div>
+        <div className="agent-stats-grid">
+          <div className="agent-stat-item">
+            <span className="agent-stat-value">{total_titles}</span>
+            <span className="agent-stat-label">Tổng tiêu đề</span>
+          </div>
+          <div className="agent-stat-item">
+            <span className="agent-stat-value">{written_count}</span>
+            <span className="agent-stat-label">Đã viết</span>
+          </div>
+          <div className="agent-stat-item">
+            <span className="agent-stat-value">{remaining_count}</span>
+            <span className="agent-stat-label">Còn lại</span>
+          </div>
+        </div>
+        {titles.length > 0 && (
+          <div className="agent-tool-titles" style={{ marginTop: 8 }}>
+            {titles.slice(0, 8).map((t, i) => (
+              <span key={i} className="agent-tool-title-chip">
+                {t.written ? '✅' : '○'} {t.title}
+              </span>
+            ))}
+            {titles.length > 8 && <span className="agent-tool-title-chip">+{titles.length - 8} tiêu đề khác</span>}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (tool === 'check_write_job') {
+    if (!result.found) {
+      return (
+        <div className="agent-tool-card" style={{ borderLeft: '3px solid #f59e0b' }}>
+          <div className="agent-tool-header">
+            <span className="agent-tool-icon">{config.icon}</span>
+            <span className="agent-tool-label">{config.label}</span>
+          </div>
+          <div className="agent-tool-error-item"><IconError /><span>{result.message}</span></div>
+        </div>
+      );
+    }
+    const { status, total = 0, done = 0, succeeded = 0, failed = 0, progress_percent = 0 } = result;
+    return (
+      <div className="agent-tool-card" style={{ borderLeft: `3px solid ${config.color}` }}>
+        <div className="agent-tool-header">
+          <span className="agent-tool-icon">{config.icon}</span>
+          <span className="agent-tool-label">{config.label}</span>
+        </div>
+        <div className="agent-stats-grid">
+          <div className="agent-stat-item">
+            <span className="agent-stat-value">{done}/{total}</span>
+            <span className="agent-stat-label">Hoàn thành</span>
+          </div>
+          <div className="agent-stat-item">
+            <span className="agent-stat-value">{succeeded}</span>
+            <span className="agent-stat-label">Thành công</span>
+          </div>
+          <div className="agent-stat-item">
+            <span className="agent-stat-value">{failed}</span>
+            <span className="agent-stat-label">Thất bại</span>
+          </div>
+        </div>
+        {progress_percent > 0 && (
+          <div style={{ height: 4, background: 'var(--border)', borderRadius: 99, marginTop: 8 }}>
+            <div style={{ height: '100%', width: `${progress_percent}%`, background: status === 'done' ? '#22c55e' : '#6366f1', borderRadius: 99 }} />
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (tool === 'analyze_website') {
+    if (result.error) {
+      return (
+        <div className="agent-tool-card" style={{ borderLeft: '3px solid #ef4444' }}>
+          <div className="agent-tool-header">
+            <span className="agent-tool-icon">{config.icon}</span>
+            <span className="agent-tool-label">{config.label}</span>
+          </div>
+          <div className="agent-tool-error-item"><IconError /><span>{result.error}</span></div>
+        </div>
+      );
+    }
+    return (
+      <div className="agent-tool-card" style={{ borderLeft: `3px solid ${config.color}` }}>
+        <div className="agent-tool-header">
+          <span className="agent-tool-icon">{config.icon}</span>
+          <span className="agent-tool-label">{config.label}</span>
+        </div>
+        <div className="agent-tool-success-note">
+          <IconZap /> Đã bắt đầu phân tích website {result.url}
+        </div>
+        <p className="agent-tool-desc">Job ID: <code>{result.analysis_id}</code></p>
+        <p className="agent-tool-desc">Dùng lệnh phân tích để xem kết quả sau 1-2 phút.</p>
+      </div>
+    );
+  }
+
+  if (tool === 'get_analysis_results') {
+    if (result.error) {
+      return (
+        <div className="agent-tool-card" style={{ borderLeft: '3px solid #ef4444' }}>
+          <div className="agent-tool-header">
+            <span className="agent-tool-icon">{config.icon}</span>
+            <span className="agent-tool-label">{config.label}</span>
+          </div>
+          <div className="agent-tool-error-item"><IconError /><span>{result.error}</span></div>
+        </div>
+      );
+    }
+    const { url, status, total_pages = 0, keywords_count = 0, keywords = [] } = result;
+    return (
+      <div className="agent-tool-card" style={{ borderLeft: `3px solid ${config.color}` }}>
+        <div className="agent-tool-header">
+          <span className="agent-tool-icon">{config.icon}</span>
+          <span className="agent-tool-label">{config.label}: {url}</span>
+        </div>
+        <div className="agent-stats-grid">
+          <div className="agent-stat-item">
+            <span className="agent-stat-value">{total_pages}</span>
+            <span className="agent-stat-label">Trang đã crawl</span>
+          </div>
+          <div className="agent-stat-item">
+            <span className="agent-stat-value">{keywords_count}</span>
+            <span className="agent-stat-label">Từ khóa gợi ý</span>
+          </div>
+          <div className="agent-stat-item">
+            <span className="agent-stat-value" style={{ fontSize: 12 }}>{status}</span>
+            <span className="agent-stat-label">Trạng thái</span>
+          </div>
+        </div>
+        {keywords.length > 0 && (
+          <div className="agent-tool-titles" style={{ marginTop: 8 }}>
+            {keywords.slice(0, 10).map((k, i) => (
+              <span key={i} className="agent-tool-title-chip">{k.keyword} · {k.priority}</span>
+            ))}
+            {keywords.length > 10 && <span className="agent-tool-title-chip">+{keywords.length - 10} từ khóa khác</span>}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (tool === 'publish_article') {
+    if (result.error) {
+      return (
+        <div className="agent-tool-card" style={{ borderLeft: '3px solid #ef4444' }}>
+          <div className="agent-tool-header">
+            <span className="agent-tool-icon">{config.icon}</span>
+            <span className="agent-tool-label">{config.label}</span>
+          </div>
+          <div className="agent-tool-error-item"><IconError /><span>{result.error}</span></div>
+        </div>
+      );
+    }
+    return (
+      <div className="agent-tool-card" style={{ borderLeft: `3px solid ${config.color}` }}>
+        <div className="agent-tool-header">
+          <span className="agent-tool-icon">{config.icon}</span>
+          <span className="agent-tool-label">{config.label}</span>
+        </div>
+        <div className="agent-tool-success-note"><IconZap /> {result.message}</div>
+      </div>
+    );
+  }
+
+  if (tool === 'delete_keyword') {
+    if (result.warning) {
+      return (
+        <div className="agent-tool-card" style={{ borderLeft: '3px solid #f59e0b' }}>
+          <div className="agent-tool-header">
+            <span className="agent-tool-icon">{config.icon}</span>
+            <span className="agent-tool-label">{config.label}</span>
+          </div>
+          <div className="agent-tool-error-item"><IconError /><span>{result.message}</span></div>
+        </div>
+      );
+    }
+    if (result.error) {
+      return (
+        <div className="agent-tool-card" style={{ borderLeft: '3px solid #ef4444' }}>
+          <div className="agent-tool-header">
+            <span className="agent-tool-icon">{config.icon}</span>
+            <span className="agent-tool-label">{config.label}</span>
+          </div>
+          <div className="agent-tool-error-item"><IconError /><span>{result.error}</span></div>
+        </div>
+      );
+    }
+    return (
+      <div className="agent-tool-card" style={{ borderLeft: `3px solid ${config.color}` }}>
+        <div className="agent-tool-header">
+          <span className="agent-tool-icon">{config.icon}</span>
+          <span className="agent-tool-label">{config.label}</span>
+        </div>
+        <div className="agent-tool-success-note"><IconZap /> {result.message}</div>
       </div>
     );
   }

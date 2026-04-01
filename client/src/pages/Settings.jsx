@@ -398,9 +398,18 @@ function ApiConfigTab() {
   const [showGemini, setShowGemini] = useState(false);
   const [showSerp, setShowSerp] = useState(false);
 
+  /* Lưu key gốc trước khi load (để không gửi masked value lên server) */
+  const prevKeysRef = React.useRef({});
+
   useEffect(() => {
     apiClient.get(`${ENDPOINT}/api-config`)
-      .then(res => setForm(res.data))
+      .then(res => {
+        prevKeysRef.current = {
+          gemini_api_key:  res.data.gemini_api_key,
+          serpapi_api_key: res.data.serpapi_api_key,
+        };
+        setForm(res.data);
+      })
       .catch(err => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
@@ -408,6 +417,7 @@ function ApiConfigTab() {
   const handleSave = async () => {
     setSaving(true); setSaved(false); setError('');
     try {
+      /* Gửi masked value → server sẽ giữ nguyên key cũ (bỏ qua) */
       await apiClient.put(`${ENDPOINT}/api-config`, form);
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);

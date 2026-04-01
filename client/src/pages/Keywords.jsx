@@ -17,7 +17,25 @@ import { useConfirm } from '../context/ConfirmContext';
 
 import { API } from '../config/api';
 
-const API_KEYWORD    = API.keywords;
+const API_KEYWORD = API.keywords;
+
+/* ── Copyable ID cell ── */
+function IdCell({ id }) {
+  const [copied, setCopied] = React.useState(false);
+  const copy = () => {
+    navigator.clipboard.writeText(id);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1200);
+  };
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+      <span style={{ fontFamily: 'monospace', fontSize: '11px', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis' }}>{id}</span>
+      <button onClick={copy} title="Copy ID" style={{ background: 'none', border: 'none', padding: '2px', cursor: 'pointer', color: copied ? 'var(--success)' : 'var(--text-primary)', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+        {copied ? <Check size={11} /> : <Copy size={11} />}
+      </button>
+    </div>
+  );
+}
 const API_COMPANY    = API.companies;
 const API_ARTICLE    = API.articles;
 const API_BATCH_JOBS = API.batchJobs;
@@ -69,6 +87,7 @@ const Keywords = () => {
   const [selectedCompanyId, setSelectedCompanyId] = useState('');
   const [titleCount, setTitleCount] = useState(10);
   const [manualTitlesInput, setManualTitlesInput] = useState('');
+  const [keywordRequirements, setKeywordRequirements] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
 
   // Article modal (single)
@@ -383,10 +402,12 @@ const Keywords = () => {
         companyId: selectedCompanyId,
         contentType,
         ...(parsedManual ? { manualTitles: parsedManual } : { titleCount }),
+        ...(keywordRequirements.trim() ? { keywordRequirements: keywordRequirements.trim() } : {}),
       });
       setKeywordInput('');
       setTitleCount(10);
       setManualTitlesInput('');
+      setKeywordRequirements('');
       setContentType('blog');
       setIsAddModalOpen(false);
       refreshStats(); // cập nhật token stats trên topbar
@@ -1936,7 +1957,8 @@ const Keywords = () => {
           </div>
         ) : (
           <div className="table-container">
-            <div className="table-header" style={{ gridTemplateColumns: showMultiUser ? '1fr 130px 110px 130px 110px' : '1fr 130px 110px 110px' }}>
+            <div className="table-header" style={{ gridTemplateColumns: showMultiUser ? '170px 1fr 130px 110px 130px 110px' : '200px 1fr 130px 110px 110px' }}>
+              <div>ID</div>
               <div>Từ Khóa</div>
               <div>Thống Kê</div>
               <div>Ngày Tạo</div>
@@ -1947,7 +1969,10 @@ const Keywords = () => {
               const company = getCompany(item.companyId);
               const creator = showMultiUser ? userList.find(u => u.id === item.createdBy) : null;
               return (
-                <div key={item.id} className="table-row" style={{ gridTemplateColumns: showMultiUser ? '1fr 130px 110px 130px 110px' : '1fr 130px 110px 110px' }}>
+                <div key={item.id} className="table-row" style={{ gridTemplateColumns: showMultiUser ? '170px 1fr 130px 110px 130px 110px' : '200px 1fr 130px 110px 110px' }}>
+                  {/* ID */}
+                  <IdCell id={item.id} />
+
                   {/* Từ khóa + công ty */}
                   <div style={{ minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: '4px' }}>
@@ -2159,7 +2184,10 @@ const Keywords = () => {
                       ? 'Nhập caption/ý tưởng bài đăng, mỗi dòng 1 bài.\nNếu để trống, AI sẽ tự sinh ý tưởng.'
                       : 'Nhập tiêu đề thủ công, mỗi dòng 1 tiêu đề.\nNếu để trống, AI sẽ tự sinh tiêu đề.'}
                     value={manualTitlesInput}
-                    onChange={e => setManualTitlesInput(e.target.value)}
+                    onChange={e => {
+                      setManualTitlesInput(e.target.value);
+                      if (e.target.value.trim()) setKeywordRequirements('');
+                    }}
                     disabled={isGenerating}
                   />
                   {manualTitlesInput.trim() && (
@@ -2168,6 +2196,22 @@ const Keywords = () => {
                     </div>
                   )}
                 </div>
+
+                {!manualTitlesInput.trim() && (
+                  <div className="input-group">
+                    <label className="input-label">Yêu cầu thêm khi tạo tiêu đề <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text-muted)' }}>(Tùy chọn)</span></label>
+                    <input
+                      type="text"
+                      className="input-field"
+                      placeholder={contentType === 'fanpage'
+                        ? 'VD: viết hài hước, có emoji, dưới 2000 ký tự'
+                        : 'VD: hướng dẫn chi tiết từ A-Z, có số thứ tự, dạng list'}
+                      value={keywordRequirements}
+                      onChange={e => setKeywordRequirements(e.target.value)}
+                      disabled={isGenerating}
+                    />
+                  </div>
+                )}
 
                 {!manualTitlesInput.trim() && (
                   <div className="input-group">

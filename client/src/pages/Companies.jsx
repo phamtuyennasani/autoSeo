@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import apiClient from '../config/api';
-import { Plus, Trash2, Building2, Globe, Pencil, X, Save, User, Upload, Palette, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, Trash2, Building2, Globe, Pencil, X, Save, User, Upload, Palette, ChevronDown, ChevronUp, Copy, Check } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useConfirm } from '../context/ConfirmContext';
 import { AppMultiSelect } from '../components/AppMultiSelect';
@@ -44,6 +44,24 @@ const INDUSTRY_OPTIONS = [
 ];
 
 const DEFAULT_STYLES = { fontFamily: '', fontSize: '', lineHeight: '', color: '', accentColor: '', h2FontSize: '', h2Color: '', h3FontSize: '', h3Color: '', h4FontSize: '', h4Color: '' };
+
+/* ── Copyable ID cell ── */
+function IdCell({ id }) {
+  const [copied, setCopied] = React.useState(false);
+  const copy = () => {
+    navigator.clipboard.writeText(id);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1200);
+  };
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+      <span style={{ fontFamily: 'monospace', fontSize: '11px', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis'}}>{id}</span>
+      <button onClick={copy} title="Copy ID" style={{ background: 'none', border: 'none', padding: '2px', cursor: 'pointer', color: copied ? 'var(--success)' : 'var(--text-primary)', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+        {copied ? <Check size={11} /> : <Copy size={11} />}
+      </button>
+    </div>
+  );
+}
 
 const Companies = () => {
   const { user: currentUser, authEnabled, canManageUsers } = useAuth();
@@ -220,7 +238,8 @@ const Companies = () => {
       ) : (
         <div className="table-container">
           {/* Header */}
-          <div className="table-header" style={{ gridTemplateColumns: showMultiUser ? '1fr 2fr 130px 72px' : '1fr 2fr 72px' }}>
+          <div className="table-header" style={{ gridTemplateColumns: showMultiUser ? '140px 1fr 2fr 200px 72px' : '200px 1fr 2fr 72px' }}>
+            <div>ID</div>
             <div>Tên Công Ty</div>
             <div>Mô tả</div>
             {showMultiUser && <div>Người tạo</div>}
@@ -229,7 +248,10 @@ const Companies = () => {
           {companies.map(company => {
             const creator = showMultiUser ? userList.find(u => u.id === company.createdBy) : null;
             return (
-            <div key={company.id} className="table-row" style={{ gridTemplateColumns: showMultiUser ? '1fr 2fr 130px 72px' : '1fr 2fr 72px' }}>
+            <div key={company.id} className="table-row" style={{ gridTemplateColumns: showMultiUser ? '140px 1fr 2fr 200px 72px' : '200px 1fr 2fr 72px' }}>
+              {/* ID */}
+              <IdCell id={company.id} />
+
               {/* Tên + URL + lĩnh vực */}
               <div style={{ minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>

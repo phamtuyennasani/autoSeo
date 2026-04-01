@@ -204,6 +204,7 @@
   border-radius: 4px;
   font-size: 12px;
   font-family: monospace;
+  word-break: break-all;
 }
 .chatbot-msg-bubble h1,
 .chatbot-msg-bubble h2,
