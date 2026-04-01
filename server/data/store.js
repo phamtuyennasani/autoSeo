@@ -328,6 +328,44 @@ async function initDb() {
     { table: 'keyword_queue', col: 'tieudecodinh_json', ddl: 'ALTER TABLE keyword_queue ADD COLUMN tieudecodinh_json TEXT' },
   ];
 
+  // ── DLQ (Dead Letter Queue) tables ─────────────────────────────────────────
+  await exec(`
+    CREATE TABLE IF NOT EXISTS keyword_queue_dlq (
+      id           TEXT PRIMARY KEY,
+      original_id  TEXT NOT NULL,
+      keyword      TEXT NOT NULL,
+      so_tieude    INTEGER NOT NULL DEFAULT 10,
+      company_id   TEXT NOT NULL,
+      hop_dong_id  TEXT,
+      chuki        TEXT,
+      created_by   TEXT,
+      retries      INTEGER NOT NULL DEFAULT 0,
+      error        TEXT NOT NULL,
+      failed_at    TEXT NOT NULL,
+      payload_json TEXT,
+      replayed_at  TEXT,
+      created_at   TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS title_queue_dlq (
+      id           TEXT PRIMARY KEY,
+      original_id  TEXT NOT NULL,
+      keyword_q_id TEXT NOT NULL,
+      keyword      TEXT NOT NULL,
+      titles_json  TEXT NOT NULL,
+      company_id   TEXT NOT NULL,
+      hop_dong_id  TEXT,
+      chuki        TEXT,
+      created_by   TEXT,
+      retries      INTEGER NOT NULL DEFAULT 0,
+      error        TEXT NOT NULL,
+      failed_at    TEXT NOT NULL,
+      payload_json TEXT,
+      replayed_at  TEXT,
+      created_at   TEXT NOT NULL
+    );
+  `);
+
   for (const m of migrations) {
     try {
       const info = await db.execute(`PRAGMA table_info(${m.table})`);

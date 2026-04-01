@@ -86,6 +86,13 @@ const articleCounter = new client.Counter({
   registers: [register],
 });
 
+const dlqCounter = new client.Counter({
+  name:  'autoseo_dlq_jobs_total',
+  help:  'Tổng số job đã chuyển vào DLQ',
+  labelNames: ['queue'],
+  registers: [register],
+});
+
 // ─── Record helpers (gọi từ queue worker / article routes) ───────────────────
 
 function recordKeywordProcessed(durationSec, success) {
@@ -110,6 +117,17 @@ function recordTokens(input, output, model) {
 function recordArticle(source = 'manual') {
   articleCounter.inc({ source });
 }
+
+function recordDlqJob(queue) {
+  dlqCounter.inc({ queue });
+}
+
+const dlqGauge = new client.Gauge({
+  name:  'autoseo_dlq_depth',
+  help:  'Số job trong DLQ',
+  labelNames: ['queue'],
+  registers: [register],
+});
 
 // ─── Refresh gauges từ DB (gọi mỗi khi /metrics hit) ───────────────────────────
 async function refreshGauges() {
@@ -137,6 +155,14 @@ async function refreshGauges() {
     const whMap = { pending: 0, processing: 0, done: 0, failed: 0 };
     for (const r of wh.rows) whMap[r.status] = Number(r.cnt);
     for (const [s, v] of Object.entries(whMap)) webhookEventsGauge.set({ status: s }, v);
+
+    // DLQ depth
+    const [kwDlq, tlDlq] = await Promise.all([
+      db.execute(`SELECT COUNT(*) AS cnt FROM keyword_queue_dlq`),
+      db.execute(`SELECT COUNT(*) AS cnt FROM title_queue_dlq`),
+    ]);
+    dlqGauge.set({ queue: 'keyword' }, Number(kwDlq.rows[0]?.cnt || 0));
+    dlqGauge.set({ queue: 'title' },   Number(tlDlq.rows[0]?.cnt || 0));
   } catch (e) {
     console.warn('[metrics] refreshGauges error:', e.message);
   }
@@ -161,4 +187,5 @@ module.exports = {
   recordWebhookEvent,
   recordTokens,
   recordArticle,
+  recordDlqJob,
 };

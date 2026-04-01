@@ -1124,11 +1124,87 @@ increase(autoseo_webhook_events_total{status="failed"}[1h])
 
 ### 9.2 Trung hạn (cần thiết kế)
 
-- [ ] **Priority queue**: Hợp đồng trả tiền → ưu tiên xử lý trước (thêm `priority` field)
-- [ ] **DLQ (Dead Letter Queue)**: Jobs failed > 5 lần → chuyển sang bảng riêng, không retry vô hạn
-- [ ] **Rate limiting trên webhook**: Giới hạn requests/giây từ CRM1 IP
+- [ ] **Priority queue**: *(chỉ cần khi có gói dịch vụ phân cấp — HĐ trả tiền vs dùng thử)*
+- [x] **DLQ (Dead Letter Queue)**: Jobs failed > `MAX_RETRIES` → chuyển sang bảng riêng, không chiếm queue
+- [ ] **Rate limiting trên webhook**: Giới hạn requests/phút từ CRM1 IP
 - [ ] **CRM2 callback**: Khi publish article xong → gửi webhook callback về CRM2
 - [ ] **Multi-CRM support**: Không chỉ CRM1, mà nhiều CRM gửi về (thêm `source` field)
+
+### 8.6 Dead Letter Queue (DLQ)
+
+Jobs failed vượt `MAX_RETRIES` → chuyển sang bảng DLQ riêng, không chiếm queue chính.
+
+#### Luồng hoạt động
+
+```8761
+keyword_queue / title_queue
+      │
+      │ job failed lần MAX_RETRIES (mặc định 3)
+      ▼
+  INSERT INTO keyword_queue_dlq / title_queue_dlq
+      │                        (lưu: lỗi gì, bao nhiêu lần retry, payload để replay)
+      │ DELETE khỏi queue chính
+      ▼
+  Queue chính luôn sạch  ← chỉ chứa jobs còn có thể xử lý
+```
+
+#### Tables
+
+```sql
+keyword_queue_dlq (
+  id, original_id, keyword, so_tieude, company_id, hop_dong_id,
+  chuki, created_by, retries, error, failed_at,
+  payload_json,          -- full job data để replay
+  replayed_at            -- null = chưa replay, có giá trị = đã replay
+)
+
+title_queue_dlq (
+  id, original_id, keyword_q_id, keyword, titles_json, company_id,
+  hop_dong_id, chuki, created_by, retries, error, failed_at,
+  payload_json, replayed_at
+)
+```
+
+#### API endpoints
+
+```
+GET  /api/dlq                    — thống kê tổng quan (số lượng + theo ngày)
+GET  /api/dlq/keyword            — danh sách keyword_queue_dlq
+GET  /api/dlq/title             — danh sách title_queue_dlq
+POST /api/dlq/keyword/:id/replay — đẩy job trở lại keyword_queue
+POST /api/dlq/title/:id/replay    — đẩy job trở lại title_queue
+POST /api/dlq/keyword/:id/purge  — xóa vĩnh viễn khỏi DLQ
+POST /api/dlq/title/:id/purge    — xóa vĩnh viễn khỏi DLQ
+```
+
+#### Replay flow
+
+```
+1. Job ở DLQ                    → xem lỗi, hiểu tại sao fail
+2. Fix nguyên nhân gốc (bug)    → sửa code / data
+3. POST /api/dlq/keyword/:id/replay
+   → INSERT lại vào keyword_queue (retries = 0, status = pending)
+   → replayed_at = now
+4. Worker pick up job bình thường
+```
+
+#### Prometheus metrics
+
+```
+autoseo_dlq_depth{queue="keyword"}  — số keyword job trong DLQ
+autoseo_dlq_depth{queue="title"}   — số title job trong DLQ
+autoseo_dlq_jobs_total{queue="keyword"}  — tổng số job đã vào DLQ (counter)
+autoseo_dlq_jobs_total{queue="title"}   — tổng số job đã vào DLQ (counter)
+```
+
+#### Các file liên quan
+
+| File | Vai trò |
+|------|---------|
+| `server/data/store.js` | Migration tạo 2 bảng DLQ |
+| `server/services/crmQueueWorker.js` | `moveKeywordToDlq()`, `moveTitleToDlq()`, `replayFromDlq()`, `purgeFromDlq()` |
+| `server/routes/dlq.js` | API endpoints cho DLQ |
+| `server/services/metricsService.js` | `autoseo_dlq_depth` gauge + `autoseo_dlq_jobs_total` counter |
 
 ### 9.3 Dài hạn (cần kiến trúc lại)
 
@@ -1162,10 +1238,13 @@ server/
 │   ├── webhooks.js                   ← POST /api/webhooks/crm
 │   ├── hopDong.js                    ← CRUD hợp đồng
 │   ├── webhookEvents.js              ← Lịch sử + retry webhook
-│   └── queue.js                      ← Queue monitoring + control
+│   ├── queue.js                      ← Queue monitoring + control
+│   └── dlq.js                        ← DLQ monitoring + replay + purge
 └── services/
     ├── crmIntegration.js             ← Business logic: findOrCreate*, enqueue*
-    └── crmQueueWorker.js             ← 2-tier worker pool
+    ├── crmQueueWorker.js             ← 2-tier worker pool + DLQ helpers
+    ├── webhookValidation.js           ← Zod schema validation cho webhook payload
+    └── metricsService.js             ← Prometheus metrics + gauges
 
 client/
 ├── src/pages/
