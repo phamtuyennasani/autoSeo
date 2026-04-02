@@ -326,6 +326,13 @@ async function initDb() {
     // keyword_queue — batch webhook (nhiều từ khóa 1 lần)
     { table: 'keyword_queue', col: 'yeucau',           ddl: 'ALTER TABLE keyword_queue ADD COLUMN yeucau TEXT' },
     { table: 'keyword_queue', col: 'tieudecodinh_json', ddl: 'ALTER TABLE keyword_queue ADD COLUMN tieudecodinh_json TEXT' },
+    { table: 'keyword_queue', col: 'content_type',    ddl: "ALTER TABLE keyword_queue ADD COLUMN content_type TEXT NOT NULL DEFAULT 'blog'" },
+    // title_queue — content_type từ webhook
+    { table: 'title_queue',   col: 'content_type',    ddl: "ALTER TABLE title_queue ADD COLUMN content_type TEXT NOT NULL DEFAULT 'blog'" },
+    // articles — content_type từ webhook CRM1
+    { table: 'articles',       col: 'content_type',    ddl: "ALTER TABLE articles ADD COLUMN content_type TEXT NOT NULL DEFAULT 'blog'" },
+    // batch_jobs — content_type cho batch article generation
+    { table: 'batch_jobs',     col: 'content_type',    ddl: "ALTER TABLE batch_jobs ADD COLUMN content_type TEXT NOT NULL DEFAULT 'blog'" },
   ];
 
   // ── DLQ (Dead Letter Queue) tables ─────────────────────────────────────────

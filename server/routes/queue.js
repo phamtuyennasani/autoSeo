@@ -14,7 +14,7 @@
 const express = require('express');
 const router  = express.Router();
 const { db }  = require('../data/store');
-const { getQueueStats, retryFailed, startQueueWorkers, stopQueueWorkers,
+const { getQueueStats, retryFailed, startQueueWorkers, stopQueueWorkers, resumeQueueWorkers,
         getWebhookRetryStats, spawnKeywordWorker, spawnTitleWorker } = require('../services/crmQueueWorker');
 
 // GET /api/queue/status
@@ -78,17 +78,8 @@ router.post('/pause', (req, res) => {
 
 // POST /api/queue/resume
 router.post('/resume', (req, res) => {
-  const { getQueueStats } = require('../services/crmQueueWorker');
-  getQueueStats().then(stats => {
-    if (stats.running) {
-      return res.json({ success: true, message: 'Workers đang chạy rồi.' });
-    }
-    startQueueWorkers();
-    res.json({ success: true, message: 'Workers đã khởi động lại.' });
-  }).catch(() => {
-    startQueueWorkers();
-    res.json({ success: true, message: 'Workers đã khởi động lại.' });
-  });
+  resumeQueueWorkers();
+  res.json({ success: true, message: 'Workers đã tiếp tục xử lý.' });
 });
 
 // POST /api/queue/spawn-kw — tạo thêm 1 keyword worker

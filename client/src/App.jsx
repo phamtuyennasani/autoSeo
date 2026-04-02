@@ -13,6 +13,7 @@ import TokenStats from './pages/TokenStats';
 import HopDong from './pages/HopDong';
 import WebhookEvents from './pages/WebhookEvents';
 import Dlq from './pages/Dlq';
+import ServerLogs from './pages/ServerLogs';
 import KeywordPlanner from './pages/KeywordPlanner';
 import WebsiteAnalysis from './pages/WebsiteAnalysis';
 import { Toaster } from 'sonner';
@@ -112,6 +113,7 @@ function AppRoutes() {
         <Route path="hop-dong"       element={<RootRoute><HopDong /></RootRoute>} />
         <Route path="webhook-events" element={<RootRoute><WebhookEvents /></RootRoute>} />
         <Route path="dlq"            element={<RootRoute><Dlq /></RootRoute>} />
+        <Route path="server-logs"    element={<RootRoute><ServerLogs /></RootRoute>} />
         <Route path="keyword-planner"   element={<KeywordPlanner />} />
         <Route path="website-analysis"  element={<WebsiteAnalysis />} />
       </Route>

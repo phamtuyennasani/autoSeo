@@ -219,7 +219,7 @@ router.post('/:id/check', async (req, res) => {
 
     for (const result of checkResult.results) {
       try {
-        const outcome = await saveArticleFromBatch(job.keyword, job.companyId, result, job.createdBy, job.keywordId, job.chuki || null, job.writtenBy || null);
+        const outcome = await saveArticleFromBatch(job.keyword, job.companyId, result, job.createdBy, job.keywordId, job.chuki || null, job.writtenBy || null, job.content_type || 'blog');
         if (outcome.saved || outcome.skipped) {
           succeededCount++;
           savedArticles.push({ id: outcome.id, title: result.title, seo_title: outcome.seo_title });

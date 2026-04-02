@@ -313,6 +313,17 @@ const Companies = () => {
                       <User size={9} style={{ flexShrink: 0 }} />
                       {creator.full_name || creator.username}
                     </span>
+                  ) : company.creatorEmail ? (
+                    <span style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 4,
+                      padding: '2px 8px', borderRadius: 99, fontSize: 11, fontWeight: 600,
+                      background: 'var(--bg-hover)', border: '1px solid var(--border)',
+                      color: 'var(--text-secondary)', maxWidth: '100%',
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}>
+                      <User size={9} style={{ flexShrink: 0 }} />
+                      {company.creatorEmail}
+                    </span>
                   ) : (
                     <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>—</span>
                   )}

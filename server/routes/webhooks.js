@@ -2,7 +2,7 @@
  * webhooks.js — Nhận dữ liệu từ CRM1 qua POST /api/webhooks/crm
  *
  * Xác thực: SHA256(secret + MaHD + email) trên header x-crm-signature
- * Idempotency: kiểm tra MaHD trước khi xử lý (cùng MaHD + pending/processing → skip)
+ * Idempotency: kiểm tra MaHD đang xử lý (pending/processing → skip, done → vẫn xử lý để thêm keyword mới)
  * Non-blocking: trả về response ngay, xử lý async
  * Validation:  Dùng Zod schema thay vì manual validate
  */
@@ -40,20 +40,15 @@ function verifySignature(maHD, email, signature) {
   }
 }
 
-// ─── Idempotency: kiểm tra MaHD đang xử lý hoặc đã hoàn tất gần đây ──────────
+// ─── Idempotency: kiểm tra MaHD đang xử lý ───────────────────────────────
+// Chỉ skip khi đang xử lý (pending/processing) để tránh race condition.
+// Nếu đã done → vẫn xử lý bình thường (thêm keyword mới, skip duplicate).
 async function checkIdempotency(maHD) {
   const active = await db.execute({
     sql: `SELECT id FROM webhook_events WHERE ma_hd = ? AND status IN ('pending','processing') LIMIT 1`,
     args: [maHD],
   });
   if (active.rows[0]) return active.rows[0].id;
-
-  const recentDone = await db.execute({
-    sql: `SELECT id FROM webhook_events WHERE ma_hd = ? AND status = 'done' AND createdAt > datetime('now', '-5 minutes') LIMIT 1`,
-    args: [maHD],
-  });
-  if (recentDone.rows[0]) return 'already_done';
-
   return null;
 }
 
@@ -83,9 +78,6 @@ router.post('/crm', express.json(), async (req, res) => {
 
   // 4. Idempotency check (dùng MaHD từ validated data)
   const existingEventId = await checkIdempotency(data.thongtinHD.MaHD);
-  if (existingEventId === 'already_done') {
-    return res.json({ success: true, message: 'Đã xử lý gần đây, bỏ qua.' });
-  }
   if (existingEventId) {
     return res.json({ success: true, eventId: existingEventId, message: 'Event đang xử lý.' });
   }

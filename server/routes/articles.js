@@ -120,8 +120,18 @@ async function checkArticleLimit(user) {
 }
 
 // ─── Helper: gọi AI + lưu token + lưu DB ─────────────────────────────────────
-async function generateAndSave(keyword, title, companyId, company, createdBy = null, userConfig = {}, keywordId = null, writtenBy = null) {
-  const isFanpage = userConfig.contentType === 'fanpage';
+async function generateAndSave(keyword, title, companyId, company, createdBy = null, userConfig = {}, keywordId = null, writtenBy = null, chuki = null, contentType = 'blog') {
+  // An toàn: ép tất cả về string/null (SQLite chỉ nhận primitives)
+  keyword    = keyword    == null ? null : String(keyword);
+  title      = title      == null ? null : String(title);
+  companyId  = companyId  == null ? null : String(companyId);
+  createdBy  = createdBy  == null ? null : String(createdBy);
+  keywordId  = keywordId  == null ? null : String(keywordId);
+  writtenBy  = writtenBy  == null ? null : String(writtenBy);
+  chuki      = chuki      == null ? null : String(chuki);
+  contentType = contentType == null ? 'blog' : String(contentType);
+
+  const isFanpage = contentType === 'fanpage';
   const result = isFanpage
     ? await generateFanpageArticle(keyword, title, company, userConfig)
     : await generateArticle(keyword, title, company, userConfig);
@@ -161,20 +171,20 @@ async function generateAndSave(keyword, title, companyId, company, createdBy = n
   if (existing.rows[0]) {
     await saveVersion(existing.rows[0].id, existing.rows[0], createdBy);
     await db.execute({
-      sql: 'UPDATE articles SET content = ?, seo_title = ?, seo_description = ?, thumbnail_prompt = ?, keywordId = ? WHERE id = ?',
-      args: [content, seo_title, seo_description, thumbnail_prompt, keywordId, existing.rows[0].id],
+      sql: 'UPDATE articles SET content = ?, seo_title = ?, seo_description = ?, thumbnail_prompt = ?, keywordId = ?, chuki = ?, content_type = ? WHERE id = ?',
+      args: [content, seo_title, seo_description, thumbnail_prompt, keywordId, chuki, contentType, existing.rows[0].id],
     });
-    return { ...existing.rows[0], content, seo_title, seo_description, thumbnail_prompt, keywordId };
+    return { ...existing.rows[0], content, seo_title, seo_description, thumbnail_prompt, keywordId, chuki, content_type: contentType };
   }
 
   // Bài chưa tồn tại → INSERT mới
   const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   const createdAt = new Date().toISOString();
   await db.execute({
-    sql: 'INSERT INTO articles (id, keyword, title, companyId, content, seo_title, seo_description, thumbnail_prompt, createdAt, createdBy, keywordId, writtenBy) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    args: [id, keyword, title, companyId, content, seo_title, seo_description, thumbnail_prompt, createdAt, createdBy, keywordId, writtenBy],
+    sql: 'INSERT INTO articles (id, keyword, title, companyId, content, seo_title, seo_description, thumbnail_prompt, createdAt, createdBy, keywordId, writtenBy, chuki, content_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    args: [id, keyword, title, companyId, content, seo_title, seo_description, thumbnail_prompt, createdAt, createdBy, keywordId, writtenBy, chuki, contentType],
   });
-  const newArticle = { id, keyword, title, companyId, content, seo_title, seo_description, thumbnail_prompt, createdAt, createdBy, writtenBy, keywordId, publish_status: 'unpublished' };
+  const newArticle = { id, keyword, title, companyId, content, seo_title, seo_description, thumbnail_prompt, createdAt, createdBy, writtenBy, keywordId, chuki, content_type: contentType, publish_status: 'unpublished' };
 
   // Auto-publish nếu công ty bật tính năng này
   if (company.auto_publish) {
@@ -545,7 +555,7 @@ router.post('/batch', async (req, res) => {
 });
 
 // ─── Helper dùng chung: lưu 1 bài từ kết quả Batch API ───────────────────────
-async function saveArticleFromBatch(jobKeyword, jobCompanyId, result, createdBy = null, jobKeywordId = null, chuki = null, writtenBy = null) {
+async function saveArticleFromBatch(jobKeyword, jobCompanyId, result, createdBy = null, jobKeywordId = null, chuki = null, writtenBy = null, contentType = 'blog') {
   if (result.error) return { saved: false, message: `AI error: ${result.error}` };
 
   const { seo_title = result.title, seo_description = '', thumbnail_prompt = '' } = result;
@@ -570,10 +580,10 @@ async function saveArticleFromBatch(jobKeyword, jobCompanyId, result, createdBy 
     : [jobKeyword, result.title, jobCompanyId];
 
   const insertResult = await db.execute({
-    sql: `INSERT INTO articles (id, keyword, title, companyId, content, seo_title, seo_description, thumbnail_prompt, createdAt, createdBy, keywordId, chuki, writtenBy)
-          SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+    sql: `INSERT INTO articles (id, keyword, title, companyId, content, seo_title, seo_description, thumbnail_prompt, createdAt, createdBy, keywordId, chuki, writtenBy, content_type)
+          SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
           WHERE NOT EXISTS (${existsCheck})`,
-    args: [id, jobKeyword, result.title, jobCompanyId, content, seo_title, seo_description, thumbnail_prompt, createdAt, createdBy, jobKeywordId, chuki, writtenBy,
+    args: [id, jobKeyword, result.title, jobCompanyId, content, seo_title, seo_description, thumbnail_prompt, createdAt, createdBy, jobKeywordId, chuki, writtenBy, contentType,
            ...existsArgs],
   });
 

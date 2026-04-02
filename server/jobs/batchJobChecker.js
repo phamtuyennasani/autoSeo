@@ -59,7 +59,7 @@ async function importJobResults(job, results) {
 
   for (const result of results) {
     try {
-      const outcome = await saveArticleFromBatch(job.keyword, job.companyId, result, job.createdBy, job.keywordId, job.chuki || null);
+      const outcome = await saveArticleFromBatch(job.keyword, job.companyId, result, job.createdBy, job.keywordId, job.chuki || null, job.writtenBy || null, job.content_type || 'blog');
       if (outcome.saved) {
         succeeded++;
         LOG(`  ✅ Đã lưu: "${result.title}"`);

@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { Search, Building2, Zap, Settings, HelpCircle, Sun, Moon, Cpu, TrendingUp, Layers, Users, LogOut, BarChart3, FileSignature, Webhook, ListTodo, Globe, Database } from 'lucide-react';
+import { Search, Building2, Zap, Settings, HelpCircle, Sun, Moon, Cpu, TrendingUp, Layers, Users, LogOut, BarChart3, FileSignature, Webhook, ListTodo, Globe, Database, Terminal } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { useToken } from '../context/TokenContext';
 import { useAuth } from '../context/AuthContext';
@@ -16,6 +16,7 @@ const pageTitles = {
   '/hop-dong':        'Quản Lý Hợp Đồng',
   '/webhook-events':  'Lịch Sử Webhook',
   '/dlq':             'Dead Letter Queue',
+  '/server-logs':      'Server Logs',
   '/keyword-planner':  'Keyword Planner',
   '/website-analysis': 'Phân Tích Website',
 };
@@ -103,6 +104,9 @@ const Layout = () => {
                 </NavLink>
                 <NavLink to="/dlq" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
                   <Database size={17} className="nav-icon" /> DLQ
+                </NavLink>
+                <NavLink to="/server-logs" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+                  <Terminal size={17} className="nav-icon" /> Server Logs
                 </NavLink>
               </>
             )}

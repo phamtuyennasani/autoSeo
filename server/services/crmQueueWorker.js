@@ -31,7 +31,8 @@ const WEBHOOK_MAX_RETRIES    = parseInt(process.env.WEBHOOK_MAX_RETRIES    || '3
 
 const LOG = (...args) => console.log('[CRMQueue]', ...args);
 
-let running = false;
+let running    = false;  // Chỉ set true khi server gọi startQueueWorkers() lần đầu
+let isPaused   = false;  // true = Pause(), false = Resume()
 
 // Dynamic worker pool — workers có thể được thêm/bớt lúc runtime
 const activeKeywordWorkers = new Set(); // Set of worker IDs currently running
@@ -190,17 +191,17 @@ async function processKeywordJob(job) {
     // Lưu vào bảng keywords
     const keywordId = genId();
     await db.execute({
-      sql: `INSERT INTO keywords (id, keyword, titles, companyId, createdAt, createdBy, source)
-            VALUES (?, ?, ?, ?, ?, ?, 'webhook')`,
-      args: [keywordId, job.keyword, JSON.stringify(titles), job.company_id, new Date().toISOString(), job.created_by || 'system'],
+      sql: `INSERT INTO keywords (id, keyword, titles, companyId, createdAt, createdBy, source, content_type)
+            VALUES (?, ?, ?, ?, ?, ?, 'webhook', ?)`,
+      args: [keywordId, job.keyword, JSON.stringify(titles), job.company_id, new Date().toISOString(), job.created_by || 'system', job.content_type || 'blog'],
     });
 
     // Đẩy vào title_queue
     const titleQueueId = genId();
     await db.execute({
-      sql: `INSERT INTO title_queue (id, keyword_q_id, keyword, titles_json, company_id, hop_dong_id, chuki, created_by, status, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
-      args: [titleQueueId, job.id, job.keyword, JSON.stringify(titles), job.company_id, job.hop_dong_id || null, job.chuki || null, job.created_by || null, new Date().toISOString()],
+      sql: `INSERT INTO title_queue (id, keyword_q_id, keyword, titles_json, company_id, hop_dong_id, chuki, created_by, content_type, status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
+      args: [titleQueueId, job.id, job.keyword, JSON.stringify(titles), job.company_id, job.hop_dong_id || null, job.chuki || null, job.created_by || null, job.content_type || 'blog', new Date().toISOString()],
     });
 
     // Đánh dấu done
@@ -232,7 +233,7 @@ async function runKeywordWorker(workerId) {
   activeKeywordWorkers.add(wid);
   LOG(`[KW-Worker-${wid}] Khởi động (active KW: ${activeKeywordWorkers.size})`);
   try {
-    while (running) {
+    while (running && !isPaused) {
       try {
         const job = await claimKeywordJob(wid);
         if (job) {
@@ -255,7 +256,7 @@ async function runKeywordWorker(workerId) {
 async function runStuckJobChecker() {
   while (running) {
     await sleep(60000);
-    if (running) await resetStuckJobs();
+    if (running && !isPaused) await resetStuckJobs();
   }
 }
 
@@ -295,7 +296,7 @@ async function retryWebhookEvent(event) {
 
 // Worker: kiểm tra và retry các webhook_events failed mỗi 1 phút
 async function runWebhookRetryWorker() {
-  while (running) {
+  while (running && !isPaused) {
     await sleep(60000);
     if (!running) break;
 
@@ -351,6 +352,8 @@ async function processTitleJob(job) {
     try { if (company.article_styles) company.article_styles = JSON.parse(company.article_styles); } catch { company.article_styles = {}; }
 
     const apiConfig = await getApiConfig(job.created_by);
+    // content_type từ webhook CRM1 → truyền vào apiConfig để generateAndSave dùng đúng prompt
+    if (job.content_type) apiConfig.contentType = job.content_type;
 
     // Lazy-require để tránh circular dependency
     const { generateAndSave } = require('../routes/articles');
@@ -363,9 +366,23 @@ async function processTitleJob(job) {
     let failed    = 0;
 
     // Sinh bài tuần tự từng tiêu đề
-    for (const title of titles) {
+    for (const titleItem of titles) {
+      // titles_json lưu [{ title: '...', topic: '...' }] — luôn extract .title
+      const title = typeof titleItem === 'string' ? titleItem : (titleItem?.title || '');
+      if (!title) {
+        LOG(`[TL-Worker]   ⚠️  Bỏ qua title rỗng:`, titleItem);
+        continue;
+      }
       try {
-        await generateAndSave(job.keyword, title, job.company_id, company, job.created_by, apiConfig, keywordId, job.chuki || null);
+        // Debug: kiểm tra object trong job trước khi gọi generateAndSave
+        const bad = [
+          ['keyword', job.keyword], ['company_id', job.company_id],
+          ['created_by', job.created_by], ['chuki', job.chuki],
+          ['content_type', job.content_type], ['keywordId', keywordId],
+        ].find(([, v]) => typeof v === 'object' && v !== null);
+        if (bad) LOG(`[TL-Worker] ⚠️  Object detected: ${bad[0]} =`, bad[1]);
+
+        await generateAndSave(job.keyword, title, job.company_id, company, job.created_by, apiConfig, keywordId, null, job.chuki || null, job.content_type || 'blog');
         succeeded++;
         LOG(`[TL-Worker]   ✅ "${title}"`);
       } catch (e) {
@@ -402,7 +419,7 @@ async function runTitleWorker(workerId) {
   activeTitleWorkers.add(wid);
   LOG(`[TL-Worker-${wid}] Khởi động (active TL: ${activeTitleWorkers.size})`);
   try {
-    while (running) {
+    while (running && !isPaused) {
       try {
         const job = await claimTitleJob(wid);
         if (job) {
@@ -444,8 +461,13 @@ function startQueueWorkers() {
 }
 
 function stopQueueWorkers() {
-  running = false;
-  LOG('Đang dừng tất cả workers...');
+  isPaused = true;
+  LOG('Workers đã tạm dừng (Pause) — isPaused=true');
+}
+
+function resumeQueueWorkers() {
+  isPaused = false;
+  LOG('Workers đã tiếp tục (Resume) — isPaused=false');
 }
 
 // ─── Dynamic worker management ─────────────────────────────────────────────────
@@ -622,7 +644,7 @@ async function getWebhookRetryStats() {
 }
 
 module.exports = {
-  startQueueWorkers, stopQueueWorkers,
+  startQueueWorkers, stopQueueWorkers, resumeQueueWorkers,
   getQueueStats, retryFailed,
   getWebhookRetryStats,
   getDlqStats, replayFromDlq, purgeFromDlq,

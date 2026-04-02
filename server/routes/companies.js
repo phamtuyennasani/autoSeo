@@ -8,18 +8,19 @@ router.get('/', async (req, res) => {
   try {
     const user = req.user || { id: 'admin', role: 'root' };
 
-    let sql  = 'SELECT * FROM companies';
+    let sql  = `SELECT c.*, u.email AS creatorEmail FROM companies c
+                LEFT JOIN users u ON u.id = c.createdBy`;
     const args = [];
 
     // Filter theo userId (chỉ cho manager trở lên)
     if (req.query.userId && canManageUsers(user)) {
-      sql += ' WHERE createdBy = ?';
+      sql += ' WHERE c.createdBy = ?';
       args.push(req.query.userId);
     } else {
       const visibleIds = await getVisibleUserIds(user.id, user.role);
       if (visibleIds !== null) {
         const placeholders = visibleIds.map(() => '?').join(',');
-        sql += ` WHERE createdBy IN (${placeholders})`;
+        sql += ` WHERE c.createdBy IN (${placeholders})`;
         args.push(...visibleIds);
       }
     }

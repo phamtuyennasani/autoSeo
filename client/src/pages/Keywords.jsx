@@ -1957,7 +1957,7 @@ const Keywords = () => {
           </div>
         ) : (
           <div className="table-container">
-            <div className="table-header" style={{ gridTemplateColumns: showMultiUser ? '170px 1fr 130px 110px 130px 110px' : '200px 1fr 130px 110px 110px' }}>
+            <div className="table-header" style={{ gridTemplateColumns: showMultiUser ? '170px 1fr 130px 110px 160px 110px' : '200px 1fr 130px 110px 110px' }}>
               <div>ID</div>
               <div>Từ Khóa</div>
               <div>Thống Kê</div>
@@ -1969,7 +1969,7 @@ const Keywords = () => {
               const company = getCompany(item.companyId);
               const creator = showMultiUser ? userList.find(u => u.id === item.createdBy) : null;
               return (
-                <div key={item.id} className="table-row" style={{ gridTemplateColumns: showMultiUser ? '170px 1fr 130px 110px 130px 110px' : '200px 1fr 130px 110px 110px' }}>
+                <div key={item.id} className="table-row" style={{ gridTemplateColumns: showMultiUser ? '170px 1fr 130px 110px 160px 110px' : '200px 1fr 130px 110px 110px' }}>
                   {/* ID */}
                   <IdCell id={item.id} />
 

@@ -2,11 +2,45 @@ const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
 const path = require('path');
+// ── Log Dashboard WebSocket ────────────────────────────────────────────────────
+const { createServer } = require('http');
+const { WebSocketServer } = require('ws');
 
 // Dùng __dirname + override:true để đảm bảo .env luôn được load đúng
 dotenv.config({ path: path.join(__dirname, '.env'), override: true });
 
 const app = express();
+// Tạo WS server riêng trên port 3002
+const wsServer = new WebSocketServer({ port: 3002 });
+const logClients = new Set();
+
+wsServer.on('connection', (ws) => {
+  logClients.add(ws);
+  ws.send(JSON.stringify({ time: new Date().toISOString(), level: 'info', text: '✅ Đã kết nối Log Dashboard' }));
+  ws.on('close', () => logClients.delete(ws));
+});
+
+function broadcastLog(level, ...args) {
+  if (!logClients.size) return;
+  const msg = JSON.stringify({
+    time: new Date().toISOString(),
+    level,
+    text: args.map(a => typeof a === 'object' ? JSON.stringify(a, null, 2) : String(a)).join(' ')
+  });
+  logClients.forEach(ws => ws.readyState === 1 && ws.send(msg));
+}
+
+// Override console
+const _log   = console.log.bind(console);
+const _error = console.error.bind(console);
+const _warn  = console.warn.bind(console);
+const _info  = console.info.bind(console);
+
+console.log   = (...a) => { _log(...a);   broadcastLog('log',   ...a); };
+console.error = (...a) => { _error(...a); broadcastLog('error', ...a); };
+console.warn  = (...a) => { _warn(...a);  broadcastLog('warn',  ...a); };
+console.info  = (...a) => { _info(...a);  broadcastLog('info',  ...a); };
+// End WS
 app.use(cors());
 
 // ── Prometheus metrics endpoint (không cần auth) ───────────────────────────────
@@ -73,11 +107,9 @@ initDb()
   .then(() => {
     app.listen(PORT, () => {
       console.log(`✅ Server đang chạy tại cổng ${PORT}`);
-
       // Khởi động background scheduler check Gemini Batch Jobs
       const { startBatchJobChecker } = require('./jobs/batchJobChecker');
       startBatchJobChecker();
-
       // Khởi động CRM Queue Workers (keyword → title → article)
       const { startQueueWorkers } = require('./services/crmQueueWorker');
       startQueueWorkers();

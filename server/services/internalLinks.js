@@ -88,6 +88,11 @@ async function buildLinkMap(companyId, excludeTitle, companyUrl) {
 // ─── Inject internal links vào HTML ──────────────────────────────────────────
 function injectLinks(html, linkMap, maxLinks) {
   if (!html || linkMap.size === 0) return html;
+  // Đảm bảo html là string — nếu là object thì stringify an toàn
+  if (typeof html !== 'string') {
+    console.warn('[internalLinks] html không phải string, ép sang string:', typeof html);
+    html = String(html);
+  }
 
   // Sắp xếp phrase dài nhất trước để tránh conflict
   const phrases = Array.from(linkMap.keys()).sort((a, b) => b.length - a.length);
@@ -138,6 +143,11 @@ function injectLinks(html, linkMap, maxLinks) {
 // ─── Entry point ──────────────────────────────────────────────────────────────
 async function applyInternalLinks(html, companyId, currentTitle, companyUrl) {
   try {
+    // Guard: đảm bảo html là string trước khi xử lý
+    if (typeof html !== 'string') {
+      console.warn('[internalLinks] html không phải string, bỏ qua:', typeof html);
+      return String(html);
+    }
     const { enabled, maxLinks } = await getCompanyLinkConfig(companyId);
     if (!enabled) return html;
 

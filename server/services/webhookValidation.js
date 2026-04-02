@@ -25,6 +25,7 @@ const TukhoasItemSchema = z.object({
   tieudecodinh:     TieudecodinhSchema,
   thongtinmau:      ThongtinHienmauSchema.optional(),
   chuki:            z.string().optional(),
+  content_type:     z.string().optional().default('blog'),  // 'blog' | 'fanpage' | ...
 }).strict();
 
 // thongtinHD
@@ -42,6 +43,7 @@ const ThongtinCongTySchema = z.object({
   ThongtinMota:     z.string().optional(),
   website:          z.string().optional(),
   publish_api_url:  z.string().optional(),
+  email:            z.string().optional(),  // CRM1 có thể gửi email ở đây
 }).strict();
 
 // ─── Root payload schema (batch — format chuẩn từ CRM1) ──────────────────────
