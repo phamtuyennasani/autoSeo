@@ -82,6 +82,18 @@ router.post('/crm', express.json(), async (req, res) => {
     return res.json({ success: true, eventId: existingEventId, message: 'Event đang xử lý.' });
   }
 
+  // 5. Kiểm tra API key trước khi nhận webhook — không có key thì báo CRM1 ngay
+  const { checkUserApiKey } = require('../services/crmIntegration');
+  const apiKeyStatus = await checkUserApiKey(rawEmail || data.thongtincongtyvietbai?.email);
+  if (!apiKeyStatus.ok) {
+    return res.status(422).json({
+      success: false,
+      error: apiKeyStatus.error,
+      code: apiKeyStatus.code,   // 'NO_USER' | 'NO_API_KEY'
+      email: rawEmail || data.thongtincongtyvietbai?.email || null,
+    });
+  }
+
   // 5. Ghi log vào webhook_events (status = pending) — dùng rawPayload để lưu đúng format CRM1 gửi
   const eventId = genId();
   try {

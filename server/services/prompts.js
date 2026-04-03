@@ -115,13 +115,13 @@ function buildTitlesPrompt(keyword, searchContext, count = 10, requirements = ''
 Đây là kết quả tìm kiếm Google hiện tại cho từ khóa này:
 ${searchContext}
 ${reqBlock}
-Dựa vào ngữ cảnh tìm kiếm trên, hãy sáng tạo ${count} tiêu đề bài viết chuẩn SEO, thu hút, CTR cao, đúng ý định tìm kiếm của người dùng cho từ khóa "${keyword}".
+Dựa vào ngữ cảnh tìm kiếm trên, hãy tạo chô tôi đúng **${count}** tiêu đề bài viết chuẩn SEO, thu hút, CTR cao, đúng ý định tìm kiếm của người dùng cho từ khóa "${keyword}".
 Với mỗi tiêu đề, thêm trường "topic" là chủ đề ngắn gọn (2-4 từ, ví dụ: "Hướng dẫn", "So sánh", "Review", "Kinh nghiệm", "Tin tức"...).
 Trả về ĐÚNG MỘT MẢNG JSON hợp lệ. KHÔNG giải thích thêm, KHÔNG markdown. Định dạng: ${format}`;
   }
 
   return `Bạn là một chuyên gia SEO Copywriter. Tôi có từ khóa: "${keyword}".${reqBlock}
-Dựa vào kiến thức SEO chuyên sâu và hiểu biết về thị trường Việt Nam, hãy sáng tạo ${count} tiêu đề bài viết chuẩn SEO cho từ khóa này. Yêu cầu:
+Dựa vào kiến thức SEO chuyên sâu và hiểu biết về thị trường Việt Nam, hãy tạo chô tôi đúng **${count}** tiêu đề bài viết chuẩn SEO cho từ khóa này. Yêu cầu:
 - Đúng ý định tìm kiếm (search intent) của người dùng khi tìm "${keyword}"
 - Đa dạng góc độ: thông tin, so sánh, hướng dẫn, review, kinh nghiệm...
 - Thu hút, CTR cao, tự nhiên, không spam từ khóa
@@ -142,7 +142,7 @@ function buildFanpagePostsPrompt(keyword, searchContext, count = 10, requirement
     ? `Bạn là chuyên gia Social Media Marketing. Tôi có chủ đề: "${keyword}".\nDây là thông tin liên quan:\n${searchContext}\n\n`
     : `Bạn là chuyên gia Social Media Marketing. Tôi có chủ đề: "${keyword}".\n\n`;
 
-  return `${base}${reqBlock}Hãy tạo ${count} ý tưởng bài đăng Facebook Fanpage hấp dẫn về chủ đề này. Yêu cầu:
+  return `${base}${reqBlock}Hãy tạo chô tôi đúng **${count}** title đăng Facebook Fanpage hấp dẫn về chủ đề này. Yêu cầu:
 - Ngắn gọn, thu hút, phù hợp mạng xã hội (không phải SEO blog)
 - Đa dạng dạng bài: chia sẻ kiến thức, mẹo hay, câu hỏi tương tác, câu chuyện, quảng bá sản phẩm/dịch vụ, minigame...
 - Có thể dùng emoji phù hợp

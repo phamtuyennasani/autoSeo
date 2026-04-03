@@ -15,7 +15,10 @@ const ThongtinHienmauSchema = z.object({
   mota:     z.string().optional(),
 }).strict();
 
-const TieudecodinhSchema = z.record(z.string(), z.string()).optional();
+const TieudecodinhSchema = z.preprocess(
+  (val) => (Array.isArray(val) && val.length === 0 ? {} : val),
+  z.record(z.string(), z.string())
+).optional();
 
 // Mỗi item trong mảng tukhoas[]
 const TukhoasItemSchema = z.object({

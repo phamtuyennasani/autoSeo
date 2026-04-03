@@ -31,7 +31,6 @@ async function generateTitles(keyword, searchContext, count = 10, config = {}) {
   const prompt = config.contentType === 'fanpage'
     ? buildFanpagePostsPrompt(keyword, searchContext, count, config.keywordRequirements)
     : buildTitlesPrompt(keyword, searchContext, count, config.keywordRequirements);
-
   return withKeyFallback(keysStr, async (key) => {
     const genAI = new GoogleGenerativeAI(key);
     const model = genAI.getGenerativeModel({
@@ -48,17 +47,23 @@ async function generateTitles(keyword, searchContext, count = 10, config = {}) {
       total_tokens:  result.response.usageMetadata?.totalTokenCount      || 0,
       model: modelName,
     };
-
     const startIdx = responseText.indexOf('[');
     const endIdx   = responseText.lastIndexOf(']') + 1;
     let jsonStr = responseText;
     if (startIdx !== -1 && endIdx > startIdx) jsonStr = responseText.substring(startIdx, endIdx);
 
     try {
-      const raw = JSON.parse(jsonStr);
-      const titles = raw.map(t =>
+      // Dùng jsonrepair để fix JSON bị lỗi do AI trả title chứa dấu " chưa escape
+      const raw = JSON.parse(jsonrepair(jsonStr));
+      const allTitles = raw.map(t =>
         typeof t === 'string' ? { title: t, topic: '' } : { title: t.title || '', topic: t.topic || '' }
       );
+      // Giới hạn đúng count — AI có thể trả nhiều hơn yêu cầu
+      const titles = allTitles.slice(0, count);
+      if (allTitles.length > count) {
+        console.log(`[gemini] AI trả ${allTitles.length} titles → cắt còn ${count} (keyword="${keyword}")`);
+      }
+      console.log(`[TITLES] ${titles.map(t => t.title).join(' | ')}`);
       return { titles, usage };
     } catch (err) {
       console.error('[gemini] Lỗi parse JSON titles:', err, responseText);

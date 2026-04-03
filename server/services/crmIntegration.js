@@ -142,6 +142,8 @@ async function enqueueKeyword({ keyword, soTieude, companyId, hopDongId, chuki, 
   const id = genId();
   // Serialize tieudecodinh (nếu có)
   const tieudecodinhJson = tieudecodinh ? JSON.stringify(tieudecodinh) : null;
+  // Log để debug soluongtieude từ CRM1
+  console.log(`[enqueueKeyword] keyword="${keyword}", soTieude=${soTieude} (yeucau="${yeucau}", ct="${contentType}")`);
 
   await db.execute({
     sql: `INSERT INTO keyword_queue
@@ -165,19 +167,96 @@ async function enqueueKeyword({ keyword, soTieude, companyId, hopDongId, chuki, 
 }
 
 // ─── Kiểm tra keyword đã tồn tại chưa (tránh duplicate) ────────────────────
+// Uniqueness key: keyword + yeucau + content_type (cùng keyword nhưng khác yeucau/content_type → vẫn enqueue)
 // Check cả keyword_queue (đang chờ/xử lý) và keywords (đã xử lý)
-async function keywordExists(companyId, keyword) {
+async function keywordExists(companyId, keyword, yeucau, contentType) {
+  const yeucauNorm = (yeucau || '').trim().toLowerCase();
+  const ctNorm     = (contentType || 'blog').toLowerCase();
+  const kwNorm     = keyword.trim().toLowerCase();
+
   const [inQueue, inKeywords] = await Promise.all([
     db.execute({
-      sql: `SELECT id FROM keyword_queue WHERE company_id = ? AND LOWER(keyword) = LOWER(?) LIMIT 1`,
-      args: [companyId, keyword],
+      sql: `SELECT id FROM keyword_queue
+            WHERE company_id = ?
+              AND LOWER(keyword) = LOWER(?)
+              AND LOWER(COALESCE(yeucau, '')) = ?
+              AND LOWER(COALESCE(content_type, 'blog')) = ?
+            LIMIT 1`,
+      args: [companyId, kwNorm, yeucauNorm, ctNorm],
     }),
     db.execute({
-      sql: `SELECT id FROM keywords WHERE companyId = ? AND LOWER(keyword) = LOWER(?) LIMIT 1`,
-      args: [companyId, keyword],
+      sql: `SELECT id FROM keywords
+            WHERE companyId = ?
+              AND LOWER(keyword) = LOWER(?)
+            LIMIT 1`,
+      args: [companyId, kwNorm],
+      // NOTE: keywords table không có yeucau/content_type → chỉ check keyword thuần
+      // Nếu cùng keyword đã xử lý xong → skip (tránh viết lại bài trùng lặp hoàn toàn)
     }),
   ]);
   return !!(inQueue.rows[0] || inKeywords.rows[0]);
+}
+
+// ─── Kiểm tra user + API key trước khi nhận webhook ─────────────────────────
+// Gọi đồng bộ trong webhook route — CRM1 cần biết ngay có nhận được không
+async function checkUserApiKey(email) {
+  if (!email) {
+    return { ok: false, code: 'NO_USER', error: 'Webhook thiếu email — không thể xác định tài khoản.' };
+  }
+
+  const normalizedEmail = normalizeGmailEmail(email);
+
+  // Tìm user theo email (normalize để so sánh đúng với DB)
+  const userRes = await db.execute({
+    sql: `SELECT id, gemini_api_key, use_manager_key, manager_id, use_system_key FROM users
+          WHERE LOWER(REPLACE(SUBSTR(email, 1, INSTR(email, '@') - 1), '.', '')) || SUBSTR(email, INSTR(email, '@')) = ?
+          LIMIT 1`,
+    args: [normalizedEmail],
+  });
+
+  if (!userRes.rows[0]) {
+    return {
+      ok: false,
+      code: 'NO_USER',
+      error: `Email "${normalizedEmail}" chưa đăng ký trên hệ thống. Vui lòng đăng ký tài khoản trước.`,
+    };
+  }
+
+  const user = userRes.rows[0];
+  const keys = [];
+
+  // 1. Key riêng của user
+  if (user.gemini_api_key) keys.push(user.gemini_api_key);
+
+  // 2. Key từ manager chain (tối đa 2 cấp)
+  if (user.use_manager_key && user.manager_id) {
+    let currentManagerId = user.manager_id;
+    for (let level = 0; level < 2 && currentManagerId; level++) {
+      const mgrRes = await db.execute({
+        sql: `SELECT gemini_api_key, manager_id FROM users WHERE id = ?`,
+        args: [currentManagerId],
+      });
+      const mgr = mgrRes.rows[0];
+      if (!mgr?.gemini_api_key) break;
+      keys.push(mgr.gemini_api_key);
+      currentManagerId = mgr.manager_id || null;
+    }
+  }
+
+  // 3. Key hệ thống (nếu user được cấp quyền)
+  if (user.use_system_key && process.env.GEMINI_API_KEY) {
+    keys.push(process.env.GEMINI_API_KEY);
+  }
+
+  if (keys.length === 0) {
+    return {
+      ok: false,
+      code: 'NO_API_KEY',
+      error: `Tài khoản "${normalizedEmail}" chưa cấu hình Gemini API Key và không có quyền dùng key shared. Vui lòng nhập API Key tại trang Cài đặt.`,
+    };
+  }
+
+  return { ok: true };
 }
 
 // ─── Webhook retry config ─────────────────────────────────────────────────────
@@ -213,14 +292,21 @@ async function processWebhookEvent(eventId, payload, isRetry = false) {
     for (const item of items) {
       const { tukhoa: keyword, soluongtieude: count, yeucau, tieudecodinh, content_type } = item;
 
-      if (!keyword) continue; // skip nếu không có từ khóa
+      console.info(`[crm] Event ${eventId} — ITEM: keyword="${keyword}", count=${count}, yeucau="${yeucau}", content_type="${content_type || 'blog'}"`);
 
-      // Skip keyword đã tồn tại (trong queue hoặc đã xử lý xong)
-      const exists = await keywordExists(companyId, keyword);
-      if (exists) {
-        console.log(`[crm] Event ${eventId} skip duplicate keyword="${keyword}"`);
+      if (!keyword) {
+        console.log(`[crm] Event ${eventId} — skip item rỗng`);
         continue;
       }
+
+      // Skip keyword đã tồn tại với cùng (keyword + yeucau + content_type)
+      // Cùng keyword nhưng khác yeucau hoặc content_type → vẫn enqueue (CRM1 muốn tạo nhiều bài khác nhau)
+      const ct = content_type || 'blog';
+      // const exists = await keywordExists(companyId, keyword, yeucau, ct);
+      // if (exists) {
+      //   console.log(`[crm] Event ${eventId} skip duplicate keyword="${keyword}" (yeucau="${yeucau}", ct="${ct}")`);
+      //   continue;
+      // }
 
       try {
         const queueId = await enqueueKeyword({
@@ -232,14 +318,19 @@ async function processWebhookEvent(eventId, payload, isRetry = false) {
           createdBy: userId,
           yeucau:    yeucau || null,
           tieudecodinh: tieudecodinh || null,
-          contentType: content_type || 'blog',
+          contentType: ct,
         });
         queueIds.push(queueId);
-        console.log(`[crm] Event ${eventId} enqueued: keyword="${keyword}", queueId=${queueId}, tieudecodinh=${tieudecodinh ? 'có' : 'không'}`);
+        console.info(`[crm] Event ${eventId} ✅ enqueued: keyword="${keyword}", queueId=${queueId}, count=${count}, ct="${ct}"`);
       } catch (e) {
-        console.error(`[crm] Event ${eventId} — enqueue keyword="${keyword}" thất bại: ${e.message}`);
+        console.error(`[crm] Event ${eventId} ❌ enqueue keyword="${keyword}" thất bại: ${e.message}`);
       }
     }
+
+    // Debug: log tất cả queue_ids đã enqueue
+    console.info(`[crm] Event ${eventId} — SUMMARY: ${queueIds.length}/${items.length} enqueued. QueueIds: ${JSON.stringify(queueIds)}`);
+
+    console.log(`[crm] Event ${eventId} — vòng for xong: ${queueIds.length}/${items.length} items enqueued`);
 
     if (queueIds.length === 0) {
       throw new Error('Không enqueue được keyword nào.');
@@ -285,10 +376,10 @@ async function processWebhookEvent(eventId, payload, isRetry = false) {
     }
   }
 }
-
 module.exports = {
   processWebhookEvent,
   findOrCreateHopDong,
   findOrCreateCompany,
   findOrCreateUserByEmail,
+  checkUserApiKey,
 };

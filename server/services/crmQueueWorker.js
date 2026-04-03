@@ -137,30 +137,51 @@ async function getApiConfig(userId) {
 // ─── TẦNG 1: keyword_queue ────────────────────────────────────────────────────
 
 async function claimKeywordJob(workerId) {
-  // Bước 1: tìm job pending cũ nhất
-  const res = await db.execute(
-    `SELECT id FROM keyword_queue WHERE status = 'pending' ORDER BY created_at ASC LIMIT 1`
-  );
-  if (!res.rows[0]) return null;
-  const id = res.rows[0].id;
+  const MAX_RETRIES = 3;
 
-  // Bước 2: claim (optimistic lock — chỉ update nếu vẫn còn 'pending')
-  const upd = await db.execute({
-    sql: `UPDATE keyword_queue SET status = 'processing', worker_id = ?, started_at = ? WHERE id = ? AND status = 'pending'`,
-    args: [workerId, new Date().toISOString(), id],
-  });
-  if (upd.rowsAffected === 0) return null; // worker khác đã lấy trước
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    // Bước 1: tìm job pending cũ nhất
+    const res = await db.execute(
+      `SELECT id, keyword, so_tieude FROM keyword_queue WHERE status = 'pending' ORDER BY created_at ASC LIMIT 1`
+    );
+    if (!res.rows[0]) return null;
+    const id = res.rows[0].id;
 
-  const full = await db.execute({ sql: 'SELECT * FROM keyword_queue WHERE id = ?', args: [id] });
-  return full.rows[0] || null;
+    // Bước 2: claim (optimistic lock — chỉ update nếu vẫn còn 'pending')
+    const upd = await db.execute({
+      sql: `UPDATE keyword_queue SET status = 'processing', worker_id = ?, started_at = ? WHERE id = ? AND status = 'pending'`,
+      args: [workerId, new Date().toISOString(), id],
+    });
+    if (upd.rowsAffected > 0) {
+      // Claim thành công
+      const full = await db.execute({ sql: 'SELECT * FROM keyword_queue WHERE id = ?', args: [id] });
+      console.info(`[KW-Worker] 🔎 claimKeywordJob: ✅ workerId=${workerId} claim thành công job.id=${id} (attempt ${attempt})`);
+      return full.rows[0] || null;
+    }
+
+    // UPDATE thất bại → job đã bị worker khác claim → thử lại ngay với job tiếp theo
+    console.info(`[KW-Worker] 🔎 claimKeywordJob: workerId=${workerId} job.id=${id} đã bị claim → retry attempt ${attempt}/${MAX_RETRIES}`);
+    if (attempt < MAX_RETRIES) await sleep(50); // chờ 50ms rồi thử lại
+  }
+
+  // Hết retries → không nhặt được job
+  console.info(`[KW-Worker] 🔎 claimKeywordJob: workerId=${workerId} hết retries → không nhặt được job`);
+  return null;
 }
 
 async function processKeywordJob(job) {
   const start = Date.now();
-  LOG(`[KW-Worker] Đang xử lý keyword="${job.keyword}" id=${job.id}`);
+  const count = job.so_tieude || 10;
+  console.info(`[KW-Worker] ============================================`);
+  console.info(`[KW-Worker] ▶️  BẮT ĐẦU JOB: job.id=${job.id}`);
+  console.info(`[KW-Worker]    keyword="${job.keyword}"`);
+  console.info(`[KW-Worker]    so_tieude=${job.so_tieude} → count=${count}`);
+  console.info(`[KW-Worker]    yeucau="${job.yeucau || ''}"`);
+  console.info(`[KW-Worker]    content_type="${job.content_type || 'blog'}"`);
+  console.info(`[KW-Worker]    created_by="${job.created_by || 'system'}"`);
+  console.info(`[KW-Worker] ============================================`);
   try {
     const apiConfig = await getApiConfig(job.created_by);
-    const count     = job.so_tieude || 10;
 
     let titles = [];
 
@@ -184,24 +205,48 @@ async function processKeywordJob(job) {
       // Chưa có tiêu đề → gọi AI sinh tiêu đề (truyền yeucau vào searchContext)
       const yeucau = job.yeucau || '';
       const { titles: generated } = await generateTitles(job.keyword, yeucau, count, apiConfig);
-      titles = generated;
-      LOG(`[KW-Worker] 🤖 AI sinh ${titles.length} tiêu đề cho keyword="${job.keyword}" (yeucau="${yeucau}")`);
+      console.info('------------');
+      console.info(`[KW-Worker] 🤖 AI trả về ${generated.length} tiêu đề cho keyword="${job.keyword}" (yeucau="${yeucau}")`);
+      console.info('------------');
+      // Giới hạn đúng count — AI có thể trả nhiều hơn, cắt về đúng số yêu cầu
+      titles = generated.slice(0, count);
+      console.info(`[KW-Worker] 📊 COUNT DEBUG: count=${count}, titles.length=${titles.length}, titles[0]=${JSON.stringify(titles[0])}`);
+      LOG(`[KW-Worker] 🤖 AI trả ${generated.length} titles → dùng ${titles.length} (count=${count}) cho keyword="${job.keyword}" (yeucau="${yeucau}")`);
     }
+
+    // ── Safeguard: luôn đảm bảo đúng count trước khi lưu ─────────────────────
+    // Trường hợp hiếm: AI trả đúng count nhưng cấu trúc array không đúng
+    // HOẶC: titles = [] (rỗng) → thông báo lỗi thay vì lưu rỗng
+    if (titles.length === 0) {
+      throw new Error(`AI không trả về tiêu đề nào cho keyword="${job.keyword}". Vui lòng thử lại.`);
+    }
+    if (titles.length > count) {
+      console.warn(`[KW-Worker] ⚠️  titles.length (${titles.length}) > count (${count}) → cắt về count`);
+      titles = titles.slice(0, count);
+    }
+    // titles.length <= count ✓ — đúng yêu cầu
 
     // Lưu vào bảng keywords
     const keywordId = genId();
+    const titlesJson = JSON.stringify(titles);
+    console.info(`[KW-Worker] 🔍 DEBUG: job.id=${job.id}, count=${count}, titles.length=${titles.length}, titlesJson=${titlesJson}`);
+    LOG(`[KW-Worker] 💾 Lưu vào keywords: id=${keywordId}, titles.length=${titles.length}`);
     await db.execute({
       sql: `INSERT INTO keywords (id, keyword, titles, companyId, createdAt, createdBy, source, content_type)
             VALUES (?, ?, ?, ?, ?, ?, 'webhook', ?)`,
-      args: [keywordId, job.keyword, JSON.stringify(titles), job.company_id, new Date().toISOString(), job.created_by || 'system', job.content_type || 'blog'],
+      args: [keywordId, job.keyword, titlesJson, job.company_id, new Date().toISOString(), job.created_by || 'system', job.content_type || 'blog'],
     });
 
     // Đẩy vào title_queue
     const titleQueueId = genId();
+    const tqTitlesJson = JSON.stringify(titles);
+    console.info(`[KW-Worker] 📋 title_queue INSERT: id=${titleQueueId}, keyword_q_id=${job.id}`);
+    console.info(`[KW-Worker]    titles count=${titles.length}, titlesJson=${tqTitlesJson}`);
+    LOG(`[KW-Worker] 📋 Insert title_queue: id=${titleQueueId}, keyword_q_id=${job.id}, titles count=${titles.length}`);
     await db.execute({
       sql: `INSERT INTO title_queue (id, keyword_q_id, keyword, titles_json, company_id, hop_dong_id, chuki, created_by, content_type, status, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
-      args: [titleQueueId, job.id, job.keyword, JSON.stringify(titles), job.company_id, job.hop_dong_id || null, job.chuki || null, job.created_by || null, job.content_type || 'blog', new Date().toISOString()],
+      args: [titleQueueId, job.id, job.keyword, tqTitlesJson, job.company_id, job.hop_dong_id || null, job.chuki || null, job.created_by || null, job.content_type || 'blog', new Date().toISOString()],
     });
 
     // Đánh dấu done
@@ -323,26 +368,42 @@ async function runWebhookRetryWorker() {
 // ─── TẦNG 2: title_queue ──────────────────────────────────────────────────────
 
 async function claimTitleJob(workerId) {
-  const res = await db.execute(
-    `SELECT id FROM title_queue WHERE status = 'pending' ORDER BY created_at ASC LIMIT 1`
-  );
-  if (!res.rows[0]) return null;
-  const id = res.rows[0].id;
+  const MAX_RETRIES = 3;
 
-  const upd = await db.execute({
-    sql: `UPDATE title_queue SET status = 'processing', worker_id = ?, started_at = ? WHERE id = ? AND status = 'pending'`,
-    args: [workerId, new Date().toISOString(), id],
-  });
-  if (upd.rowsAffected === 0) return null;
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    const res = await db.execute(
+      `SELECT id, keyword, content_type FROM title_queue WHERE status = 'pending' AND done_at IS NULL ORDER BY created_at ASC LIMIT 1`
+    );
+    if (!res.rows[0]) return null;
+    const id = res.rows[0].id;
 
-  const full = await db.execute({ sql: 'SELECT * FROM title_queue WHERE id = ?', args: [id] });
-  return full.rows[0] || null;
+    const upd = await db.execute({
+      sql: `UPDATE title_queue SET status = 'processing', worker_id = ?, started_at = ? WHERE id = ? AND status = 'pending'`,
+      args: [workerId, new Date().toISOString(), id],
+    });
+    if (upd.rowsAffected > 0) {
+      const full = await db.execute({ sql: 'SELECT * FROM title_queue WHERE id = ?', args: [id] });
+      console.info(`[TL-Worker] 🔎 claimTitleJob: ✅ workerId=${workerId} claim job.id=${id} (attempt ${attempt})`);
+      return full.rows[0] || null;
+    }
+
+    console.info(`[TL-Worker] 🔎 claimTitleJob: workerId=${workerId} job.id=${id} đã bị claim → retry ${attempt}/${MAX_RETRIES}`);
+    if (attempt < MAX_RETRIES) await sleep(50);
+  }
+  return null;
 }
 
 async function processTitleJob(job) {
   const start = Date.now();
-  const titles = JSON.parse(job.titles_json || '[]');
-  LOG(`[TL-Worker] Đang xử lý ${titles.length} tiêu đề cho keyword="${job.keyword}" id=${job.id}`);
+  const titlesRaw = job.titles_json || '[]';
+  const titles = JSON.parse(titlesRaw);
+  console.info(`[TL-Worker] ============================================`);
+  console.info(`[TL-Worker] ▶️  BẮT ĐẦU TITLE JOB: job.id=${job.id}`);
+  console.info(`[TL-Worker]    keyword="${job.keyword}"`);
+  console.info(`[TL-Worker]    content_type="${job.content_type || 'blog'}"`);
+  console.info(`[TL-Worker]    titles.length=${titles.length}`);
+  console.info(`[TL-Worker]    titles_json=${titlesRaw}`);
+  console.info(`[TL-Worker] ============================================`);
 
   try {
     // Lấy thông tin công ty
@@ -424,6 +485,9 @@ async function runTitleWorker(workerId) {
         const job = await claimTitleJob(wid);
         if (job) {
           await processTitleJob(job);
+          // Sleep nhỏ sau khi xử lý xong để tránh race với KW-Worker
+          // KW-Worker đang insert title_queue có thể chưa kịp commit khi TL-Worker poll ngay
+          await sleep(300);
         } else {
           await sleep(POLL_MS);
         }
