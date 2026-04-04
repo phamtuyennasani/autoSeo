@@ -9,6 +9,7 @@
 
 const { db } = require('../data/store');
 const { recordWebhookEvent } = require('./metricsService');
+const { decrypt } = require('../utils/crypto');
 
 const genId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -225,8 +226,8 @@ async function checkUserApiKey(email) {
   const user = userRes.rows[0];
   const keys = [];
 
-  // 1. Key riêng của user
-  if (user.gemini_api_key) keys.push(user.gemini_api_key);
+  // 1. Key riêng của user (giải mã trước khi dùng)
+  if (user.gemini_api_key) keys.push(decrypt(user.gemini_api_key));
 
   // 2. Key từ manager chain (tối đa 2 cấp)
   if (user.use_manager_key && user.manager_id) {
@@ -238,7 +239,7 @@ async function checkUserApiKey(email) {
       });
       const mgr = mgrRes.rows[0];
       if (!mgr?.gemini_api_key) break;
-      keys.push(mgr.gemini_api_key);
+      keys.push(decrypt(mgr.gemini_api_key));
       currentManagerId = mgr.manager_id || null;
     }
   }

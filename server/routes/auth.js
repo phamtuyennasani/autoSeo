@@ -8,23 +8,12 @@
 
 const express = require('express');
 const router = express.Router();
-const crypto = require('crypto');
+const {stripDots,createNasaniToken} = require('../utils/func');
 const { db } = require('../data/store');
 const { comparePassword, signToken, hashPassword } = require('../services/auth');
 const authenticate = require('../middleware/authenticate');
 const axios = require('axios');
 
-// ── Nasani helpers ────────────────────────────────────────────────────────────
-function stripDots(email) {
-  const [local, domain] = email.split('@');
-  return local.replace(/\./g, '') + '@' + domain;
-}
-
-function createNasaniToken(timestamp) {
-  const secret = process.env.NASANI_API_SECRET;
-  if (!secret) throw new Error('NASANI_API_SECRET chưa được cấu hình trong .env');
-  return crypto.createHmac('sha256', secret).update(timestamp.toString()).digest('base64');
-}
 
 async function checkNasaniAccess(email) {
   const emailNoDots = stripDots(email);
@@ -35,7 +24,6 @@ async function checkNasaniAccess(email) {
   params.append('time_post', timestamp);
   params.append('token', token);
   params.append('email', emailNoDots);
-
   const res = await axios.post('https://user.nasani.vn/api/checkUserByEmailAI', params, {
     timeout: 10000,
   });

@@ -13,6 +13,7 @@
 
 require('dotenv').config();
 const { createClient } = require('@libsql/client');
+const { decrypt } = require('../utils/crypto');
 
 const db = createClient({
   url:       process.env.TURSO_DATABASE_URL,
@@ -440,7 +441,10 @@ async function initDb() {
     default_ai_provider: 'DEFAULT_AI_PROVIDER',
   };
   for (const row of apiCfg.rows) {
-    if (row.value) process.env[envMap[row.key]] = row.value;
+    if (!row.value) continue;
+    // Decrypt API keys before loading into process.env for AI providers
+    const isApiKey = ['gemini_api_key', 'serpapi_api_key', 'openai_api_key'].includes(row.key);
+    process.env[envMap[row.key]] = isApiKey ? decrypt(row.value) : row.value;
   }
   console.log('[store] DB initialized ✅');
 }

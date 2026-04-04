@@ -20,6 +20,7 @@
  */
 
 const { db } = require('../data/store');
+const { decrypt } = require('../utils/crypto');
 
 // ─── Build system config theo provider ───────────────────────────────────────
 function buildSystemConfig(provider) {
@@ -90,15 +91,15 @@ async function getEffectiveApiConfig(userId) {
       sql: "SELECT gemini_api_key, serpapi_api_key FROM users WHERE gemini_api_key IS NOT NULL AND gemini_api_key != ''",
       args: [],
     });
-    const pooledKeys     = allUsersRes.rows.map(r => r.gemini_api_key).filter(Boolean);
-    const pooledSerpKeys = allUsersRes.rows.map(r => r.serpapi_api_key).filter(Boolean);
+    const pooledKeys     = allUsersRes.rows.map(r => decrypt(r.gemini_api_key)).filter(Boolean);
+    const pooledSerpKeys = allUsersRes.rows.map(r => decrypt(r.serpapi_api_key)).filter(Boolean);
 
     // Gom thêm SerpAPI key từ user không có Gemini key nhưng có SerpAPI key
     const serpOnlyRes = await db.execute({
       sql: "SELECT serpapi_api_key FROM users WHERE (gemini_api_key IS NULL OR gemini_api_key = '') AND serpapi_api_key IS NOT NULL AND serpapi_api_key != ''",
       args: [],
     });
-    serpOnlyRes.rows.forEach(r => { if (r.serpapi_api_key) pooledSerpKeys.push(r.serpapi_api_key); });
+    serpOnlyRes.rows.forEach(r => { if (r.serpapi_api_key) pooledSerpKeys.push(decrypt(r.serpapi_api_key)); });
 
     // Key hệ thống: thêm nếu user có quyền (use_system_key = 1) hoặc là root
     const systemSerpKey = process.env.SERPAPI_API_KEY || '';
@@ -170,10 +171,10 @@ async function getEffectiveApiConfig(userId) {
   const keys     = [];
   const serpKeys = [];
 
-  // ── 1. Key cá nhân của user ───────────────────────────────────────────────
+  // ── 1. Key cá nhân của user (giải mã trước khi dùng) ───────────────────
   if (row.gemini_api_key) {
-    keys.push(row.gemini_api_key);
-    if (row.serpapi_api_key) serpKeys.push(row.serpapi_api_key);
+    keys.push(decrypt(row.gemini_api_key));
+    if (row.serpapi_api_key) serpKeys.push(decrypt(row.serpapi_api_key));
   }
 
   // ── 2–3. Key từ manager chain (tối đa 2 cấp) ─────────────────────────────
@@ -188,8 +189,8 @@ async function getEffectiveApiConfig(userId) {
         const mgr = mgrRes.rows[0];
         if (!mgr || !mgr.gemini_api_key) break;
 
-        keys.push(mgr.gemini_api_key);
-        if (mgr.serpapi_api_key) serpKeys.push(mgr.serpapi_api_key);
+        keys.push(decrypt(mgr.gemini_api_key));
+        if (mgr.serpapi_api_key) serpKeys.push(decrypt(mgr.serpapi_api_key));
 
         currentManagerId = mgr.manager_id || null;
       } catch { break; }

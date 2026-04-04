@@ -3,6 +3,7 @@ const router = express.Router();
 const { db } = require('../data/store');
 const requireAdmin = require('../middleware/requireAdmin');
 const { isRoot } = require('../services/permissions');
+const { encrypt, decrypt, isEncrypted } = require('../utils/crypto');
 
 /* Ẩn key, chỉ hiện 4 ký tự đầu + 4 ký tự cuối */
 function maskKey(key) {
@@ -102,20 +103,23 @@ router.get('/api-config', async (req, res) => {
     const user        = req.user || { id: 'admin', role: 'admin' };
     const authEnabled = process.env.AUTH_ENABLED === 'true';
 
-    // User thường khi AUTH bật → đọc key cá nhân từ bảng users
+    // User thường khi AUTH bật → đọc key cá nhân từ bảng users (giải mã trước khi mask)
     if (authEnabled && !isRoot(user)) {
       const result = await db.execute({
         sql: 'SELECT gemini_api_key, gemini_model, serpapi_api_key, publish_api_url FROM users WHERE id = ?',
         args: [user.id],
       });
       const row = result.rows[0] || {};
+      // Decrypt nếu là encrypted, giữ nguyên nếu là legacy plain text
+      const rawGemini   = row.gemini_api_key  ? decrypt(row.gemini_api_key)  : '';
+      const rawSerp     = row.serpapi_api_key ? decrypt(row.serpapi_api_key) : '';
       return res.json({
-        gemini_api_key:  row.gemini_api_key  ? maskKey(row.gemini_api_key)  : '',
-        gemini_api_key_set:  !!row.gemini_api_key,
-        gemini_model:    row.gemini_model    || 'gemini-2.5-flash',
-        serpapi_api_key: row.serpapi_api_key ? maskKey(row.serpapi_api_key) : '',
-        serpapi_api_key_set: !!row.serpapi_api_key,
-        publish_api_url: row.publish_api_url || '',
+        gemini_api_key:      rawGemini   ? maskKey(rawGemini)   : '',
+        gemini_api_key_set:  !!rawGemini,
+        gemini_model:        row.gemini_model || 'gemini-2.5-flash',
+        serpapi_api_key:     rawSerp     ? maskKey(rawSerp)     : '',
+        serpapi_api_key_set: !!rawSerp,
+        publish_api_url:     row.publish_api_url || '',
         scope: 'user',
       });
     }
@@ -150,15 +154,21 @@ router.put('/api-config', async (req, res) => {
     const authEnabled = process.env.AUTH_ENABLED === 'true';
     const { gemini_api_key, gemini_model, serpapi_api_key, publish_api_url } = req.body;
 
-    // User thường khi AUTH bật → lưu vào users table
+    // User thường khi AUTH bật → lưu vào users table (encrypt trước khi lưu)
     if (authEnabled && !isRoot(user)) {
       const updates = [];
       const args    = [];
       /* Bỏ qua key bị mask (•••) → giữ nguyên key cũ trong DB */
       const skipMasked = (v) => !v || String(v).includes('•••');
-      if (gemini_api_key  !== undefined && !skipMasked(gemini_api_key)) { updates.push('gemini_api_key = ?');  args.push(String(gemini_api_key).trim()); }
+      if (gemini_api_key  !== undefined && !skipMasked(gemini_api_key)) {
+        updates.push('gemini_api_key = ?');
+        args.push(encrypt(String(gemini_api_key).trim()));
+      }
       if (gemini_model    !== undefined) { updates.push('gemini_model = ?');    args.push(String(gemini_model).trim()); }
-      if (serpapi_api_key !== undefined && !skipMasked(serpapi_api_key)) { updates.push('serpapi_api_key = ?'); args.push(String(serpapi_api_key).trim()); }
+      if (serpapi_api_key !== undefined && !skipMasked(serpapi_api_key)) {
+        updates.push('serpapi_api_key = ?');
+        args.push(encrypt(String(serpapi_api_key).trim()));
+      }
       if (publish_api_url !== undefined) { updates.push('publish_api_url = ?'); args.push(String(publish_api_url).trim()); }
 
       if (updates.length > 0) {
@@ -186,10 +196,17 @@ router.put('/api-config', async (req, res) => {
       const val = String(value).trim();
       /* Bỏ qua key bị mask (•••) → giữ nguyên key cũ trong DB */
       if (!val || val.includes('•••')) continue;
+
+      // Encrypt API keys khi lưu vào settings table
+      const dbValue = (key === 'gemini_api_key' || key === 'serpapi_api_key')
+        ? encrypt(val)
+        : val;
+
       await db.execute({
         sql: 'INSERT INTO settings (key, value, label, updatedAt) VALUES (?, ?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updatedAt = excluded.updatedAt',
-        args: [key, val, key, updatedAt],
+        args: [key, dbValue, key, updatedAt],
       });
+      // process.env giữ plain text để AI providers đọc trực tiếp
       process.env[envMap[key]] = val;
     }
 

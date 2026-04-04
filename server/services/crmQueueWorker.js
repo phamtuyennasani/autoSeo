@@ -18,11 +18,10 @@ const { db }                 = require('../data/store');
 const { generateTitles }     = require('./gemini');
 const { getEffectiveApiConfig } = require('./apiConfig');
 const { recordKeywordProcessed, recordTitleProcessed, recordDlqJob } = require('./metricsService');
-
 const genId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 const KEYWORD_WORKERS = parseInt(process.env.KEYWORD_QUEUE_WORKERS || '2', 10);
-const TITLE_WORKERS   = parseInt(process.env.TITLE_QUEUE_WORKERS   || '1', 10);
+const TITLE_WORKERS   = parseInt(process.env.TITLE_QUEUE_WORKERS   || '2', 10);
 const POLL_MS         = parseInt(process.env.QUEUE_POLL_MS         || '2000', 10);
 const MAX_RETRIES     = parseInt(process.env.QUEUE_MAX_RETRIES     || '3', 10);
 const PROCESSING_TIMEOUT_MS = parseInt(process.env.QUEUE_PROCESSING_TIMEOUT_MS || '300000', 10); // 5 phút mặc định
@@ -138,34 +137,40 @@ async function getApiConfig(userId) {
 
 async function claimKeywordJob(workerId) {
   const MAX_RETRIES = 3;
+  const now = new Date().toISOString();
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    // Bước 1: tìm job pending cũ nhất
-    const res = await db.execute(
-      `SELECT id, keyword, so_tieude FROM keyword_queue WHERE status = 'pending' ORDER BY created_at ASC LIMIT 1`
+    // Bước 1: tìm job pending cũ nhất (trước khi claim)
+    const find = await db.execute(
+      `SELECT id FROM keyword_queue WHERE status = 'pending' ORDER BY created_at ASC LIMIT 1`
     );
-    if (!res.rows[0]) return null;
-    const id = res.rows[0].id;
 
-    // Bước 2: claim (optimistic lock — chỉ update nếu vẫn còn 'pending')
+    if (!find.rows[0]) {
+      // Không có job pending nào → queue rỗng, không phải race. Poll lại ngay.
+      return null;
+    }
+
+    const id = find.rows[0].id;
+
+    // Bước 2: atomic claim — chỉ update nếu vẫn còn 'pending'
     const upd = await db.execute({
       sql: `UPDATE keyword_queue SET status = 'processing', worker_id = ?, started_at = ? WHERE id = ? AND status = 'pending'`,
-      args: [workerId, new Date().toISOString(), id],
+      args: [workerId, now, id],
     });
+
     if (upd.rowsAffected > 0) {
       // Claim thành công
       const full = await db.execute({ sql: 'SELECT * FROM keyword_queue WHERE id = ?', args: [id] });
-      console.info(`[KW-Worker] 🔎 claimKeywordJob: ✅ workerId=${workerId} claim thành công job.id=${id} (attempt ${attempt})`);
+      console.info(`[KW-Worker] 🔎 claimKeywordJob: ✅ workerId=${workerId} claim job.id=${id} (attempt ${attempt})`);
       return full.rows[0] || null;
     }
 
-    // UPDATE thất bại → job đã bị worker khác claim → thử lại ngay với job tiếp theo
-    console.info(`[KW-Worker] 🔎 claimKeywordJob: workerId=${workerId} job.id=${id} đã bị claim → retry attempt ${attempt}/${MAX_RETRIES}`);
-    if (attempt < MAX_RETRIES) await sleep(50); // chờ 50ms rồi thử lại
+    // rowsAffected = 0 → job đã bị worker khác claim → thử job tiếp theo
+    console.info(`[KW-Worker] 🔎 claimKeywordJob: workerId=${workerId} job.id=${id} đã bị claim → retry ${attempt}/${MAX_RETRIES}`);
+    if (attempt < MAX_RETRIES) await sleep(50);
   }
 
-  // Hết retries → không nhặt được job
-  console.info(`[KW-Worker] 🔎 claimKeywordJob: workerId=${workerId} hết retries → không nhặt được job`);
+  // Hết retries → không nhặt được job (queue đang bận)
   return null;
 }
 
@@ -369,27 +374,40 @@ async function runWebhookRetryWorker() {
 
 async function claimTitleJob(workerId) {
   const MAX_RETRIES = 3;
+  const now = new Date().toISOString();
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    const res = await db.execute(
-      `SELECT id, keyword, content_type FROM title_queue WHERE status = 'pending' AND done_at IS NULL ORDER BY created_at ASC LIMIT 1`
+    // Bước 1: tìm job pending cũ nhất
+    const find = await db.execute(
+      `SELECT id FROM title_queue WHERE status = 'pending' AND done_at IS NULL ORDER BY created_at ASC LIMIT 1`
     );
-    if (!res.rows[0]) return null;
-    const id = res.rows[0].id;
 
+    if (!find.rows[0]) {
+      // Không có job pending nào → queue rỗng, không phải race. Poll lại ngay.
+      return null;
+    }
+
+    const id = find.rows[0].id;
+
+    // Bước 2: atomic claim — chỉ update nếu vẫn còn 'pending'
     const upd = await db.execute({
       sql: `UPDATE title_queue SET status = 'processing', worker_id = ?, started_at = ? WHERE id = ? AND status = 'pending'`,
-      args: [workerId, new Date().toISOString(), id],
+      args: [workerId, now, id],
     });
+
     if (upd.rowsAffected > 0) {
+      // Claim thành công
       const full = await db.execute({ sql: 'SELECT * FROM title_queue WHERE id = ?', args: [id] });
       console.info(`[TL-Worker] 🔎 claimTitleJob: ✅ workerId=${workerId} claim job.id=${id} (attempt ${attempt})`);
       return full.rows[0] || null;
     }
 
+    // rowsAffected = 0 → job đã bị worker khác claim → thử job tiếp theo
     console.info(`[TL-Worker] 🔎 claimTitleJob: workerId=${workerId} job.id=${id} đã bị claim → retry ${attempt}/${MAX_RETRIES}`);
     if (attempt < MAX_RETRIES) await sleep(50);
   }
+
+  // Hết retries → không nhặt được job (queue đang bận)
   return null;
 }
 

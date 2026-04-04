@@ -7,7 +7,7 @@ const { getSetting } = require('./settings');
 const { applyInlineStyles } = require('../services/htmlUtils');
 const { applyInternalLinks } = require('../services/internalLinks');
 const { isRoot, getVisibleUserIds, canManageUsers } = require('../services/permissions');
-
+const {stripDots} = require('../utils/func');
 // ─── Helper: slugify title thành URL slug (hỗ trợ tiếng Việt) ────────────────
 function slugify(text) {
   const map = {
@@ -46,22 +46,30 @@ async function getKeywordCreatorEmail(keywordId, keywordText) {
 async function callPublishApi(article, company, apiUrl, email = '') {
   const slug    = slugify(article.title || '');
   const baseUrl = (company.url || '').replace(/\/$/, '');
+  // Token: secret + timestamp unix (tương đương PHP: $secret . strtotime(date("Y-m-d", time())))
+  const CRM_CONTENT_SECRET = process.env.CRM_CONTENT_SECRET || '2mSXg77BxgJsiUMz';
+  const token = CRM_CONTENT_SECRET + Math.floor(new Date().setHours(0, 0, 0, 0) / 1000);
   const payload = {
-    title_seo:       article.seo_title        || article.title || '',
-    description_seo: article.seo_description  || '',
+    namevi:           article.seo_title        || article.title || '',
+    title:            article.seo_title        || article.title || '',
+    descvi:           article.seo_description  || '',
+    description_seo:  article.seo_description  || '',
     link_seo:        `${baseUrl}/${slug}`,
-    tukhoa_seo:      article.keyword          || '',
-    content_seo:     article.content          || '',
-    ma_hd:           company.contract_code    || '',
-    linh_vuc:        company.industry         || '',
-    email:           email,
-    chuki:           article.chuki            || null,
+    keyword:          article.keyword          || '',
+    contentvi:        article.content          || '',
+    mahd:             company.contract_code    || '',
+    domain:           company.url              || '',
+    email:            stripDots(email),
+    chuki:            article.chuki            || null,
+    token:            token,
+    type:             (article.content_type=='blog'?'tin-tuc':article.content_type)     || 'tin-tuc',
   };
   const res = await fetch(apiUrl, {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
     body:    JSON.stringify(payload),
   });
+
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     throw new Error(`API trả về ${res.status}: ${text.slice(0, 200)}`);
@@ -72,7 +80,8 @@ async function callPublishApi(article, company, apiUrl, email = '') {
 // ─── Helper: thực hiện publish + cập nhật DB ─────────────────────────────────
 async function publishArticle(articleId, article, company, apiUrl, email = '') {
   const data = await callPublishApi(article, company, apiUrl, email);
-  const externalId = String(data?.id || data?.ID || data?.post_id || '');
+  const externalId = String(data?.result?.id || data?.result?.ID || data?.result?.post_id || '');
+  console.log('[articles] publishArticle API response:', externalId);
   const now = new Date().toISOString();
   await db.execute({
     sql:  "UPDATE articles SET publish_status = 'published', published_at = ?, publish_external_id = ? WHERE id = ?",
