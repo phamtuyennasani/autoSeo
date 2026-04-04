@@ -21,8 +21,13 @@ OUTPUT RULES (MUST FOLLOW 100%):
  * @returns {string}         - Prompt text gửi cho AI
  */
 function buildArticlePrompt(keyword, title, company,optionsPromt='') {
+  const optionsPromtbyUser = '';
+  if(optionsPromt){
+    optionsPromtbyUser = `\n\n**YÊU CẦU BỔ SUNG từ người dùng:** ${optionsPromt}\n`;
+  } 
   return `# VAI TRÒ
-Bạn là một chuyên gia SEO, Content Marketing hàng đầu. Nhiệm vụ của bạn là viết một bài viết SEO hoàn chỉnh, tự nhiên, có tính thuyết phục, hấp dẫn và tối ưu hóa cho công cụ tìm kiếm.
+Bạn là một chuyên gia SEO, Content Marketing hàng đầu. Nhiệm vụ của bạn là viết một bài viết SEO hoàn chỉnh, tự nhiên, có tính thuyết phục, hấp dẫn và tối ưu hóa cho công cụ tìm kiếm, đồng thời tạo ra các prompt tạo ảnh minh họa chuyên nghiệp.
+
 
 # THÔNG TIN ĐẦU VÀO
 - **Từ khóa mục tiêu (Keyword)**: "${keyword}"
@@ -49,7 +54,11 @@ ${company.info || ''}
 - Tóm tắt nội dung bài viết, chứa từ khóa chính
 - Độ dài: 150-160 ký tự
 
-## 3. thumbnail_prompt
+## 3. short_content
+- Tóm tắt nội dung bài viết, chứa từ khóa chính
+- Độ dài: 200-250 ký tự
+
+## 4. thumbnail_prompt
 - Mô tả ảnh đại diện cho bài viết, dùng để tạo ảnh bằng AI image generator
 - Viết bằng tiếng Anh, độ dài 80-150 ký tự
 - Phong cách: **realistic photography only** — như ảnh chụp thật bằng máy ảnh DSLR/mirrorless
@@ -59,25 +68,34 @@ ${company.info || ''}
 - Ví dụ tốt: "RAW photo, Vietnamese woman consulting a doctor in a clean modern clinic, natural window light, 50mm lens, shallow depth of field, photorealistic"
 - Ví dụ tốt: "DSLR photo, fresh Vietnamese food ingredients on wooden table, soft daylight from window, close-up shot, food photography style"
 
-## 4. content (QUAN TRỌNG - ĐỌC KỸ)
+## 5. content **(QUAN TRỌNG - ĐỌC KỸ)**
 - Định dạng: Markdown
 - Độ dài: Khoảng 1400 từ (±10%)
-- Không có thẻ <hr>, không có thẻ <h1>
-- Không có tiêu đề nhàm chán: "Mở đầu", "Kết luận", "Tổng kết"
+- **Không có thẻ <hr>, không có thẻ <h1>**
+- Sử dụng ngôn ngữ chuyên nghiệp, giàu tính thương hiệu và thuyết phục.
+- **Không có tiêu đề nhàm chán: "Mở đầu", "Kết luận", "Tổng kết"**
 - Không so sánh trực tiếp với đối thủ
+- Không đi sâu vào quy trình, hướng dẫn đặt hàng, các bước thực hiện (trừ khi dàn ý yêu cầu).
 - Sử dụng H2, H3 hợp lý tự nhiên không nhồi nhét; từ khóa chính trong ít nhất 2 thẻ H2
 - Không in đậm H2, H3
 - Đoạn văn ngắn gọn dưới 5 dòng/đoạn
 - Dùng bullet points (-), numbering (1.), bold (**text**) để làm nổi bật ý quan trọng
 - Chèn link tự nhiên: [${company.name}](${company.url})
 - Thêm thông tin liên hệ công ty ở cuối bài
-- Đoạn kết là CTA khéo léo, tự nhiên
+- Đoạn kết bài phải là một lời kêu gọi hành động (CTA) khéo léo, tự nhiên.
+- **Luôn trình bày các ý chính bằng gạch đầu dòng hoặc danh sách có thứ tự**, giúp nội dung dễ đọc, dễ quét thông tin.
+- **Bắt buộc xuống dòng hợp lý giữa các đoạn và các ý.**
 - Làm nổi bật khung thông tin liên hệ
+- Không in đậm và không sử dụng thẻ `<strong>` cho `<h2>` và `<h3>`.
+- Nội dung cần thể hiện ý rõ ràng, có chiều sâu mô tả.
+- Thêm thông tin liên hệ công ty ở cuối bài (lấy từ dữ liệu đầu vào).
 - Những vị trí cần ảnh thì thêm dòng ghi chú: <!-- image: mô tả ngắn -->
 - Cấu trúc: Mở bài → 2-4 thẻ H2 (mỗi H2 có 1-3 H3) → Phần kết CTA
-- **Mật độ từ khóa chính xuất hiện:** "1% - 1.5%" (tự nhiên, không nhồi nhét).
+- **Mật độ từ khóa chính xuất hiện:** "1.5% - 2%" (tự nhiên, không nhồi nhét).
+- **Lưu ý các phần của bài viết**:
+      - **Mở bài:** Giới thiệu ngắn gọn vấn đề, nêu tầm quan trọng hoặc xu hướng liên quan đến từ khóa. Dẫn dắt tự nhiên đến sản phẩm, giải pháp hoặc thương hiệu.
+      - **Phần kết:** Tạo lời khẳng định, nhấn mạnh giá trị hoặc lợi ích, có thể kèm **CTA nhẹ nhàng**, **không dùng từ “Kết luận”, “Tổng kết”, “Lời kết”**.
 
-${optionsPromt}
 
 # QUY TẮC JSON BẮT BUỘC - TUYỆT ĐỐI TUÂN THỦ
 Đây là phần quan trọng nhất. Bạn phải tạo ra JSON hợp lệ có thể parse được bằng JSON.parse().
@@ -96,7 +114,7 @@ ${optionsPromt}
 - Bắt đầu ngay bằng dấu { và kết thúc bằng dấu }
 
 ## Mẫu JSON chuẩn (format chính xác phải theo):
-{"seo_title":"Tiêu đề SEO ngắn gọn","seo_description":"Mô tả SEO 150-160 ký tự chứa từ khóa chính và tóm tắt nội dung bài viết một cách hấp dẫn.","thumbnail_prompt":"RAW photo, [subject related to article topic], natural lighting, realistic environment, DSLR 50mm lens, photorealistic, no text","content":"## H2 Tiêu đề thứ nhất\\n\\nĐoạn văn mở đầu ngắn gọn.\\n\\n- Ý 1\\n- Ý 2\\n- Ý 3\\n\\n### H3 Tiêu đề con\\n\\nNội dung chi tiết...\\n\\n## H2 Tiêu đề thứ hai\\n\\nNội dung tiếp theo..."}`;
+{"seo_title":"Tiêu đề SEO ngắn gọn","seo_description":"Mô tả SEO 150-160 ký tự chứa từ khóa chính và tóm tắt nội dung bài viết một cách hấp dẫn.",short_content":"Mô tả bài viết 200-250 ký tự chứa từ khóa chính và tóm tắt nội dung bài viết một cách hấp dẫn.","thumbnail_prompt":"RAW photo, [subject related to article topic], natural lighting, realistic environment, DSLR 50mm lens, photorealistic, no text","content":"## H2 Tiêu đề thứ nhất\\n\\nĐoạn văn mở đầu ngắn gọn.\\n\\n- Ý 1\\n- Ý 2\\n- Ý 3\\n\\n### H3 Tiêu đề con\\n\\nNội dung chi tiết...\\n\\n## H2 Tiêu đề thứ hai\\n\\nNội dung tiếp theo..."}`;
 }
 
 // ─── Prompt tạo tiêu đề ───────────────────────────────────────────────────────
@@ -126,6 +144,8 @@ Dựa vào kiến thức SEO chuyên sâu và hiểu biết về thị trường
 - Đa dạng góc độ: thông tin, so sánh, hướng dẫn, review, kinh nghiệm...
 - Thu hút, CTR cao, tự nhiên, không spam từ khóa
 - Độ dài tiêu đề 50-70 ký tự
+- **Không có tiêu đề nhàm chán: "Hướng dẫn ${keyword}", "Tất tần tật về ${keyword}", "Giải pháp ${keyword}"**
+- ** Tiêu đều phải chứa từ khóa chính "${keyword}" **
 - Với mỗi tiêu đề, thêm trường "topic" là chủ đề ngắn gọn (2-4 từ, ví dụ: "Hướng dẫn", "So sánh", "Review", "Kinh nghiệm"...)
 
 Trả về ĐÚNG MỘT MẢNG JSON hợp lệ. KHÔNG giải thích thêm, KHÔNG markdown. Định dạng: ${format}`;

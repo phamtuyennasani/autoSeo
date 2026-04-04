@@ -53,16 +53,17 @@ async function callPublishApi(article, company, apiUrl, email = '') {
     namevi:           article.seo_title        || article.title || '',
     title:            article.seo_title        || article.title || '',
     descvi:           article.seo_description  || '',
-    description_seo:  article.seo_description  || '',
-    link_seo:        `${baseUrl}/${slug}`,
+    description:      article.seo_description  || '',
+    linkweb:          `${baseUrl}/${slug}`,
     keyword:          article.keyword          || '',
     contentvi:        article.content          || '',
     mahd:             company.contract_code    || '',
     domain:           company.url              || '',
     email:            stripDots(email),
-    chuki:            article.chuki            || null,
+    date_public:      article.chuki            || null,
     token:            token,
     type:             (article.content_type=='blog'?'tin-tuc':article.content_type)     || 'tin-tuc',
+    keyword_focus:   article.keyword         || null,
   };
   const res = await fetch(apiUrl, {
     method:  'POST',
@@ -171,7 +172,7 @@ async function generateAndSave(keyword, title, companyId, company, createdBy = n
   if (!isFanpage) {
     content = await applyInternalLinks(content, companyId, title, company.url);
   }
-
+  console.log(result);
   // Nếu bài đã tồn tại (cùng keywordId + title, hoặc keyword + title nếu chưa có keywordId) → lưu version cũ rồi UPDATE
   const existingQuery = keywordId
     ? { sql: 'SELECT * FROM articles WHERE keywordId = ? AND title = ?', args: [keywordId, title] }

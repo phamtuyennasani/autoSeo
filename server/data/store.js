@@ -255,6 +255,8 @@ async function initDb() {
     { table: 'articles',   col: 'image_prompts',   ddl: 'ALTER TABLE articles ADD COLUMN image_prompts TEXT' },
     { table: 'articles',   col: 'createdBy',       ddl: 'ALTER TABLE articles ADD COLUMN createdBy TEXT' },
     { table: 'articles',   col: 'keywordId',       ddl: 'ALTER TABLE articles ADD COLUMN keywordId TEXT' },
+    { table: 'articles',   col: 'short_content',   ddl: 'ALTER TABLE articles ADD COLUMN short_content TEXT' },
+    {table: 'articles',   col: 'slug',         ddl: 'ALTER TABLE articles ADD COLUMN slug TEXT' },
     { table: 'batch_jobs', col: 'keywordId',       ddl: 'ALTER TABLE batch_jobs ADD COLUMN keywordId TEXT' },
     // companies
     { table: 'companies',  col: 'contract_code',   ddl: 'ALTER TABLE companies ADD COLUMN contract_code TEXT' },

@@ -22,7 +22,7 @@ const TieudecodinhSchema = z.preprocess(
 
 // Mỗi item trong mảng tukhoas[]
 const TukhoasItemSchema = z.object({
-  tukhoa:           z.string().min(1, 'tukhoa không được rỗng'),
+  tukhoa:           z.string().min(1, 'Từ khóa không được rỗng'),
   soluongtieude:    z.number().int().min(1).max(50).optional().default(10),
   yeucau:           z.string().optional(),
   tieudecodinh:     TieudecodinhSchema,
@@ -33,7 +33,7 @@ const TukhoasItemSchema = z.object({
 
 // thongtinHD
 const ThongtinHDSchema = z.object({
-  MaHD:   z.string().min(1, 'MaHD không được rỗng'),
+  MaHD:   z.string().min(1, 'Mã hợp đồng không được rỗng'),
   TenHD:  z.string().optional(),
   tenmien: z.string().optional(),
 }).strict();
@@ -52,7 +52,7 @@ const ThongtinCongTySchema = z.object({
 // ─── Root payload schema (batch — format chuẩn từ CRM1) ──────────────────────
 const CrmWebhookPayloadSchema = z.object({
   // Batch format (chuẩn mới — CRM1 gửi nhiều từ khóa 1 lần)
-  tukhoas: z.array(TukhoasItemSchema).min(1, 'tukhoas không được rỗng'),
+  tukhoas: z.array(TukhoasItemSchema).min(1, 'Danh sách từ khóa không được rỗng'),
 
   // Legacy single format (backwards compatible)
   tukhoa:  z.string().optional(),
