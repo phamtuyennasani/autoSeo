@@ -81,7 +81,7 @@ async function findOrCreateUserByEmail(email) {
 async function findOrCreateHopDong(thongtinHD) {
   const { MaHD, TenHD, tenmien } = thongtinHD;
   const now = new Date().toISOString();
-
+  
   const existing = await db.execute({
     sql: 'SELECT id FROM hop_dong WHERE ma_hd = ?',
     args: [MaHD],

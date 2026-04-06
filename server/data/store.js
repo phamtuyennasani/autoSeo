@@ -332,10 +332,15 @@ async function initDb() {
     { table: 'keyword_queue', col: 'content_type',    ddl: "ALTER TABLE keyword_queue ADD COLUMN content_type TEXT NOT NULL DEFAULT 'blog'" },
     // title_queue — content_type từ webhook
     { table: 'title_queue',   col: 'content_type',    ddl: "ALTER TABLE title_queue ADD COLUMN content_type TEXT NOT NULL DEFAULT 'blog'" },
+    // title_queue — publish_external_id: giữ nguyên ID cũ khi viết lại (retry), truyền sang CRM2 để cập nhật
+    { table: 'title_queue',   col: 'publish_external_id', ddl: 'ALTER TABLE title_queue ADD COLUMN publish_external_id TEXT' },
     // articles — content_type từ webhook CRM1
     { table: 'articles',       col: 'content_type',    ddl: "ALTER TABLE articles ADD COLUMN content_type TEXT NOT NULL DEFAULT 'blog'" },
     // batch_jobs — content_type cho batch article generation
     { table: 'batch_jobs',     col: 'content_type',    ddl: "ALTER TABLE batch_jobs ADD COLUMN content_type TEXT NOT NULL DEFAULT 'blog'" },
+    // keyword_queue + title_queue — retry_after: job lỗi → chờ đến thời điểm này rồi retry tự động
+    { table: 'keyword_queue',   col: 'retry_after',     ddl: 'ALTER TABLE keyword_queue ADD COLUMN retry_after TEXT' },
+    { table: 'title_queue',     col: 'retry_after',     ddl: 'ALTER TABLE title_queue ADD COLUMN retry_after TEXT' },
   ];
 
   // ── DLQ (Dead Letter Queue) tables ─────────────────────────────────────────

@@ -11,6 +11,7 @@ const { getSearchContext } = require('./serp');
 const { generateTitles } = require('./gemini');
 const { getVisibleUserIds } = require('./permissions');
 const { getSetting } = require('../routes/settings');
+const { isRoot } = require('./permissions');
 
 /* ─────────────────────────────────────────────────────────────────────────────
    HELPER — resolve company: thử ID trước, sau đó fuzzy match theo tên
@@ -497,6 +498,28 @@ async function toolWriteArticles({ keyword_name, titles, company_name }, user) {
 
   const apiConfig = await getEffectiveApiConfig(user.id);
   if (apiConfig.blocked) return { error: apiConfig.message };
+
+  // Giới hạn bài/ngày — chỉ áp dụng khi dùng key hệ thống
+  if (apiConfig.usingSystemKey && !isRoot(user)) {
+    const today = new Date().toISOString().slice(0, 10);
+    let userArticleLimit = 0;
+    if (process.env.AUTH_ENABLED === 'true') {
+      const r = await db.execute({ sql: 'SELECT daily_article_limit FROM users WHERE id = ?', args: [user.id] });
+      userArticleLimit = Number(r.rows[0]?.daily_article_limit || 0);
+    }
+    const globalArticleLimit = Number(await getSetting('daily_article_limit')) || 0;
+    const articleLimit = userArticleLimit > 0 ? userArticleLimit : globalArticleLimit;
+    if (articleLimit > 0) {
+      const usageResult = await db.execute({
+        sql: `SELECT COUNT(*) AS cnt FROM token_usage WHERE (type = 'article' OR type = 'article-batch') AND createdAt LIKE ? AND createdBy = ?`,
+        args: [`${today}%`, user.id],
+      });
+      const used = Number(usageResult.rows[0]?.cnt || 0);
+      if (used >= articleLimit) {
+        return { error: `Đã đạt giới hạn ${articleLimit} bài viết hôm nay. Vui lòng thử lại vào ngày mai.` };
+      }
+    }
+  }
 
   // Đảm bảo keywordText không rỗng để bài viết lưu đúng keyword vào DB
   const keywordText = keyword?.keyword || titlesToWrite[0] || 'SEO';

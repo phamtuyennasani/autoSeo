@@ -22,11 +22,10 @@ async function getKeywordCreatorEmail(keywordId, keywordText) {
   }
 }
 
-// ─── Helper: gọi API bên thứ 3 để đăng bài ───────────────────────────────────
-async function callPublishApi(article, company, apiUrl, email = '') {
+// ─── Helper: thực hiện publish + cập nhật DB ─────────────────────────────────
+async function publishArticle(articleId, article, company, apiUrl, email = '') {
   const slug    = slugify(article.title || '');
   const baseUrl = (company.url || '').replace(/\/$/, '');
-  // Token: secret + timestamp unix (tương đương PHP: $secret . strtotime(date("Y-m-d", time())))
   const CRM_CONTENT_SECRET = process.env.CRM_CONTENT_SECRET || '2mSXg77BxgJsiUMz';
   const token = CRM_CONTENT_SECRET + Math.floor(new Date().setHours(0, 0, 0, 0) / 1000);
   const payload = {
@@ -44,6 +43,8 @@ async function callPublishApi(article, company, apiUrl, email = '') {
     token:            token,
     type:             (article.content_type=='blog'?'tin-tuc':article.content_type)     || 'tin-tuc',
     keyword_focus:   article.keyword         || null,
+    // Nếu bài đã từng post lên CRM2 (retry) → truyền publish_external_id để CRM2 cập nhật thay vì tạo mới
+    publish_external_id: article.publish_external_id || null,
   };
   const res = await fetch(apiUrl, {
     method:  'POST',
@@ -55,14 +56,8 @@ async function callPublishApi(article, company, apiUrl, email = '') {
     const text = await res.text().catch(() => '');
     throw new Error(`API trả về ${res.status}: ${text.slice(0, 200)}`);
   }
-  return res.json().catch(() => ({}));
-}
-
-// ─── Helper: thực hiện publish + cập nhật DB ─────────────────────────────────
-async function publishArticle(articleId, article, company, apiUrl, email = '') {
-  const data = await callPublishApi(article, company, apiUrl, email);
-  const externalId = String(data?.result?.id || data?.result?.ID || data?.result?.post_id || '');
-  console.log('[articles] publishArticle API response:', externalId);
+  const data = res.json().catch(() => ({}));
+  const externalId = String(data?.result?.id || data?.result?.ID || data?.result?.post_id || article.publish_external_id || '');
   const now = new Date().toISOString();
   await db.execute({
     sql:  "UPDATE articles SET publish_status = 'published', published_at = ?, publish_external_id = ? WHERE id = ?",
@@ -110,7 +105,7 @@ async function checkArticleLimit(user) {
 }
 
 // ─── Helper: gọi AI + lưu token + lưu DB ─────────────────────────────────────
-async function generateAndSave(keyword, title, companyId, company, createdBy = null, userConfig = {}, keywordId = null, writtenBy = null, chuki = null, contentType = 'blog') {
+async function generateAndSave(keyword, title, companyId, company, createdBy = null, userConfig = {}, keywordId = null, writtenBy = null, chuki = null, contentType = 'blog', publishExternalId = null) {
   // An toàn: ép tất cả về string/null (SQLite chỉ nhận primitives)
   keyword    = keyword    == null ? null : String(keyword);
   title      = title      == null ? null : String(title);
@@ -158,22 +153,40 @@ async function generateAndSave(keyword, title, companyId, company, createdBy = n
     : { sql: 'SELECT * FROM articles WHERE keyword = ? AND title = ? AND companyId = ?', args: [keyword, title, companyId] };
   const existing = await db.execute(existingQuery);
   if (existing.rows[0]) {
+    // Khi viết lại (retry) → giữ nguyên publish_external_id cũ, không xóa
+    const existingPublishExternalId = existing.rows[0].publish_external_id || null;
     await saveVersion(existing.rows[0].id, existing.rows[0], createdBy);
     await db.execute({
       sql: 'UPDATE articles SET content = ?, seo_title = ?, seo_description = ?, thumbnail_prompt = ?, keywordId = ?, chuki = ?, content_type = ? WHERE id = ?',
       args: [content, seo_title, seo_description, thumbnail_prompt, keywordId, chuki, contentType, existing.rows[0].id],
     });
-    return { ...existing.rows[0], content, seo_title, seo_description, thumbnail_prompt, keywordId, chuki, content_type: contentType };
+    const updated = { ...existing.rows[0], content, seo_title, seo_description, thumbnail_prompt, keywordId, chuki, content_type: contentType, publish_external_id: existingPublishExternalId };
+    // Auto-publish nếu hệ thống bật — truyền publish_external_id cũ để CRM2 cập nhật thay vì tạo mới
+    if (await getSetting('auto_publish_enabled') === '1') {
+      try {
+        const apiUrl = await getSetting('publish_api_url');
+        if (apiUrl) {
+          const email = await getKeywordCreatorEmail(keywordId, keyword);
+          const pubResult = await publishArticle(existing.rows[0].id, updated, company, apiUrl, email);
+          return { ...updated, ...pubResult };
+        }
+      } catch (e) {
+        console.warn('[articles] auto-publish thất bại:', e.message);
+        await db.execute({ sql: "UPDATE articles SET publish_status = 'failed' WHERE id = ?", args: [existing.rows[0].id] });
+        return { ...updated, publish_status: 'failed' };
+      }
+    }
+    return updated;
   }
 
   // Bài chưa tồn tại → INSERT mới
   const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   const createdAt = new Date().toISOString();
   await db.execute({
-    sql: 'INSERT INTO articles (id, keyword, title, companyId, content, seo_title, seo_description, thumbnail_prompt, createdAt, createdBy, keywordId, writtenBy, chuki, content_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    args: [id, keyword, title, companyId, content, seo_title, seo_description, thumbnail_prompt, createdAt, createdBy, keywordId, writtenBy, chuki, contentType],
+    sql: 'INSERT INTO articles (id, keyword, title, companyId, content, seo_title, seo_description, thumbnail_prompt, createdAt, createdBy, keywordId, writtenBy, chuki, content_type, publish_external_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    args: [id, keyword, title, companyId, content, seo_title, seo_description, thumbnail_prompt, createdAt, createdBy, keywordId, writtenBy, chuki, contentType, publishExternalId],
   });
-  const newArticle = { id, keyword, title, companyId, content, seo_title, seo_description, thumbnail_prompt, createdAt, createdBy, writtenBy, keywordId, chuki, content_type: contentType, publish_status: 'unpublished' };
+  const newArticle = { id, keyword, title, companyId, content, seo_title, seo_description, thumbnail_prompt, createdAt, createdBy, writtenBy, keywordId, chuki, content_type: contentType, publish_status: 'unpublished', publish_external_id: publishExternalId };
 
   // Auto-publish nếu hệ thống bật tính năng này
   if (await getSetting('auto_publish_enabled') === '1') {

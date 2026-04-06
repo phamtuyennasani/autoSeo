@@ -138,22 +138,27 @@ async function claimKeywordJob(workerId) {
   const now = new Date().toISOString();
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    // Bước 1: tìm job pending cũ nhất (trước khi claim)
+    // Bước 1: tìm job pending cũ nhất (trước khi claim), skip job đang chờ retry_after
     const find = await db.execute(
-      `SELECT id FROM keyword_queue WHERE status = 'pending' ORDER BY created_at ASC LIMIT 1`
+      `SELECT id FROM keyword_queue
+       WHERE status = 'pending'
+         AND (retry_after IS NULL OR retry_after <= ?)
+       ORDER BY created_at ASC LIMIT 1`,
+      [now]
     );
 
     if (!find.rows[0]) {
-      // Không có job pending nào → queue rỗng, không phải race. Poll lại ngay.
+      // Không có job pending nào → queue rỗng hoặc tất cả đang chờ retry_after
       return null;
     }
 
     const id = find.rows[0].id;
 
-    // Bước 2: atomic claim — chỉ update nếu vẫn còn 'pending'
+    // Bước 2: atomic claim — chỉ update nếu vẫn còn 'pending' và retry_after đã hết
     const upd = await db.execute({
-      sql: `UPDATE keyword_queue SET status = 'processing', worker_id = ?, started_at = ? WHERE id = ? AND status = 'pending'`,
-      args: [workerId, now, id],
+      sql: `UPDATE keyword_queue SET status = 'processing', worker_id = ?, started_at = ?, retry_after = NULL
+            WHERE id = ? AND status = 'pending' AND (retry_after IS NULL OR retry_after <= ?)`,
+      args: [workerId, now, id, now],
     });
 
     if (upd.rowsAffected > 0) {
@@ -262,15 +267,19 @@ async function processKeywordJob(job) {
     LOG(`[CRMQueue - KW-Worker] ✅ Xong keyword="${job.keyword}" → ${titles.length} tiêu đề`);
   } catch (e) {
     const retries = (job.retries || 0) + 1;
+
     if (retries >= MAX_RETRIES) {
-      // Chuyển sang DLQ thay vì giữ trong queue
+      // Đã retry đủ lần → chuyển sang DLQ
       await moveKeywordToDlq({ ...job, retries }, e.message);
     } else {
+      // Chưa đủ lần → đặt retry_after và giữ job trong queue (chờ tự động retry)
+      const retryDelay = parseInt(process.env.RETRY_DELAY_MS || '300000', 10); // 5 phút mặc định
+      const retryAfter = new Date(Date.now() + retryDelay).toISOString();
       await db.execute({
-        sql: `UPDATE keyword_queue SET status = 'pending', retries = ?, error = ?, worker_id = NULL, started_at = NULL WHERE id = ?`,
-        args: [retries, e.message, job.id],
+        sql: `UPDATE keyword_queue SET status = 'pending', retries = ?, error = ?, worker_id = NULL, started_at = NULL, retry_after = ? WHERE id = ?`,
+        args: [retries, e.message, retryAfter, job.id],
       });
-      LOG(`[CRMQueue - KW-Worker] ❌ Lỗi keyword="${job.keyword}" (retry ${retries}/${MAX_RETRIES}): ${e.message}`);
+      LOG(`[CRMQueue - KW-Worker] ❌ Lỗi keyword="${job.keyword}" (retry ${retries}/${MAX_RETRIES}), tự retry lúc ${retryAfter}: ${e.message}`);
     }
     recordKeywordProcessed((Date.now() - start) / 1000, false);
   }
@@ -375,37 +384,37 @@ async function claimTitleJob(workerId) {
   const now = new Date().toISOString();
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    // Bước 1: tìm job pending cũ nhất
     const find = await db.execute(
-      `SELECT id FROM title_queue WHERE status = 'pending' AND done_at IS NULL ORDER BY created_at ASC LIMIT 1`
+      `SELECT id FROM title_queue
+       WHERE status = 'pending' AND done_at IS NULL
+         AND (retry_after IS NULL OR retry_after <= ?)
+       ORDER BY created_at ASC LIMIT 1`,
+      [now]
     );
 
     if (!find.rows[0]) {
-      // Không có job pending nào → queue rỗng, không phải race. Poll lại ngay.
       return null;
     }
 
     const id = find.rows[0].id;
 
-    // Bước 2: atomic claim — chỉ update nếu vẫn còn 'pending'
     const upd = await db.execute({
-      sql: `UPDATE title_queue SET status = 'processing', worker_id = ?, started_at = ? WHERE id = ? AND status = 'pending'`,
-      args: [workerId, now, id],
+      sql: `UPDATE title_queue SET status = 'processing', worker_id = ?, started_at = ?, retry_after = NULL
+            WHERE id = ? AND status = 'pending' AND done_at IS NULL
+              AND (retry_after IS NULL OR retry_after <= ?)`,
+      args: [workerId, now, id, now],
     });
 
     if (upd.rowsAffected > 0) {
-      // Claim thành công
       const full = await db.execute({ sql: 'SELECT * FROM title_queue WHERE id = ?', args: [id] });
       console.info(`[CRMQueue - TL-Worker] 🔎 claimTitleJob: ✅ workerId=${workerId} claim job.id=${id} (attempt ${attempt})`);
       return full.rows[0] || null;
     }
 
-    // rowsAffected = 0 → job đã bị worker khác claim → thử job tiếp theo
     console.info(`[CRMQueue - TL-Worker] 🔎 claimTitleJob: workerId=${workerId} job.id=${id} đã bị claim → retry ${attempt}/${MAX_RETRIES}`);
     if (attempt < MAX_RETRIES) await sleep(50);
   }
 
-  // Hết retries → không nhặt được job (queue đang bận)
   return null;
 }
 
@@ -419,6 +428,7 @@ async function processTitleJob(job) {
   console.info(`[CRMQueue - TL-Worker]    content_type="${job.content_type || 'blog'}"`);
   console.info(`[CRMQueue - TL-Worker]    titles.length=${titles.length}`);
   console.info(`[CRMQueue - TL-Worker]    titles_json=${titlesRaw}`);
+  console.info(`[CRMQueue - TL-Worker]    publish_external_id=${job.publish_external_id || 'null'}`);
   console.info(`[CRMQueue - TL-Worker] ============================================`);
 
   try {
@@ -459,7 +469,7 @@ async function processTitleJob(job) {
         ].find(([, v]) => typeof v === 'object' && v !== null);
         if (bad) LOG(`[CRMQueue - TL-Worker] ⚠️  Object detected: ${bad[0]} =`, bad[1]);
 
-        await generateAndSave(job.keyword, title, job.company_id, company, job.created_by, apiConfig, keywordId, null, job.chuki || null, job.content_type || 'blog');
+        await generateAndSave(job.keyword, title, job.company_id, company, job.created_by, apiConfig, keywordId, null, job.chuki || null, job.content_type || 'blog', job.publish_external_id || null);
         succeeded++;
         LOG(`[CRMQueue - TL-Worker]   ✅ "${title}"`);
       } catch (e) {
@@ -477,15 +487,17 @@ async function processTitleJob(job) {
     LOG(`[CRMQueue - TL-Worker] ✅ Xong keyword="${job.keyword}" — thành công: ${succeeded}, lỗi: ${failed}`);
   } catch (e) {
     const retries = (job.retries || 0) + 1;
+
     if (retries >= MAX_RETRIES) {
-      // Chuyển sang DLQ thay vì giữ trong queue
       await moveTitleToDlq({ ...job, retries }, e.message);
     } else {
+      const retryDelay = parseInt(process.env.RETRY_DELAY_MS || '300000', 10);
+      const retryAfter = new Date(Date.now() + retryDelay).toISOString();
       await db.execute({
-        sql: `UPDATE title_queue SET status = 'pending', retries = ?, error = ?, worker_id = NULL, started_at = NULL WHERE id = ?`,
-        args: [retries, e.message, job.id],
+        sql: `UPDATE title_queue SET status = 'pending', retries = ?, error = ?, worker_id = NULL, started_at = NULL, retry_after = ? WHERE id = ?`,
+        args: [retries, e.message, retryAfter, job.id],
       });
-      LOG(`[CRMQueue - TL-Worker] ❌ Lỗi keyword="${job.keyword}" (retry ${retries}/${MAX_RETRIES}): ${e.message}`);
+      LOG(`[CRMQueue - TL-Worker] ❌ Lỗi keyword="${job.keyword}" (retry ${retries}/${MAX_RETRIES}), tự retry lúc ${retryAfter}: ${e.message}`);
     }
     recordTitleProcessed((Date.now() - start) / 1000, false);
   }
