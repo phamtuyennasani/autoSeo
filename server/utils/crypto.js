@@ -6,6 +6,7 @@
  *   - IV (12 bytes) ngẫu nhiên cho mỗi lần mã hóa
  *   - Auth tag (16 bytes) để xác minh tính toàn vẹn
  *   - Format lưu: base64(iv + ciphertext + authTag)
+ *   - Hỗ trợ nhiều keys (xoay vòng): KEY_1||KEY_2||KEY_3 — mỗi key mã hóa riêng
  *
  * Cài đặt:
  *   ENCRYPTION_KEY=your-32-byte-hex-key   (hex = 64 ký tự)
@@ -18,9 +19,10 @@
 
 const crypto = require('crypto');
 
-const ALGORITHM = 'aes-256-gcm';
-const IV_BYTES  = 12;
-const TAG_BYTES = 16;
+const ALGORITHM  = 'aes-256-gcm';
+const IV_BYTES   = 12;
+const TAG_BYTES  = 16;
+const DELIMITER  = '||';  // phân cách các key khi lưu nhiều key
 
 // ─── Key derivation ─────────────────────────────────────────────────────────────
 
@@ -54,13 +56,40 @@ function getEncryptionKey() {
 // ─── Encrypt ──────────────────────────────────────────────────────────────────
 
 /**
- * Mã hóa plaintext.
- * @param {string} plaintext
- * @returns {string} base64(iv + ciphertext + authTag)
+ * Chuẩn hóa chuỗi nhập: hỗ trợ cả "," và "||" làm delimiters.
+ * - Client nhập: "KEY1,KEY2,KEY3"  (dấu phẩy)
+ * - DB lưu:    "enc(KEY1)||enc(KEY2)||enc(KEY3)"  (||)
+ * - Giải mã:   "KEY1||KEY2||KEY3" → join "," → "KEY1,KEY2,KEY3"
+ */
+function normalizeKeys(raw) {
+  if (!raw || typeof raw !== 'string') return '';
+  // Thay "," bằng "||" để chuẩn hóa
+  return raw.split(',').map(k => k.trim()).filter(Boolean).join(DELIMITER);
+}
+
+/**
+ * Mã hóa plaintext (hỗ trợ nhiều keys).
+ * @param {string} plaintext  — "KEY1,KEY2,KEY3" hoặc "KEY1||KEY2||KEY3"
+ * @returns {string} base64(iv + ciphertext + authTag) với || giữa các phần
  */
 function encrypt(plaintext) {
   if (!plaintext) return '';
 
+  // Chuẩn hóa: "," → "||"
+  const normalized = normalizeKeys(plaintext);
+
+  if (normalized.includes(DELIMITER)) {
+    // Nhiều keys → mã hóa từng key rồi nối bằng delimiter
+    return normalized.split(DELIMITER).map(k => k.trim()).filter(Boolean).map(k => encryptOne(k)).join(DELIMITER);
+  }
+
+  return encryptOne(plaintext);
+}
+
+/**
+ * Mã hóa 1 plaintext đơn lẻ.
+ */
+function encryptOne(plaintext) {
   const key   = getEncryptionKey();
   const iv    = crypto.randomBytes(IV_BYTES);
   const cipher = crypto.createCipheriv(ALGORITHM, key, iv, { authTagLength: TAG_BYTES });
@@ -74,15 +103,27 @@ function encrypt(plaintext) {
 }
 
 /**
- * Giải mã ciphertext.
+ * Giải mã ciphertext (hỗ trợ nhiều keys: tách bằng || rồi giải mã từng phần).
  * Hỗ trợ legacy plain text: nếu không parse được → trả về nguyên input.
  *
- * @param {string} ciphertext  base64(iv + ciphertext + authTag)
- * @returns {string} plaintext
+ * @param {string} ciphertext
+ * @returns {string} plaintext  — khóa đã giải mã, nối bằng "," để dùng được ở API
  */
 function decrypt(ciphertext) {
   if (!ciphertext) return '';
 
+  if (ciphertext.includes(DELIMITER)) {
+    // Nhiều keys → giải mã từng phần rồi nối bằng "," (để apiConfig.js xoay vòng)
+    return ciphertext.split(DELIMITER).map(p => p.trim()).filter(Boolean).map(p => decryptOne(p)).join(',');
+  }
+
+  return decryptOne(ciphertext);
+}
+
+/**
+ * Giải mã 1 ciphertext đơn lẻ.
+ */
+function decryptOne(ciphertext) {
   try {
     const buf = Buffer.from(ciphertext, 'base64');
 
@@ -91,11 +132,11 @@ function decrypt(ciphertext) {
       return ciphertext;
     }
 
-    const iv    = buf.subarray(0, IV_BYTES);
-    const tag   = buf.subarray(buf.length - TAG_BYTES);
-    const enc   = buf.subarray(IV_BYTES, buf.length - TAG_BYTES);
+    const iv  = buf.subarray(0, IV_BYTES);
+    const tag = buf.subarray(buf.length - TAG_BYTES);
+    const enc = buf.subarray(IV_BYTES, buf.length - TAG_BYTES);
 
-    const key    = getEncryptionKey();
+    const key     = getEncryptionKey();
     const decipher = crypto.createDecipheriv(ALGORITHM, key, iv, { authTagLength: TAG_BYTES });
     decipher.setAuthTag(tag);
 
@@ -112,10 +153,21 @@ function decrypt(ciphertext) {
 
 /**
  * Kiểm tra xem ciphertext có phải là format mới (encrypted) hay legacy plain text.
+ * Hỗ trợ chuỗi nhiều keys (có ||).
  */
 function isEncrypted(value) {
   if (!value || typeof value !== 'string') return false;
-  if (value.includes(' ')) return false; // Plain text thường có space hoặc dấu = ở cuối
+
+  // Nếu có delimiter → kiểm tra từng phần
+  if (value.includes(DELIMITER)) {
+    return value.split(DELIMITER).map(p => p.trim()).filter(Boolean).every(p => isEncryptedOne(p));
+  }
+
+  return isEncryptedOne(value);
+}
+
+function isEncryptedOne(value) {
+  if (value.includes(' ')) return false; // Plain text thường có space
   try {
     const buf = Buffer.from(value, 'base64');
     return buf.length >= IV_BYTES + TAG_BYTES + 1;

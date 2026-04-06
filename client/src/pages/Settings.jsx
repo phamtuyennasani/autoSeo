@@ -6,7 +6,7 @@ import {
   Save, RefreshCw, Loader2, CheckCircle2,
   Zap, FileText, AlertTriangle, Info, BarChart3,
   Shield, TrendingUp, Calendar, KeyRound, Eye, EyeOff, Cpu,
-  Calculator, DollarSign, ChevronDown, ChevronUp, Upload, User, Globe, Shuffle
+  Calculator, DollarSign, ChevronDown, ChevronUp, Upload, User, Globe, Shuffle, MessageCircle
 } from 'lucide-react';
 
 import { API } from '../config/api';
@@ -238,9 +238,9 @@ function KeyField({ label, sub, color = 'var(--accent)', value, onChange, show, 
   );
 }
 
-// Component đặc biệt cho Gemini API Key — hỗ trợ nhiều key cách nhau dấu phẩy
+// Component đặc biệt cho Gemini API Key — hỗ trợ nhiều key cách nhau bằng ||
 function GeminiKeyField({ value, onChange, show, onToggleShow }) {
-  const keys = value ? value.split(',').map(k => k.trim()).filter(Boolean) : [];
+  const keys = value ? value.split('||').map(k => k.trim()).filter(Boolean) : [];
   const keyCount = keys.length;
 
   return (
@@ -253,7 +253,7 @@ function GeminiKeyField({ value, onChange, show, onToggleShow }) {
         <div style={{ flex: 1 }}>
           <div style={{ fontWeight: 700, fontSize: 14 }}>Gemini API Key</div>
           <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-            Lấy tại <strong>aistudio.google.com</strong> → Get API Key — nhập nhiều key cách nhau dấu <strong>,</strong> để xoay vòng
+            Lấy tại <strong>aistudio.google.com</strong> → Get API Key — nhập nhiều key cách nhau bằng dấu <strong>||</strong> để xoay vòng
           </div>
         </div>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -312,7 +312,7 @@ function GeminiKeyField({ value, onChange, show, onToggleShow }) {
 }
 
 function SerpKeyField({ value, onChange, show, onToggleShow }) {
-  const keys = value ? value.split(',').map(k => k.trim()).filter(Boolean) : [];
+  const keys = value ? value.split('||').map(k => k.trim()).filter(Boolean) : [];
   const keyCount = keys.length;
 
   return (
@@ -328,7 +328,7 @@ function SerpKeyField({ value, onChange, show, onToggleShow }) {
             <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text-muted)' }}>(Tùy chọn)</span>
           </div>
           <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-            Lấy tại <strong>serpapi.com</strong> — Nhập nhiều key cách nhau dấu <strong>,</strong> để xoay vòng. Để trống nếu không dùng.
+            Lấy tại <strong>serpapi.com</strong> — Nhập nhiều key cách nhau bằng dấu <strong>||</strong> để xoay vòng. Để trống nếu không dùng.
           </div>
         </div>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -351,7 +351,7 @@ function SerpKeyField({ value, onChange, show, onToggleShow }) {
           rows={keyCount > 1 ? Math.min(keyCount + 1, 5) : 2}
           value={value}
           onChange={e => onChange(e.target.value)}
-          placeholder={'sk-... (1 key)\nhoặc: sk-..., sk-..., sk-... (nhiều key xoay vòng)'}
+          placeholder={'sk-... (1 key)\nNhiều key: sk-... || sk-... || sk-... (xoay vòng)'}
           style={{
             resize: 'vertical',
             fontFamily: 'monospace',
@@ -390,7 +390,7 @@ function ApiConfigTab() {
   const { user, authEnabled, updateUser, isRoot } = useAuth();
   const isUserScope = authEnabled && !isRoot; // user thường khi AUTH bật
 
-  const [form, setForm] = useState({ gemini_api_key: '', gemini_model: 'gemini-2.5-flash', serpapi_api_key: '', publish_api_url: '', open_key_mode: false });
+  const [form, setForm] = useState({ gemini_api_key: '', gemini_model: 'gemini-2.5-flash', serpapi_api_key: '', open_key_mode: false });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -539,37 +539,6 @@ function ApiConfigTab() {
               </span>
             </div>
           )}
-        </div>
-      )}
-
-      {/* Publish API URL — chỉ cho user scope */}
-      {isUserScope && (
-        <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 18px', borderBottom: '1px solid var(--border)', background: 'var(--bg-panel)' }}>
-            <div style={{ width: 34, height: 34, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(99,102,241,0.12)', flexShrink: 0 }}>
-              <Globe size={16} color="var(--accent)" />
-            </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 700, fontSize: 14 }}>URL API Đăng Bài (Bên Thứ 3)</div>
-              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                URL mặc định của bạn để publish bài viết. Thấp hơn URL riêng của từng công ty.
-              </div>
-            </div>
-          </div>
-          <div style={{ padding: '14px 18px' }}>
-            <input
-              type="url"
-              value={form.publish_api_url}
-              onChange={e => setForm({ ...form, publish_api_url: e.target.value })}
-              placeholder="https://your-site.com/api/publish"
-              style={{
-                width: '100%', padding: '10px 14px', borderRadius: 8,
-                border: '1px solid var(--border)', background: 'var(--bg-input)',
-                color: 'var(--text-primary)', fontSize: 13,
-                fontFamily: 'monospace', boxSizing: 'border-box',
-              }}
-            />
-          </div>
         </div>
       )}
 
@@ -838,6 +807,8 @@ export default function SettingsPage() {
   const [tokenLimit, setTokenLimit] = useState('0');
   const [articleLimit, setArticleLimit] = useState('0');
   const [publishApiUrl, setPublishApiUrl] = useState('');
+  const [autoPublishEnabled, setAutoPublishEnabled] = useState(false);
+  const [chatEnabled, setChatEnabled] = useState(true);
   // Đổi mật khẩu
   const [isChangePwOpen, setIsChangePwOpen] = useState(false);
   const [pwForm, setPwForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
@@ -912,6 +883,8 @@ export default function SettingsPage() {
       setTokenLimit(s.find(r => r.key === 'daily_token_limit')?.value ?? '0');
       setArticleLimit(s.find(r => r.key === 'daily_article_limit')?.value ?? '0');
       setPublishApiUrl(s.find(r => r.key === 'publish_api_url')?.value ?? '');
+      setAutoPublishEnabled(s.find(r => r.key === 'auto_publish_enabled')?.value === '1');
+      setChatEnabled(s.find(r => r.key === 'chat_enabled')?.value !== '0');
     } catch (err) {
       setError('Không thể tải cài đặt: ' + err.message);
     } finally {
@@ -928,6 +901,8 @@ export default function SettingsPage() {
         daily_token_limit:    parseInt(tokenLimit, 10) || 0,
         daily_article_limit:  parseInt(articleLimit, 10) || 0,
         publish_api_url:      publishApiUrl.trim(),
+        auto_publish_enabled: autoPublishEnabled,
+        chat_enabled: chatEnabled,
       });
       setSaved(true);
       await fetchSettings();
@@ -1087,6 +1062,64 @@ export default function SettingsPage() {
                       onChange={e => setPublishApiUrl(e.target.value)}
                       placeholder="https://api.example.com/posts"
                     />
+                  </div>
+                </div>
+
+                {/* Auto Publish Toggle */}
+                <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 18px', borderBottom: '1px solid var(--border)', background: 'var(--bg-panel)' }}>
+                    <div style={{ width: 34, height: 34, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(99,102,241,0.12)', flexShrink: 0 }}>
+                      <Zap size={16} color="var(--accent)" />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text)' }}>Tự Động Đăng Bài</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 1 }}>
+                        Sau khi viết xong, bài viết sẽ tự động đăng lên CRM2.
+                      </div>
+                    </div>
+                    <div
+                      onClick={() => setAutoPublishEnabled(v => !v)}
+                      style={{
+                        width: 36, height: 20, borderRadius: 99, flexShrink: 0,
+                        background: autoPublishEnabled ? 'var(--success)' : 'var(--border)',
+                        position: 'relative', transition: 'background 0.2s', cursor: 'pointer',
+                      }}
+                    >
+                      <div style={{
+                        position: 'absolute', top: 3, left: autoPublishEnabled ? 18 : 3,
+                        width: 14, height: 14, borderRadius: '50%', background: '#fff',
+                        transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                      }} />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Chatbot Toggle */}
+                <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 18px', borderBottom: '1px solid var(--border)', background: 'var(--bg-panel)' }}>
+                    <div style={{ width: 34, height: 34, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(6,182,212,0.12)', flexShrink: 0 }}>
+                      <MessageCircle size={16} color="#06b6d4" />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text)' }}>Trợ Lý AI Chatbot</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 1 }}>
+                        Hiển thị icon chatbot ở góc dưới bên phải màn hình.
+                      </div>
+                    </div>
+                    <div
+                      onClick={() => setChatEnabled(v => !v)}
+                      style={{
+                        width: 36, height: 20, borderRadius: 99, flexShrink: 0,
+                        background: chatEnabled ? 'var(--success)' : 'var(--border)',
+                        position: 'relative', transition: 'background 0.2s', cursor: 'pointer',
+                      }}
+                    >
+                      <div style={{
+                        position: 'absolute', top: 3, left: chatEnabled ? 18 : 3,
+                        width: 14, height: 14, borderRadius: '50%', background: '#fff',
+                        transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                      }} />
+                    </div>
                   </div>
                 </div>
 

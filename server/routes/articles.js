@@ -7,27 +7,7 @@ const { getSetting } = require('./settings');
 const { applyInlineStyles } = require('../services/htmlUtils');
 const { applyInternalLinks } = require('../services/internalLinks');
 const { isRoot, getVisibleUserIds, canManageUsers } = require('../services/permissions');
-const {stripDots} = require('../utils/func');
-// ─── Helper: slugify title thành URL slug (hỗ trợ tiếng Việt) ────────────────
-function slugify(text) {
-  const map = {
-    'à':'a','á':'a','ả':'a','ã':'a','ạ':'a',
-    'ă':'a','ắ':'a','ặ':'a','ằ':'a','ẳ':'a','ẵ':'a',
-    'â':'a','ấ':'a','ầ':'a','ẩ':'a','ẫ':'a','ậ':'a',
-    'è':'e','é':'e','ẻ':'e','ẽ':'e','ẹ':'e',
-    'ê':'e','ế':'e','ề':'e','ể':'e','ễ':'e','ệ':'e',
-    'ì':'i','í':'i','ỉ':'i','ĩ':'i','ị':'i',
-    'ò':'o','ó':'o','ỏ':'o','õ':'o','ọ':'o',
-    'ô':'o','ố':'o','ồ':'o','ổ':'o','ỗ':'o','ộ':'o',
-    'ơ':'o','ớ':'o','ờ':'o','ở':'o','ỡ':'o','ợ':'o',
-    'ù':'u','ú':'u','ủ':'u','ũ':'u','ụ':'u',
-    'ư':'u','ứ':'u','ừ':'u','ử':'u','ữ':'u','ự':'u',
-    'ỳ':'y','ý':'y','ỷ':'y','ỹ':'y','ỵ':'y',
-    'đ':'d',
-  };
-  return text.toLowerCase().split('').map(c => map[c] || c).join('')
-    .replace(/[^a-z0-9\s-]/g, '').trim().replace(/\s+/g, '-').replace(/-+/g, '-');
-}
+const { stripDots, slugify } = require('../utils/func');
 
 // ─── Helper: lấy email user tạo từ khóa ──────────────────────────────────────
 async function getKeywordCreatorEmail(keywordId, keywordText) {
@@ -172,7 +152,6 @@ async function generateAndSave(keyword, title, companyId, company, createdBy = n
   if (!isFanpage) {
     content = await applyInternalLinks(content, companyId, title, company.url);
   }
-  console.log(result);
   // Nếu bài đã tồn tại (cùng keywordId + title, hoặc keyword + title nếu chưa có keywordId) → lưu version cũ rồi UPDATE
   const existingQuery = keywordId
     ? { sql: 'SELECT * FROM articles WHERE keywordId = ? AND title = ?', args: [keywordId, title] }
@@ -196,10 +175,10 @@ async function generateAndSave(keyword, title, companyId, company, createdBy = n
   });
   const newArticle = { id, keyword, title, companyId, content, seo_title, seo_description, thumbnail_prompt, createdAt, createdBy, writtenBy, keywordId, chuki, content_type: contentType, publish_status: 'unpublished' };
 
-  // Auto-publish nếu công ty bật tính năng này
-  if (company.auto_publish) {
+  // Auto-publish nếu hệ thống bật tính năng này
+  if (await getSetting('auto_publish_enabled') === '1') {
     try {
-      const apiUrl = company.publish_api_url || await getSetting('publish_api_url');
+      const apiUrl = await getSetting('publish_api_url');
       if (apiUrl) {
         const email = await getKeywordCreatorEmail(keywordId, keyword);
         const pubResult = await publishArticle(id, newArticle, company, apiUrl, email);
@@ -249,7 +228,7 @@ router.get('/', async (req, res) => {
     });
     const total = Number(countResult.rows[0]?.total || 0);
 
-    const sql = `SELECT a.*, c.name as companyName, c.publish_api_url as company_publish_api_url FROM articles a LEFT JOIN companies c ON a.companyId = c.id${whereClause} ORDER BY a.createdAt DESC LIMIT ? OFFSET ?`;
+    const sql = `SELECT a.*, c.name as companyName FROM articles a LEFT JOIN companies c ON a.companyId = c.id${whereClause} ORDER BY a.createdAt DESC LIMIT ? OFFSET ?`;
     const result = await db.execute({ sql, args: [...args, limit, offset] });
 
     res.json({ data: result.rows, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } });
@@ -628,26 +607,20 @@ router.post('/:id/publish', async (req, res) => {
   try {
     const { id } = req.params;
     const aResult = await db.execute({
-      sql: 'SELECT a.*, c.url, c.contract_code, c.industry, c.publish_api_url, c.auto_publish FROM articles a LEFT JOIN companies c ON a.companyId = c.id WHERE a.id = ?',
+      sql: 'SELECT a.*, c.url, c.contract_code, c.industry FROM articles a LEFT JOIN companies c ON a.companyId = c.id WHERE a.id = ?',
       args: [id],
     });
     const article = aResult.rows[0];
     if (!article) return res.status(404).json({ error: 'Không tìm thấy bài viết' });
 
-    // Ưu tiên: công ty → user. Admin mới dùng fallback hệ thống
-    let userApiUrl = '';
-    if (req.user?.id && req.user.id !== 'admin') {
-      const uRes = await db.execute({ sql: 'SELECT publish_api_url FROM users WHERE id = ?', args: [req.user.id] });
-      userApiUrl = uRes.rows[0]?.publish_api_url || '';
-    }
-    const apiUrl = article.publish_api_url || userApiUrl || (isRoot(req.user) ? await getSetting('publish_api_url') : '');
-    if (!apiUrl) return res.status(400).json({ error: 'Bạn chưa cấu hình URL API đăng bài. Vui lòng cập nhật trong phần Cài Đặt → Cấu Hình API.' });
+    // Chỉ dùng URL từ cài đặt hệ thống
+    const apiUrl = isRoot(req.user) ? await getSetting('publish_api_url') : '';
+    if (!apiUrl) return res.status(400).json({ error: 'Bạn chưa cấu hình URL API đăng bài. Vui lòng liên hệ admin để cập nhật trong Cài Đặt hệ thống.' });
 
     const company = {
       url:           article.url,
       contract_code: article.contract_code,
       industry:      article.industry,
-      publish_api_url: article.publish_api_url,
     };
 
     const email = await getKeywordCreatorEmail(article.keywordId, article.keyword);
@@ -676,24 +649,19 @@ router.post('/publish-batch', async (req, res) => {
     if (!Array.isArray(ids) || ids.length === 0)
       return res.status(400).json({ error: 'Thiếu danh sách bài viết cần publish' });
 
-    let userApiUrl = '';
-    if (req.user?.id && req.user.id !== 'admin') {
-      const uRes = await db.execute({ sql: 'SELECT publish_api_url FROM users WHERE id = ?', args: [req.user.id] });
-      userApiUrl = uRes.rows[0]?.publish_api_url || '';
-    }
-    const defaultApiUrl = userApiUrl || (isRoot(req.user) ? await getSetting('publish_api_url') : '');
+    const defaultApiUrl = await getSetting('publish_api_url');
     const results = [];
 
     for (const id of ids) {
       try {
         const aResult = await db.execute({
-          sql: 'SELECT a.*, c.url, c.contract_code, c.industry, c.publish_api_url FROM articles a LEFT JOIN companies c ON a.companyId = c.id WHERE a.id = ?',
+          sql: 'SELECT a.*, c.url, c.contract_code, c.industry FROM articles a LEFT JOIN companies c ON a.companyId = c.id WHERE a.id = ?',
           args: [id],
         });
         const article = aResult.rows[0];
         if (!article) { results.push({ id, success: false, error: 'Không tìm thấy' }); continue; }
 
-        const apiUrl = article.publish_api_url || defaultApiUrl;
+        const apiUrl = defaultApiUrl;
         if (!apiUrl) { results.push({ id, success: false, error: 'Chưa cấu hình API URL' }); continue; }
 
         const company = { url: article.url, contract_code: article.contract_code, industry: article.industry };

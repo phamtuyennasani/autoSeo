@@ -86,7 +86,7 @@ ${company.info || ''}
 - **Luôn trình bày các ý chính bằng gạch đầu dòng hoặc danh sách có thứ tự**, giúp nội dung dễ đọc, dễ quét thông tin.
 - **Bắt buộc xuống dòng hợp lý giữa các đoạn và các ý.**
 - Làm nổi bật khung thông tin liên hệ
-- Không in đậm và không sử dụng thẻ `<strong>` cho `<h2>` và `<h3>`.
+- Không in đậm và không sử dụng thẻ <strong> cho <h2> và <h3>.
 - Nội dung cần thể hiện ý rõ ràng, có chiều sâu mô tả.
 - Thêm thông tin liên hệ công ty ở cuối bài (lấy từ dữ liệu đầu vào).
 - Những vị trí cần ảnh thì thêm dòng ghi chú: <!-- image: mô tả ngắn -->
@@ -96,7 +96,7 @@ ${company.info || ''}
       - **Mở bài:** Giới thiệu ngắn gọn vấn đề, nêu tầm quan trọng hoặc xu hướng liên quan đến từ khóa. Dẫn dắt tự nhiên đến sản phẩm, giải pháp hoặc thương hiệu.
       - **Phần kết:** Tạo lời khẳng định, nhấn mạnh giá trị hoặc lợi ích, có thể kèm **CTA nhẹ nhàng**, **không dùng từ “Kết luận”, “Tổng kết”, “Lời kết”**.
 
-
+${optionsPromtbyUser}
 # QUY TẮC JSON BẮT BUỘC - TUYỆT ĐỐI TUÂN THỦ
 Đây là phần quan trọng nhất. Bạn phải tạo ra JSON hợp lệ có thể parse được bằng JSON.parse().
 

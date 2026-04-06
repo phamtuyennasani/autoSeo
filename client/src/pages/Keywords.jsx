@@ -120,6 +120,7 @@ const Keywords = () => {
   // Publish
   const [publishingIds, setPublishingIds] = useState(new Set()); // IDs đang được publish
   const [isBatchPublishing, setIsBatchPublishing] = useState(false);
+  const [systemPublishUrl, setSystemPublishUrl] = useState(''); // URL mặc định hệ thống
 
   // Write Queue (SSE background)
   const [writeQueueJob, setWriteQueueJob] = useState(null); // { jobId, status, total, done, succeeded, failed, currentTitle, results }
@@ -178,12 +179,16 @@ const Keywords = () => {
       if (search) params.search = search;
       if (companyId) params.companyId = companyId;
       const comParams = (showMultiUser && userId) ? { userId } : {};
-      const [kwRes, comRes, cfgRes] = await Promise.all([
+      const [kwRes, comRes, cfgRes, settingsRes] = await Promise.all([
         apiClient.get(API_KEYWORD, { params }),
         apiClient.get(API_COMPANY, { params: comParams }),
         apiClient.get(`${API_SETTINGS}/api-config`).catch(() => ({ data: {} })),
+        apiClient.get(API_SETTINGS).catch(() => ({ data: { settings: [] } })),
       ]);
       setCurrentProvider(cfgRes.data?.default_ai_provider || 'gemini');
+      // Lấy publish_api_url từ system settings
+      const sysPublishUrl = settingsRes.data.settings?.find(s => s.key === 'publish_api_url')?.value || '';
+      setSystemPublishUrl(sysPublishUrl);
       const kwPayload = kwRes.data;
       setKeywords(kwPayload.data ?? kwPayload);
       setKwTotal(kwPayload.pagination?.total ?? (kwPayload.data ?? kwPayload).length);
@@ -1103,7 +1108,7 @@ const Keywords = () => {
               {/* PUBLISH HÀNG LOẠT */}
               {selectedKeyword?.content_type !== 'fanpage' &&
                articlesOfKeyword.filter(a => a.publish_status !== 'published').length > 0 && !isWritingAll && writeQueueJob?.status !== 'running' &&
-               (isRoot || currentUser?.publish_api_url || articlesOfKeyword.some(a => a.company_publish_api_url)) && (
+               systemPublishUrl && (
                 <button
                   onClick={handlePublishBatch}
                   className="btn btn-outline"
@@ -1337,7 +1342,7 @@ const Keywords = () => {
                         </button>
                         {selectedKeyword?.content_type !== 'fanpage' &&
                          article.publish_status !== 'published' &&
-                         (isRoot || article.company_publish_api_url || currentUser?.publish_api_url) && (
+                         systemPublishUrl && (
                           <button
                             onClick={() => handlePublishArticle(article)}
                             className="btn btn-sm btn-outline"

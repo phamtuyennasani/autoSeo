@@ -1,7 +1,7 @@
 # AutoSEO — Tài Liệu Hệ Thống Chi Tiết
 
-> **Ngày cập nhật:** 2026-04-04
-> **Phiên bản:** 2.0 (Full Rewrite)
+> **Ngày cập nhật:** 2026-04-06
+> **Phiên bản:** 2.1 (Multi-Key Encryption + Chatbot Toggle)
 > **Mục đích:** Tài liệu tham khảo toàn diện cho việc đọc code, nâng cấp và phát triển tính năng mới.
 
 ---
@@ -378,6 +378,27 @@ DELETE /api/batch-jobs/:id            → Cancel job
 Phụ thuộc: services/gemini-batch.js, store.js
 ```
 
+#### `server/routes/settings.js`
+```
+GET    /api/settings                  → Get all settings + today token stats
+PUT    /api/settings                  → Update settings (root only): chat_enabled, auto_publish, etc.
+GET    /api/settings/api-config       → Get API key config (masked: chỉ hiện 6 ký tự đầu + 4 ký tự cuối)
+PUT    /api/settings/api-config       → Update API key config (root/system key, hoặc user key khi AUTH on)
+
+System settings (settings table):
+- daily_token_limit, daily_article_limit
+- gemini_api_key, gemini_model, serpapi_api_key (AES-256-GCM encrypted)
+- auto_publish_enabled, publish_api_url
+- batch_schedule_time (HH:MM, rỗng = tắt)
+- chat_enabled ('1' = bật, '0' = tắt chatbot)
+- open_key_mode ('1' = gom key toàn user + xoay vòng)
+
+Client key (AUTH on): lưu vào users table (encrypt trước khi lưu)
+Server key (root/admin): lưu vào settings table + process.env
+
+Phụ thuộc: middleware/requireAdmin.js, utils/crypto.js, utils/crypto.js, store.js, services/permissions.js
+```
+
 #### `server/routes/webhooks.js`
 ```
 POST   /api/webhooks/crm              → CRM1 webhook receiver
@@ -387,9 +408,17 @@ Phụ thuộc: services/webhookValidation.js, services/crmIntegration.js, store.
 
 #### `server/routes/chat.js`
 ```
-POST   /api/chat                      → AI chatbot (function-calling)
+GET    /api/chat/status               → Kiểm tra chatbot có available không
+POST   /api/chat                      → AI chatbot (function-calling, 2-turn agent loop)
 
-Phụ thuộc: services/aiService.js, services/agent-tools.js, store.js
+Chatbot có bật không: kiểm tra system setting 'chat_enabled' (mặc định = '1')
+Nếu 'chat_enabled' = '0' → trả { available: false }
+
+Agent Loop 2 vòng:
+- Vòng 1: AI quyết định có gọi tool không (generateWithTools)
+- Vòng 2: Execute tools → trả reply cuối cùng (generateFinalReply)
+
+Phụ thuộc: services/aiService.js, services/agent-tools.js, services/providers/gemini.js, store.js
 ```
 
 #### `server/routes/keyword-plans.js`
@@ -719,14 +748,40 @@ Features:
 Được dùng bởi: Tất cả files
 ```
 
-#### `server/utils/crypto.js` — Encryption
+#### `server/utils/func.js` — Helper Functions
 ```
-Chức năng: AES-256-GCM encryption cho API keys
+Chức năng: Các hàm helper dùng chung, tránh trùng lặp code
 
 Functions:
-- encrypt(plaintext, key) → ciphertext
-- decrypt(ciphertext, key) → plaintext
+- stripDots(email) — strip Gmail dots: a.b.c@gmail.com → abcgmail.com
+- createNasaniToken(timestamp) — HMAC-SHA256 cho Nasani API
+- decodeHtmlEntities(str) — decode HTML entities (htmlspecialchars PHP → raw HTML)
+  Dùng khi nhận dữ liệu từ CRM1 webhook
+
+Được dùng bởi: crmIntegration.js, auth.js, và các service khác nếu cần
+```
+
+#### `server/utils/crypto.js` — Encryption
+```
+Chức năng: AES-256-GCM encryption cho API keys (hỗ trợ nhiều keys)
+
+Thuật toán: AES-256-GCM
+- 256-bit key (32 bytes) từ ENCRYPTION_KEY env
+- IV (12 bytes) ngẫu nhiên cho mỗi lần mã hóa
+- Auth tag (16 bytes) xác minh tính toàn vẹn
+- Format lưu: base64(iv + ciphertext + authTag)
+- Nhiều keys: enc(KEY1)||enc(KEY2)||enc(KEY3)
+
+Functions:
+- encrypt(plaintext) → ciphertext  (chuẩn hóa "," → "||" trước khi encrypt)
+- decrypt(ciphertext) → plaintext    (giải mã từng phần, nối bằng ",")
+- normalizeKeys(raw) — chuẩn hóa: "KEY1,KEY2" → "KEY1||KEY2"
+- isEncrypted(value) → boolean
+- getEncryptionKey() — lấy key từ ENCRYPTION_KEY env
 - Auto-detect legacy plain text keys (backward compatible)
+
+Client input: "sk-key1,sk-key2,sk-key3" → normalize → encrypt từng key → "enc(k1)||enc(k2)||enc(k3)"
+Decrypt output: "k1,k2,k3" (nối bằng "," để keyRotation xoay vòng)
 
 Được dùng bởi: store.js (users, settings), routes/users.js, routes/settings.js
 ```
@@ -1393,9 +1448,23 @@ Response Interceptor:
 |-----------|------|-----------|
 | Layout | `components/Layout.jsx` | Main wrapper với sidebar, navbar |
 | Editor | `components/Editor.jsx` | Tiptap rich text editor |
-| ChatBot | `components/ChatBot.jsx` | Floating AI chatbot widget |
+| ChatBot | `components/ChatBot.jsx` | Floating AI chatbot widget (ẩn khi chat_enabled='0') |
 | SseHandler | `components/SseHandler.jsx` | SSE stream handler cho write queue |
 | Table | `components/Table.jsx` | Generic table với pagination |
+
+### 9.5 Chatbot Toggle
+
+Chatbot icon hiển thị ở góc dưới bên phải màn hình khi `chat_enabled` = '1' (mặc định bật).
+
+Luồng kiểm tra:
+```
+1. ChatBot.jsx mount → GET /api/chat/status
+2. /api/chat/status trả { available, chatEnabled }
+3. available = false → ẩn hoàn toàn ChatBot widget
+4. available = true  → hiện ChatBot icon + xử lý chat normally
+```
+
+Root admin có thể bật/tắt chatbot từ Settings page (PUT /api/settings, field: chat_enabled).
 
 ---
 
@@ -1455,20 +1524,23 @@ Khi company.auto_publish = 1 và article được generate:
 |---|--------|-----------|---------------|
 | P0-1 | In-memory write queue → mất job khi crash | Persistent SQLite-backed queue | `store.js`, `services/writeQueue.js`, `routes/write-queue.js`, `jobs/writeQueueWorker.js` |
 | P0-3 | No transaction locking → duplicate articles | `BEGIN IMMEDIATE` transactions | `routes/articles.js`, `services/writeQueue.js` |
-| P0-4 | API key plaintext | AES-256-GCM encryption | `utils/crypto.js`, `store.js`, `routes/users.js` |
+| P0-4 | API key plaintext | AES-256-GCM encryption (multi-key) | `utils/crypto.js`, `store.js`, `routes/users.js` |
 | P0-5 | No rate limiting | express-rate-limit 4 tiers | `middleware/rateLimiter.js` |
 
 ### 🟡 Đã Fix (P1 - Trung bình)
 
 | # | Vấn đề | Giải pháp | Files changed |
 |---|--------|-----------|---------------|
-| P1-8 | No pagination | Thêm pagination params | `routes/keywords.js`, `routes/articles.js` |
-| P1-9 | CRM retry logic | Exponential backoff | `crmIntegration.js`, `crmQueueWorker.js` |
+| P1-4  | Client input key dùng `,` delimiter không encrypt từng key riêng | `normalizeKeys()` chuẩn hóa `,` → `\|\|`, encrypt từng key riêng | `utils/crypto.js`, `client/src/pages/Settings.jsx` |
+| P1-8  | No pagination | Thêm pagination params | `routes/keywords.js`, `routes/articles.js` |
+| P1-9  | CRM retry logic | Exponential backoff | `crmIntegration.js`, `crmQueueWorker.js` |
 | P1-13 | DLQ auto-retry | runDlqAutoRetryWorker() | `crmQueueWorker.js`, `index.js` |
 | P1-14 | No request ID | UUID + X-Request-ID header | `middleware/requestId.js` |
 | P1-15 | Log không chuẩn | Structured JSON logging | `utils/logger.js` |
 | P1-18 | Race condition claim jobs | Atomic SELECT+UPDATE | `crmQueueWorker.js` |
 | P1-19 | Rate limit handling | Exponential backoff on 429 | `providers/gemini.js` |
+| P1-20 | `strong is not defined` (client) | `<strong>,</strong>` → `<strong>\|\|</strong>` trong JSX | `client/src/pages/Settings.jsx` |
+| P1-21 | Chatbot always visible | Thêm system setting `chat_enabled`, toggle trong Settings page | `server/routes/chat.js`, `server/routes/settings.js`, `client/src/pages/Settings.jsx` |
 
 ### 🟡 Còn Tồn Tại
 
@@ -1489,17 +1561,20 @@ Khi company.auto_publish = 1 và article được generate:
 
 - [x] Fix P0-1: Persistent write queue
 - [x] Fix P0-3: Transaction locking
-- [x] Fix P0-4: API key encryption
+- [x] Fix P0-4: API key encryption (multi-key)
 - [x] Fix P0-5: Rate limiting
+- [x] Fix P1-4: Multi-key delimiter normalization
 - [x] Fix P1-8: Pagination
 - [x] Fix P1-9: CRM retry logic
 - [x] Fix P1-13: DLQ auto-retry
 - [x] Fix P1-14: Request ID
 - [x] Fix P1-15: Structured logging
+- [x] Fix P1-20: JSX `strong` bug in Settings.jsx
+- [x] Fix P1-21: Chatbot toggle (chat_enabled setting)
 
 ### Phase 2: Bảo mật & Compliance
 
-- [ ] Thêm input sanitization (DOMPurify)
+- [ ] Thêm input sanitization (DOMPurify) — XSS prevention
 - [ ] Thêm duplicate article detection (hash)
 - [ ] Tách CRM queue worker thành standalone process
 - [ ] Thêm CSP headers cho frontend

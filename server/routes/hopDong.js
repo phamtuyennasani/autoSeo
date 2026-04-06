@@ -46,7 +46,7 @@ router.get('/:id', async (req, res) => {
     if (!hdResult.rows.length) return res.status(404).json({ error: 'Không tìm thấy hợp đồng.' });
 
     const companies = await db.execute({
-      sql: 'SELECT id, name, url, industry, auto_publish, createdAt FROM companies WHERE hop_dong_id = ? ORDER BY createdAt DESC',
+      sql: 'SELECT id, name, url, industry, createdAt FROM companies WHERE hop_dong_id = ? ORDER BY createdAt DESC',
       args: [id],
     });
 

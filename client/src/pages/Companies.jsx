@@ -6,9 +6,15 @@ import { useAuth } from '../context/AuthContext';
 import { useConfirm } from '../context/ConfirmContext';
 import { AppMultiSelect } from '../components/AppMultiSelect';
 import { FontPicker } from '../components/FontPicker';
-
+import { RichTextEditor } from '../components/RichTextEditor';
 import { API } from '../config/api';
 const API_URL = API.companies;
+
+/** Strip HTML tags — dùng cho hiển thị plain text trong danh sách */
+const stripHtml = (html) => {
+  if (!html) return '';
+  return html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').trim();
+};
 
 const INDUSTRY_OPTIONS = [
   { value: 4,  label: 'Xây dựng' },
@@ -74,13 +80,13 @@ const Companies = () => {
 
   // Add modal
   const [isAddOpen, setIsAddOpen] = useState(false);
-  const [addForm, setAddForm] = useState({ name: '', url: '', info: '', contract_code: '', industry: [], publish_api_url: '', auto_publish: false, internal_links_enabled: false, internal_links_max: 3, article_styles: { ...DEFAULT_STYLES } });
+  const [addForm, setAddForm] = useState({ name: '', url: '', info: '', contract_code: '', industry: [], internal_links_enabled: false, internal_links_max: 3, article_styles: { ...DEFAULT_STYLES } });
   const [submitting, setSubmitting] = useState(false);
   const [showAddStyles, setShowAddStyles] = useState(false);
 
   // Edit modal
   const [editingCompany, setEditingCompany] = useState(null);
-  const [editForm, setEditForm] = useState({ name: '', url: '', info: '', contract_code: '', industry: [], publish_api_url: '', auto_publish: false, internal_links_enabled: false, internal_links_max: 3, article_styles: { ...DEFAULT_STYLES } });
+  const [editForm, setEditForm] = useState({ name: '', url: '', info: '', contract_code: '', industry: [], internal_links_enabled: false, internal_links_max: 3, article_styles: { ...DEFAULT_STYLES } });
   const [saving, setSaving] = useState(false);
   const [showEditStyles, setShowEditStyles] = useState(false);
 
@@ -140,8 +146,8 @@ const Companies = () => {
     setSubmitting(true);
     try {
       const stylesPayload = Object.values(addForm.article_styles).some(Boolean) ? addForm.article_styles : null;
-      await apiClient.post(API_URL, { ...addForm, industry: addForm.industry.join(','), auto_publish: addForm.auto_publish ? 1 : 0, internal_links_enabled: addForm.internal_links_enabled ? 1 : 0, article_styles: stylesPayload });
-      setAddForm({ name: '', url: '', info: '', contract_code: '', industry: [], publish_api_url: '', auto_publish: false, internal_links_enabled: false, internal_links_max: 3, article_styles: { ...DEFAULT_STYLES } });
+      await apiClient.post(API_URL, { ...addForm, industry: addForm.industry.join(','), internal_links_enabled: addForm.internal_links_enabled ? 1 : 0, article_styles: stylesPayload });
+      setAddForm({ name: '', url: '', info: '', contract_code: '', industry: [], internal_links_enabled: false, internal_links_max: 3, article_styles: { ...DEFAULT_STYLES } });
       setShowAddStyles(false);
       setIsAddOpen(false);
       fetchCompanies();
@@ -155,7 +161,7 @@ const Companies = () => {
   // EDIT - open
   const openEdit = (company) => {
     setEditingCompany(company);
-    setEditForm({ name: company.name, url: company.url, info: company.info || '', contract_code: company.contract_code || '', industry: (company.industry || '').split(',').filter(Boolean).map(v => isNaN(v) ? v : Number(v)), publish_api_url: company.publish_api_url || '', auto_publish: !!company.auto_publish, internal_links_enabled: !!company.internal_links_enabled, internal_links_max: company.internal_links_max || 3, article_styles: company.article_styles ? { ...DEFAULT_STYLES, ...company.article_styles } : { ...DEFAULT_STYLES } });
+    setEditForm({ name: company.name, url: company.url, info: company.info || '', contract_code: company.contract_code || '', industry: (company.industry || '').split(',').filter(Boolean).map(v => isNaN(v) ? v : Number(v)), internal_links_enabled: !!company.internal_links_enabled, internal_links_max: company.internal_links_max || 3, article_styles: company.article_styles ? { ...DEFAULT_STYLES, ...company.article_styles } : { ...DEFAULT_STYLES } });
     setShowEditStyles(false);
   };
 
@@ -165,7 +171,7 @@ const Companies = () => {
     setSaving(true);
     try {
       const stylesPayload = Object.values(editForm.article_styles).some(Boolean) ? editForm.article_styles : null;
-      await apiClient.put(`${API_URL}/${editingCompany.id}`, { ...editForm, industry: editForm.industry.join(','), auto_publish: editForm.auto_publish ? 1 : 0, internal_links_enabled: editForm.internal_links_enabled ? 1 : 0, article_styles: stylesPayload });
+      await apiClient.put(`${API_URL}/${editingCompany.id}`, { ...editForm, industry: editForm.industry.join(','), internal_links_enabled: editForm.internal_links_enabled ? 1 : 0, article_styles: stylesPayload });
       setEditingCompany(null);
       fetchCompanies();
     } catch (error) {
@@ -286,17 +292,12 @@ const Companies = () => {
                     </span>
                   );
                   })}
-                  {company.auto_publish ? (
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: '10px', fontWeight: 600, padding: '1px 7px', borderRadius: 99, background: 'rgba(34,197,94,0.08)', color: 'var(--success)', border: '1px solid rgba(34,197,94,0.2)', whiteSpace: 'nowrap', flexShrink: 0 }}>
-                      <Upload size={9} /> Auto-post
-                    </span>
-                  ) : null}
                 </div>
               </div>
 
               {/* Mô tả */}
               <div style={{ fontSize: '13px', color: 'var(--text-secondary)', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
-                {company.info || <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Chưa có mô tả</span>}
+                {stripHtml(company.info) || <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Chưa có mô tả</span>}
               </div>
 
               {/* Người tạo */}
@@ -385,34 +386,11 @@ const Companies = () => {
                 </div>
                 <div className="input-group">
                   <label className="input-label">Mô tả (AI dùng để cá nhân hóa bài viết)</label>
-                  <textarea className="input-field" value={addForm.info}
-                    onChange={e => setAddForm({ ...addForm, info: e.target.value })}
-                    placeholder="Lĩnh vực, sản phẩm, dịch vụ..." rows={4} disabled={submitting} />
-                </div>
-                <div className="input-group">
-                  <label className="input-label">API URL Đăng Bài <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>(để trống = dùng URL mặc định trong Cài Đặt)</span></label>
-                  <input type="url" className="input-field" value={addForm.publish_api_url}
-                    onChange={e => setAddForm({ ...addForm, publish_api_url: e.target.value })}
-                    placeholder="https://api.example.com/posts" disabled={submitting} />
-                </div>
-                <div className="input-group" style={{ marginBottom: 8 }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', userSelect: 'none' }}>
-                    <div
-                      onClick={() => !submitting && setAddForm(f => ({ ...f, auto_publish: !f.auto_publish }))}
-                      style={{
-                        width: 36, height: 20, borderRadius: 99, flexShrink: 0,
-                        background: addForm.auto_publish ? 'var(--success)' : 'var(--border)',
-                        position: 'relative', transition: 'background 0.2s', cursor: 'pointer',
-                      }}
-                    >
-                      <div style={{
-                        position: 'absolute', top: 3, left: addForm.auto_publish ? 18 : 3,
-                        width: 14, height: 14, borderRadius: '50%', background: '#fff',
-                        transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
-                      }} />
-                    </div>
-                    <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>Tự động đăng bài sau khi viết xong</span>
-                  </label>
+                    <RichTextEditor
+                      value={addForm.info}
+                      onChange={v => setAddForm({ ...addForm, info: v })}
+                      disabled={submitting}
+                    />
                 </div>
                 <div className="input-group" style={{ marginBottom: 8 }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', userSelect: 'none' }}>
@@ -614,34 +592,12 @@ const Companies = () => {
                 </div>
                 <div className="input-group">
                   <label className="input-label">Mô tả (AI dùng để cá nhân hóa bài viết)</label>
-                  <textarea className="input-field" value={editForm.info}
-                    onChange={e => setEditForm({ ...editForm, info: e.target.value })}
-                    rows={5} disabled={saving} />
-                </div>
-                <div className="input-group">
-                  <label className="input-label">API URL Đăng Bài <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>(để trống = dùng URL mặc định trong Cài Đặt)</span></label>
-                  <input type="url" className="input-field" value={editForm.publish_api_url}
-                    onChange={e => setEditForm({ ...editForm, publish_api_url: e.target.value })}
-                    placeholder="https://api.example.com/posts" disabled={saving} />
-                </div>
-                <div className="input-group" style={{ marginBottom: 8 }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', userSelect: 'none' }}>
-                    <div
-                      onClick={() => !saving && setEditForm(f => ({ ...f, auto_publish: !f.auto_publish }))}
-                      style={{
-                        width: 36, height: 20, borderRadius: 99, flexShrink: 0,
-                        background: editForm.auto_publish ? 'var(--success)' : 'var(--border)',
-                        position: 'relative', transition: 'background 0.2s', cursor: 'pointer',
-                      }}
-                    >
-                      <div style={{
-                        position: 'absolute', top: 3, left: editForm.auto_publish ? 18 : 3,
-                        width: 14, height: 14, borderRadius: '50%', background: '#fff',
-                        transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
-                      }} />
-                    </div>
-                    <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>Tự động đăng bài sau khi viết xong</span>
-                  </label>
+                 
+                  <RichTextEditor
+                      value={editForm.info}
+                      onChange={v => setEditForm({ ...editForm, info: v })}
+                      disabled={saving}
+                    />
                 </div>
                 <div className="input-group" style={{ marginBottom: 8 }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', userSelect: 'none' }}>

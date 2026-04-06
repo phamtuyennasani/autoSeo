@@ -12,8 +12,7 @@ const router  = express.Router();
 const crypto  = require('crypto');
 const { db }  = require('../data/store');
 const { validateWebhookPayload } = require('../services/webhookValidation');
-
-const genId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+const { genId } = require('../utils/func');
 
 // ─── Verify: SHA256(secret + MaHD + email) ─────────────────────────────────
 function verifySignature(maHD, email, signature) {

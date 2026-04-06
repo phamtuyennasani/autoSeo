@@ -18,8 +18,7 @@ const { db }                 = require('../data/store');
 const { generateTitles }     = require('./gemini');
 const { getEffectiveApiConfig } = require('./apiConfig');
 const { recordKeywordProcessed, recordTitleProcessed, recordDlqJob } = require('./metricsService');
-const genId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-
+const { genId,LOG }              = require('../utils/func');
 const KEYWORD_WORKERS = parseInt(process.env.KEYWORD_QUEUE_WORKERS || '2', 10);
 const TITLE_WORKERS   = parseInt(process.env.TITLE_QUEUE_WORKERS   || '2', 10);
 const POLL_MS         = parseInt(process.env.QUEUE_POLL_MS         || '2000', 10);
@@ -28,7 +27,6 @@ const PROCESSING_TIMEOUT_MS = parseInt(process.env.QUEUE_PROCESSING_TIMEOUT_MS |
 const WEBHOOK_RETRY_DELAY_MS = parseInt(process.env.WEBHOOK_RETRY_DELAY_MS || '300000', 10); // 5 phút mặc định
 const WEBHOOK_MAX_RETRIES    = parseInt(process.env.WEBHOOK_MAX_RETRIES    || '3', 10);
 
-const LOG = (...args) => console.log('[CRMQueue]', ...args);
 
 let running    = false;  // Chỉ set true khi server gọi startQueueWorkers() lần đầu
 let isPaused   = false;  // true = Pause(), false = Resume()
@@ -70,7 +68,7 @@ async function moveKeywordToDlq(job, finalError) {
   // Xóa khỏi queue chính
   await db.execute({ sql: `DELETE FROM keyword_queue WHERE id = ?`, args: [job.id] });
   recordDlqJob('keyword');
-  LOG(`[DLQ] keyword="${job.keyword}" moved to DLQ (retries=${job.retries || 0}): ${finalError}`);
+  LOG(`[CRMQueue - DLQ] keyword="${job.keyword}" moved to DLQ (retries=${job.retries || 0}): ${finalError}`);
 }
 
 /**
@@ -98,7 +96,7 @@ async function moveTitleToDlq(job, finalError) {
 
   await db.execute({ sql: `DELETE FROM title_queue WHERE id = ?`, args: [job.id] });
   recordDlqJob('title');
-  LOG(`[DLQ] title job="${job.keyword}" moved to DLQ (retries=${job.retries || 0}): ${finalError}`);
+  LOG(`[CRMQueue - DLQ] title job="${job.keyword}" moved to DLQ (retries=${job.retries || 0}): ${finalError}`);
 }
 
 // Reset stuck jobs (processing quá lâu → về pending để worker khác pick up)
@@ -117,7 +115,7 @@ async function resetStuckJobs() {
     }),
   ]);
   if (kw.rowsAffected > 0 || tl.rowsAffected > 0) {
-    LOG(`[StuckJobs] Reset ${kw.rowsAffected} keyword + ${tl.rowsAffected} title jobs`);
+    LOG(`[CRMQueue - StuckJobs] Reset ${kw.rowsAffected} keyword + ${tl.rowsAffected} title jobs`);
   }
 }
 
@@ -161,12 +159,12 @@ async function claimKeywordJob(workerId) {
     if (upd.rowsAffected > 0) {
       // Claim thành công
       const full = await db.execute({ sql: 'SELECT * FROM keyword_queue WHERE id = ?', args: [id] });
-      console.info(`[KW-Worker] 🔎 claimKeywordJob: ✅ workerId=${workerId} claim job.id=${id} (attempt ${attempt})`);
+      console.info(`[CRMQueue - KW-Worker] 🔎 claimKeywordJob: ✅ workerId=${workerId} claim job.id=${id} (attempt ${attempt})`);
       return full.rows[0] || null;
     }
 
     // rowsAffected = 0 → job đã bị worker khác claim → thử job tiếp theo
-    console.info(`[KW-Worker] 🔎 claimKeywordJob: workerId=${workerId} job.id=${id} đã bị claim → retry ${attempt}/${MAX_RETRIES}`);
+    console.info(`[CRMQueue - KW-Worker] 🔎 claimKeywordJob: workerId=${workerId} job.id=${id} đã bị claim → retry ${attempt}/${MAX_RETRIES}`);
     if (attempt < MAX_RETRIES) await sleep(50);
   }
 
@@ -177,14 +175,14 @@ async function claimKeywordJob(workerId) {
 async function processKeywordJob(job) {
   const start = Date.now();
   const count = job.so_tieude || 10;
-  console.info(`[KW-Worker] ============================================`);
-  console.info(`[KW-Worker] ▶️  BẮT ĐẦU JOB: job.id=${job.id}`);
-  console.info(`[KW-Worker]    keyword="${job.keyword}"`);
-  console.info(`[KW-Worker]    so_tieude=${job.so_tieude} → count=${count}`);
-  console.info(`[KW-Worker]    yeucau="${job.yeucau || ''}"`);
-  console.info(`[KW-Worker]    content_type="${job.content_type || 'blog'}"`);
-  console.info(`[KW-Worker]    created_by="${job.created_by || 'system'}"`);
-  console.info(`[KW-Worker] ============================================`);
+  console.info(`[CRMQueue - KW-Worker] ============================================`);
+  console.info(`[CRMQueue - KW-Worker] ▶️  BẮT ĐẦU JOB: job.id=${job.id}`);
+  console.info(`[CRMQueue - KW-Worker]    keyword="${job.keyword}"`);
+  console.info(`[CRMQueue - KW-Worker]    so_tieude=${job.so_tieude} → count=${count}`);
+  console.info(`[CRMQueue - KW-Worker]    yeucau="${job.yeucau || ''}"`);
+  console.info(`[CRMQueue - KW-Worker]    content_type="${job.content_type || 'blog'}"`);
+  console.info(`[CRMQueue - KW-Worker]    created_by="${job.created_by || 'system'}"`);
+  console.info(`[CRMQueue - KW-Worker] ============================================`);
   try {
     const apiConfig = await getApiConfig(job.created_by);
 
@@ -198,25 +196,25 @@ async function processKeywordJob(job) {
         // Chuyển object { tieude1, tieude2, ... } → array
         predefinedTitles = Object.values(td).filter(v => typeof v === 'string' && v.trim());
       } catch {
-        LOG(`[KW-Worker] ⚠️  tieudecodinh_json không parse được cho keyword="${job.keyword}"`);
+        LOG(`[CRMQueue - KW-Worker] ⚠️  tieudecodinh_json không parse được cho keyword="${job.keyword}"`);
       }
     }
 
     if (predefinedTitles.length > 0) {
       // Đã có tiêu đề cố định → dùng trực tiếp, không gọi AI
       titles = predefinedTitles;
-      LOG(`[KW-Worker] ℹ️  Dùng ${titles.length} tiêu đề cố định từ CRM1 cho keyword="${job.keyword}"`);
+      LOG(`[CRMQueue - KW-Worker] ℹ️  Dùng ${titles.length} tiêu đề cố định từ CRM1 cho keyword="${job.keyword}"`);
     } else {
       // Chưa có tiêu đề → gọi AI sinh tiêu đề (truyền yeucau vào searchContext)
       const yeucau = job.yeucau || '';
       const { titles: generated } = await generateTitles(job.keyword, yeucau, count, apiConfig);
       console.info('------------');
-      console.info(`[KW-Worker] 🤖 AI trả về ${generated.length} tiêu đề cho keyword="${job.keyword}" (yeucau="${yeucau}")`);
+      console.info(`[CRMQueue - KW-Worker] 🤖 AI trả về ${generated.length} tiêu đề cho keyword="${job.keyword}" (yeucau="${yeucau}")`);
       console.info('------------');
       // Giới hạn đúng count — AI có thể trả nhiều hơn, cắt về đúng số yêu cầu
       titles = generated.slice(0, count);
-      console.info(`[KW-Worker] 📊 COUNT DEBUG: count=${count}, titles.length=${titles.length}, titles[0]=${JSON.stringify(titles[0])}`);
-      LOG(`[KW-Worker] 🤖 AI trả ${generated.length} titles → dùng ${titles.length} (count=${count}) cho keyword="${job.keyword}" (yeucau="${yeucau}")`);
+      console.info(`[CRMQueue - KW-Worker] 📊 COUNT DEBUG: count=${count}, titles.length=${titles.length}, titles[0]=${JSON.stringify(titles[0])}`);
+      LOG(`[CRMQueue - KW-Worker] 🤖 AI trả ${generated.length} titles → dùng ${titles.length} (count=${count}) cho keyword="${job.keyword}" (yeucau="${yeucau}")`);
     }
 
     // ── Safeguard: luôn đảm bảo đúng count trước khi lưu ─────────────────────
@@ -226,7 +224,7 @@ async function processKeywordJob(job) {
       throw new Error(`AI không trả về tiêu đề nào cho keyword="${job.keyword}". Vui lòng thử lại.`);
     }
     if (titles.length > count) {
-      console.warn(`[KW-Worker] ⚠️  titles.length (${titles.length}) > count (${count}) → cắt về count`);
+      console.warn(`[CRMQueue - KW-Worker] ⚠️  titles.length (${titles.length}) > count (${count}) → cắt về count`);
       titles = titles.slice(0, count);
     }
     // titles.length <= count ✓ — đúng yêu cầu
@@ -234,8 +232,8 @@ async function processKeywordJob(job) {
     // Lưu vào bảng keywords
     const keywordId = genId();
     const titlesJson = JSON.stringify(titles);
-    console.info(`[KW-Worker] 🔍 DEBUG: job.id=${job.id}, count=${count}, titles.length=${titles.length}, titlesJson=${titlesJson}`);
-    LOG(`[KW-Worker] 💾 Lưu vào keywords: id=${keywordId}, titles.length=${titles.length}`);
+    console.info(`[CRMQueue - KW-Worker] 🔍 DEBUG: job.id=${job.id}, count=${count}, titles.length=${titles.length}, titlesJson=${titlesJson}`);
+    LOG(`[CRMQueue - KW-Worker] 💾 Lưu vào keywords: id=${keywordId}, titles.length=${titles.length}`);
     await db.execute({
       sql: `INSERT INTO keywords (id, keyword, titles, companyId, createdAt, createdBy, source, content_type)
             VALUES (?, ?, ?, ?, ?, ?, 'webhook', ?)`,
@@ -245,9 +243,9 @@ async function processKeywordJob(job) {
     // Đẩy vào title_queue
     const titleQueueId = genId();
     const tqTitlesJson = JSON.stringify(titles);
-    console.info(`[KW-Worker] 📋 title_queue INSERT: id=${titleQueueId}, keyword_q_id=${job.id}`);
-    console.info(`[KW-Worker]    titles count=${titles.length}, titlesJson=${tqTitlesJson}`);
-    LOG(`[KW-Worker] 📋 Insert title_queue: id=${titleQueueId}, keyword_q_id=${job.id}, titles count=${titles.length}`);
+    console.info(`[CRMQueue - KW-Worker] 📋 title_queue INSERT: id=${titleQueueId}, keyword_q_id=${job.id}`);
+    console.info(`[CRMQueue - KW-Worker]    titles count=${titles.length}, titlesJson=${tqTitlesJson}`);
+    LOG(`[CRMQueue - KW-Worker] 📋 Insert title_queue: id=${titleQueueId}, keyword_q_id=${job.id}, titles count=${titles.length}`);
     await db.execute({
       sql: `INSERT INTO title_queue (id, keyword_q_id, keyword, titles_json, company_id, hop_dong_id, chuki, created_by, content_type, status, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
@@ -261,7 +259,7 @@ async function processKeywordJob(job) {
     });
 
     recordKeywordProcessed((Date.now() - start) / 1000, true);
-    LOG(`[KW-Worker] ✅ Xong keyword="${job.keyword}" → ${titles.length} tiêu đề`);
+    LOG(`[CRMQueue - KW-Worker] ✅ Xong keyword="${job.keyword}" → ${titles.length} tiêu đề`);
   } catch (e) {
     const retries = (job.retries || 0) + 1;
     if (retries >= MAX_RETRIES) {
@@ -272,7 +270,7 @@ async function processKeywordJob(job) {
         sql: `UPDATE keyword_queue SET status = 'pending', retries = ?, error = ?, worker_id = NULL, started_at = NULL WHERE id = ?`,
         args: [retries, e.message, job.id],
       });
-      LOG(`[KW-Worker] ❌ Lỗi keyword="${job.keyword}" (retry ${retries}/${MAX_RETRIES}): ${e.message}`);
+      LOG(`[CRMQueue - KW-Worker] ❌ Lỗi keyword="${job.keyword}" (retry ${retries}/${MAX_RETRIES}): ${e.message}`);
     }
     recordKeywordProcessed((Date.now() - start) / 1000, false);
   }
@@ -281,7 +279,7 @@ async function processKeywordJob(job) {
 async function runKeywordWorker(workerId) {
   const wid = `kw-${workerId}`;
   activeKeywordWorkers.add(wid);
-  LOG(`[KW-Worker-${wid}] Khởi động (active KW: ${activeKeywordWorkers.size})`);
+  LOG(`[CRMQueue - KW-Worker-${wid}] Khởi động (active KW: ${activeKeywordWorkers.size})`);
   try {
     while (running && !isPaused) {
       try {
@@ -292,13 +290,13 @@ async function runKeywordWorker(workerId) {
           await sleep(POLL_MS);
         }
       } catch (e) {
-        LOG(`[KW-Worker-${wid}] Lỗi vòng lặp:`, e.message);
+        LOG(`[CRMQueue - KW-Worker-${wid}] Lỗi vòng lặp:`, e.message);
         await sleep(POLL_MS);
       }
     }
   } finally {
     activeKeywordWorkers.delete(wid);
-    LOG(`[KW-Worker-${wid}] Dừng (active KW: ${activeKeywordWorkers.size})`);
+    LOG(`[CRMQueue - KW-Worker-${wid}] Dừng (active KW: ${activeKeywordWorkers.size})`);
   }
 }
 
@@ -340,7 +338,7 @@ async function retryWebhookEvent(event) {
   });
 
   const payload = JSON.parse(event.payload);
-  LOG(`[WebhookRetry] Retry #${event.retry_count + 1}/${WEBHOOK_MAX_RETRIES} event=${event.id} maHD=${event.ma_hd}`);
+  LOG(`[CRMQueue - WebhookRetry] Retry #${event.retry_count + 1}/${WEBHOOK_MAX_RETRIES} event=${event.id} maHD=${event.ma_hd}`);
   await processWebhookEvent(event.id, payload);
 }
 
@@ -354,20 +352,20 @@ async function runWebhookRetryWorker() {
       const events = await getRetryableWebhookEvents();
       if (events.length === 0) continue;
 
-      LOG(`[WebhookRetry] Có ${events.length} event(s) cần retry`);
+      LOG(`[CRMQueue - WebhookRetry] Có ${events.length} event(s) cần retry`);
 
       for (const event of events) {
         try {
           await retryWebhookEvent(event);
         } catch (e) {
-          LOG(`[WebhookRetry] ❌ Retry event ${event.id} thất bại: ${e.message}`);
+          LOG(`[CRMQueue - WebhookRetry] ❌ Retry event ${event.id} thất bại: ${e.message}`);
         }
       }
     } catch (e) {
-      LOG(`[WebhookRetry] Lỗi vòng lặp: ${e.message}`);
+      LOG(`[CRMQueue - WebhookRetry] Lỗi vòng lặp: ${e.message}`);
     }
   }
-  LOG('[WebhookRetry] Dừng');
+  LOG('[CRMQueue - WebhookRetry] Dừng');
 }
 
 // ─── TẦNG 2: title_queue ──────────────────────────────────────────────────────
@@ -398,12 +396,12 @@ async function claimTitleJob(workerId) {
     if (upd.rowsAffected > 0) {
       // Claim thành công
       const full = await db.execute({ sql: 'SELECT * FROM title_queue WHERE id = ?', args: [id] });
-      console.info(`[TL-Worker] 🔎 claimTitleJob: ✅ workerId=${workerId} claim job.id=${id} (attempt ${attempt})`);
+      console.info(`[CRMQueue - TL-Worker] 🔎 claimTitleJob: ✅ workerId=${workerId} claim job.id=${id} (attempt ${attempt})`);
       return full.rows[0] || null;
     }
 
     // rowsAffected = 0 → job đã bị worker khác claim → thử job tiếp theo
-    console.info(`[TL-Worker] 🔎 claimTitleJob: workerId=${workerId} job.id=${id} đã bị claim → retry ${attempt}/${MAX_RETRIES}`);
+    console.info(`[CRMQueue - TL-Worker] 🔎 claimTitleJob: workerId=${workerId} job.id=${id} đã bị claim → retry ${attempt}/${MAX_RETRIES}`);
     if (attempt < MAX_RETRIES) await sleep(50);
   }
 
@@ -415,13 +413,13 @@ async function processTitleJob(job) {
   const start = Date.now();
   const titlesRaw = job.titles_json || '[]';
   const titles = JSON.parse(titlesRaw);
-  console.info(`[TL-Worker] ============================================`);
-  console.info(`[TL-Worker] ▶️  BẮT ĐẦU TITLE JOB: job.id=${job.id}`);
-  console.info(`[TL-Worker]    keyword="${job.keyword}"`);
-  console.info(`[TL-Worker]    content_type="${job.content_type || 'blog'}"`);
-  console.info(`[TL-Worker]    titles.length=${titles.length}`);
-  console.info(`[TL-Worker]    titles_json=${titlesRaw}`);
-  console.info(`[TL-Worker] ============================================`);
+  console.info(`[CRMQueue - TL-Worker] ============================================`);
+  console.info(`[CRMQueue - TL-Worker] ▶️  BẮT ĐẦU TITLE JOB: job.id=${job.id}`);
+  console.info(`[CRMQueue - TL-Worker]    keyword="${job.keyword}"`);
+  console.info(`[CRMQueue - TL-Worker]    content_type="${job.content_type || 'blog'}"`);
+  console.info(`[CRMQueue - TL-Worker]    titles.length=${titles.length}`);
+  console.info(`[CRMQueue - TL-Worker]    titles_json=${titlesRaw}`);
+  console.info(`[CRMQueue - TL-Worker] ============================================`);
 
   try {
     // Lấy thông tin công ty
@@ -449,7 +447,7 @@ async function processTitleJob(job) {
       // titles_json lưu [{ title: '...', topic: '...' }] — luôn extract .title
       const title = typeof titleItem === 'string' ? titleItem : (titleItem?.title || '');
       if (!title) {
-        LOG(`[TL-Worker]   ⚠️  Bỏ qua title rỗng:`, titleItem);
+        LOG(`[CRMQueue - TL-Worker]   ⚠️  Bỏ qua title rỗng:`, titleItem);
         continue;
       }
       try {
@@ -459,14 +457,14 @@ async function processTitleJob(job) {
           ['created_by', job.created_by], ['chuki', job.chuki],
           ['content_type', job.content_type], ['keywordId', keywordId],
         ].find(([, v]) => typeof v === 'object' && v !== null);
-        if (bad) LOG(`[TL-Worker] ⚠️  Object detected: ${bad[0]} =`, bad[1]);
+        if (bad) LOG(`[CRMQueue - TL-Worker] ⚠️  Object detected: ${bad[0]} =`, bad[1]);
 
         await generateAndSave(job.keyword, title, job.company_id, company, job.created_by, apiConfig, keywordId, null, job.chuki || null, job.content_type || 'blog');
         succeeded++;
-        LOG(`[TL-Worker]   ✅ "${title}"`);
+        LOG(`[CRMQueue - TL-Worker]   ✅ "${title}"`);
       } catch (e) {
         failed++;
-        LOG(`[TL-Worker]   ❌ "${title}": ${e.message}`);
+        LOG(`[CRMQueue - TL-Worker]   ❌ "${title}": ${e.message}`);
       }
     }
 
@@ -476,7 +474,7 @@ async function processTitleJob(job) {
     });
 
     recordTitleProcessed((Date.now() - start) / 1000, failed === 0);
-    LOG(`[TL-Worker] ✅ Xong keyword="${job.keyword}" — thành công: ${succeeded}, lỗi: ${failed}`);
+    LOG(`[CRMQueue - TL-Worker] ✅ Xong keyword="${job.keyword}" — thành công: ${succeeded}, lỗi: ${failed}`);
   } catch (e) {
     const retries = (job.retries || 0) + 1;
     if (retries >= MAX_RETRIES) {
@@ -487,7 +485,7 @@ async function processTitleJob(job) {
         sql: `UPDATE title_queue SET status = 'pending', retries = ?, error = ?, worker_id = NULL, started_at = NULL WHERE id = ?`,
         args: [retries, e.message, job.id],
       });
-      LOG(`[TL-Worker] ❌ Lỗi keyword="${job.keyword}" (retry ${retries}/${MAX_RETRIES}): ${e.message}`);
+      LOG(`[CRMQueue - TL-Worker] ❌ Lỗi keyword="${job.keyword}" (retry ${retries}/${MAX_RETRIES}): ${e.message}`);
     }
     recordTitleProcessed((Date.now() - start) / 1000, false);
   }
@@ -496,7 +494,7 @@ async function processTitleJob(job) {
 async function runTitleWorker(workerId) {
   const wid = `tl-${workerId}`;
   activeTitleWorkers.add(wid);
-  LOG(`[TL-Worker-${wid}] Khởi động (active TL: ${activeTitleWorkers.size})`);
+  LOG(`[CRMQueue - TL-Worker-${wid}] Khởi động (active TL: ${activeTitleWorkers.size})`);
   try {
     while (running && !isPaused) {
       try {
@@ -510,13 +508,13 @@ async function runTitleWorker(workerId) {
           await sleep(POLL_MS);
         }
       } catch (e) {
-        LOG(`[TL-Worker-${wid}] Lỗi vòng lặp:`, e.message);
+        LOG(`[CRMQueue - TL-Worker-${wid}] Lỗi vòng lặp:`, e.message);
         await sleep(POLL_MS);
       }
     }
   } finally {
     activeTitleWorkers.delete(wid);
-    LOG(`[TL-Worker-${wid}] Dừng (active TL: ${activeTitleWorkers.size})`);
+    LOG(`[CRMQueue - TL-Worker-${wid}] Dừng (active TL: ${activeTitleWorkers.size})`);
   }
 }
 
@@ -526,30 +524,30 @@ function startQueueWorkers() {
   if (running) return;
   running = true;
 
-  LOG(`Khởi động ${KEYWORD_WORKERS} keyword worker(s) + ${TITLE_WORKERS} title worker(s)`);
+  LOG(`[CRMQueue] Khởi động ${KEYWORD_WORKERS} keyword worker(s) + ${TITLE_WORKERS} title worker(s)`);
 
   for (let i = 1; i <= KEYWORD_WORKERS; i++) {
-    runKeywordWorker(i).catch(e => LOG(`KW-Worker-${i} crash:`, e.message));
+    runKeywordWorker(i).catch(e => LOG(`[CRMQueue - KW-Worker-${i}] crash:`, e.message));
   }
   for (let i = 1; i <= TITLE_WORKERS; i++) {
-    runTitleWorker(i).catch(e => LOG(`TL-Worker-${i} crash:`, e.message));
+    runTitleWorker(i).catch(e => LOG(`[CRMQueue - TL-Worker-${i}] crash:`, e.message));
   }
 
   // Stuck job checker chạy nền, kiểm tra mỗi 1 phút
-  runStuckJobChecker().catch(e => LOG('[StuckJobChecker] crash:', e.message));
+  runStuckJobChecker().catch(e => LOG(`[CRMQueue - StuckJobChecker] crash:`, e.message));
 
   // Webhook auto-retry: kiểm tra và retry failed events mỗi 1 phút
-  runWebhookRetryWorker().catch(e => LOG('[WebhookRetry] crash:', e.message));
+  runWebhookRetryWorker().catch(e => LOG(`[CRMQueue - WebhookRetry] crash:`, e.message));
 }
 
 function stopQueueWorkers() {
   isPaused = true;
-  LOG('Workers đã tạm dừng (Pause) — isPaused=true');
+  LOG(`[CRMQueue] Workers đã tạm dừng (Pause) — isPaused=true`);
 }
 
 function resumeQueueWorkers() {
   isPaused = false;
-  LOG('Workers đã tiếp tục (Resume) — isPaused=false');
+  LOG(`[CRMQueue] Workers đã tiếp tục (Resume) — isPaused=false`);
 }
 
 // ─── Dynamic worker management ─────────────────────────────────────────────────
@@ -563,8 +561,7 @@ function spawnKeywordWorker() {
   // Tìm workerId nhỏ nhất chưa dùng (để tránh trùng khi worker cũ đã stop)
   let i = 1;
   while (activeKeywordWorkers.has(`kw-${i}`)) i++;
-  runKeywordWorker(i).catch(e => LOG(`[Spawned KW-Worker-${i}] crash:`, e.message));
-  LOG(`[Spawner] Added KW-Worker-${i} (total active KW: ${activeKeywordWorkers.size})`);
+  runKeywordWorker(i).catch(e => LOG(`[CRMQueue - Spawner] Added KW-Worker-${i} (total active KW: ${activeKeywordWorkers.size})`));
   return i;
 }
 
@@ -575,8 +572,7 @@ function spawnTitleWorker() {
   if (!running) return null;
   let i = 1;
   while (activeTitleWorkers.has(`tl-${i}`)) i++;
-  runTitleWorker(i).catch(e => LOG(`[Spawned TL-Worker-${i}] crash:`, e.message));
-  LOG(`[Spawner] Added TL-Worker-${i} (total active TL: ${activeTitleWorkers.size})`);
+  runTitleWorker(i).catch(e => LOG(`[CRMQueue - Spawner] Added TL-Worker-${i} (total active TL: ${activeTitleWorkers.size})`));
   return i;
 }
 
@@ -668,7 +664,7 @@ async function replayFromDlq(queueType, dlqId) {
       args: [new Date().toISOString(), dlqId],
     });
 
-    LOG(`[DLQ] Replayed keyword="${job.keyword}" → keyword_queue id=${newId}`);
+    LOG(`[CRMQueue - DLQ] Replayed keyword="${job.keyword}" → keyword_queue id=${newId}`);
     return newId;
 
   } else if (queueType === 'title') {
@@ -690,7 +686,7 @@ async function replayFromDlq(queueType, dlqId) {
       args: [new Date().toISOString(), dlqId],
     });
 
-    LOG(`[DLQ] Replayed title job="${job.keyword}" → title_queue id=${newId}`);
+    LOG(`[CRMQueue - DLQ] Replayed title job="${job.keyword}" → title_queue id=${newId}`);
     return newId;
 
   } else {
@@ -704,7 +700,7 @@ async function replayFromDlq(queueType, dlqId) {
 async function purgeFromDlq(queueType, dlqId) {
   const table = queueType === 'keyword' ? 'keyword_queue_dlq' : 'title_queue_dlq';
   await db.execute({ sql: `DELETE FROM ${table} WHERE id = ?`, args: [dlqId] });
-  LOG(`[DLQ] Purged ${queueType} DLQ job=${dlqId}`);
+  LOG(`[CRMQueue - DLQ] Purged ${queueType} DLQ job=${dlqId}`);
 }
 
 // ─── Webhook Retry Stats ──────────────────────────────────────────────────────

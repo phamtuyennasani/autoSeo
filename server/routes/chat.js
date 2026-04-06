@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const fs = require('fs');
 const path = require('path');
+const { db } = require('../data/store');
 
 const { executeTool } = require('../services/agent-tools');
 const { getEffectiveApiConfig } = require('../services/apiConfig');
@@ -160,10 +161,18 @@ router.get('/status', async (req, res) => {
       return res.json({ available: false, reason: apiConfig.message });
     }
 
+    // Kiểm tra system setting chat_enabled
+    let chatEnabled = true;
+    try {
+      const rows = await db.execute({ sql: "SELECT value FROM settings WHERE key = 'chat_enabled'", args: [] });
+      chatEnabled = rows.rows[0]?.value !== '0'; // mặc định bật
+    } catch { /* ignore */ }
+
     return res.json({
-      available: true,
-      provider:  apiConfig.provider || 'gemini',
-      modelName: apiConfig.modelName || '',
+      available:   chatEnabled,
+      provider:    apiConfig.provider || 'gemini',
+      modelName:   apiConfig.modelName || '',
+      chatEnabled: chatEnabled,
     });
   } catch (err) {
     console.error('[chat/status]', err.message);

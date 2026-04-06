@@ -4,18 +4,8 @@ const { db } = require('../data/store');
 const requireAdmin = require('../middleware/requireAdmin');
 const { isRoot } = require('../services/permissions');
 const { encrypt, decrypt, isEncrypted } = require('../utils/crypto');
-
-/* Ẩn key, chỉ hiện 4 ký tự đầu + 4 ký tự cuối */
-function maskKey(key) {
-  if (!key || key.length < 12) return '••••';
-  return key.slice(0, 6) + '••••••••' + key.slice(-4);
-}
-
-// ─── Helper: đọc 1 setting ────────────────────────────────────────────────────
-async function getSetting(key) {
-  const result = await db.execute({ sql: 'SELECT value FROM settings WHERE key = ?', args: [key] });
-  return result.rows[0]?.value ?? null;
-}
+const { maskKey } = require('../utils/func');
+const { getSetting } = require('../services/settingsService');
 
 // ─── GET / ────────────────────────────────────────────────────────────────────
 router.get('/', async (req, res) => {
@@ -75,6 +65,28 @@ router.put('/', requireAdmin, async (req, res) => {
       changes.publish_api_url = val;
     }
 
+    // Tự động đăng bài sau khi viết xong (system-wide)
+    if ('auto_publish_enabled' in req.body) {
+      const val = req.body.auto_publish_enabled ? '1' : '0';
+      await db.execute({
+        sql: `INSERT INTO settings (key, value, label, updatedAt) VALUES ('auto_publish_enabled', ?, 'Tự động đăng bài sau khi viết xong', ?)
+              ON CONFLICT(key) DO UPDATE SET value = excluded.value, updatedAt = excluded.updatedAt`,
+        args: [val, updatedAt],
+      });
+      changes.auto_publish_enabled = val;
+    }
+
+    // Chatbot enable/disable
+    if ('chat_enabled' in req.body) {
+      const val = req.body.chat_enabled ? '1' : '0';
+      await db.execute({
+        sql: `INSERT INTO settings (key, value, label, updatedAt) VALUES ('chat_enabled', ?, 'Bật chatbot trợ lý AI ở giao diện', ?)
+              ON CONFLICT(key) DO UPDATE SET value = excluded.value, updatedAt = excluded.updatedAt`,
+        args: [val, updatedAt],
+      });
+      changes.chat_enabled = val;
+    }
+
     // Lịch chạy batch (HH:MM hoặc chuỗi rỗng để tắt)
     if ('batch_schedule_time' in req.body) {
       const val = String(req.body.batch_schedule_time || '').trim();
@@ -119,7 +131,6 @@ router.get('/api-config', async (req, res) => {
         gemini_model:        row.gemini_model || 'gemini-2.5-flash',
         serpapi_api_key:     rawSerp     ? maskKey(rawSerp)     : '',
         serpapi_api_key_set: !!rawSerp,
-        publish_api_url:     row.publish_api_url || '',
         scope: 'user',
       });
     }
@@ -152,7 +163,7 @@ router.put('/api-config', async (req, res) => {
   try {
     const user        = req.user || { id: 'admin', role: 'admin' };
     const authEnabled = process.env.AUTH_ENABLED === 'true';
-    const { gemini_api_key, gemini_model, serpapi_api_key, publish_api_url } = req.body;
+    const { gemini_api_key, gemini_model, serpapi_api_key } = req.body;
 
     // User thường khi AUTH bật → lưu vào users table (encrypt trước khi lưu)
     if (authEnabled && !isRoot(user)) {
@@ -169,7 +180,6 @@ router.put('/api-config', async (req, res) => {
         updates.push('serpapi_api_key = ?');
         args.push(encrypt(String(serpapi_api_key).trim()));
       }
-      if (publish_api_url !== undefined) { updates.push('publish_api_url = ?'); args.push(String(publish_api_url).trim()); }
 
       if (updates.length > 0) {
         args.push(user.id);

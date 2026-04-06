@@ -827,7 +827,7 @@ select.input-field option {
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
   width: 100%;
-  max-width: 520px;
+  max-width: 720px;
   max-height: 90vh;
   overflow-y: auto;
   animation: slideUp 0.25s ease;

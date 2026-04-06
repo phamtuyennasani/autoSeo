@@ -313,11 +313,6 @@ const HopDong = () => {
                         }}>
                           <div style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</div>
                           <div style={{ color: 'var(--text-muted)' }}>{c.industry || '—'}</div>
-                          <div>
-                            <span style={{ color: c.auto_publish ? '#16a34a' : 'var(--text-muted)', fontWeight: 600, fontSize: 12 }}>
-                              {c.auto_publish ? '✓ Bật' : '— Tắt'}
-                            </span>
-                          </div>
                           <div style={{ color: 'var(--text-muted)' }}>{fmtDate(c.createdAt)}</div>
                         </div>
                       ))}

@@ -40,19 +40,6 @@ const ArticleWriteModal = ({ keyword, title, companyId, keywordId, onClose, onSu
       refreshStats(); // Cập nhật token stats trên topbar
       if (onSuccess) onSuccess(res.data); // Notify parent to refresh article list
 
-      // Auto-publish nếu công ty bật (server đã xử lý, nhưng nếu status vẫn chưa published thì thử publish)
-      if (company?.auto_publish && res.data.publish_status !== 'published') {
-        setIsPublishing(true);
-        try {
-          const pubRes = await apiClient.post(`${API_ARTICLE}/${res.data.id}/publish`);
-          setGeneratedArticle(pubRes.data);
-          if (onSuccess) onSuccess(pubRes.data);
-        } catch (pubErr) {
-          console.warn('[ArticleWriteModal] auto-publish failed:', pubErr.message);
-        } finally {
-          setIsPublishing(false);
-        }
-      }
     } catch (err) {
       console.error(err);
       setError(err.response?.data?.details || 'Lỗi khi viết bài. Vui lòng kiểm tra lại cấu hình API hoặc thử lại sau.');

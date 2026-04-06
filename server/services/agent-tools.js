@@ -10,6 +10,7 @@ const { getEffectiveApiConfig } = require('./apiConfig');
 const { getSearchContext } = require('./serp');
 const { generateTitles } = require('./gemini');
 const { getVisibleUserIds } = require('./permissions');
+const { getSetting } = require('../routes/settings');
 
 /* ─────────────────────────────────────────────────────────────────────────────
    HELPER — resolve company: thử ID trước, sau đó fuzzy match theo tên
@@ -115,11 +116,6 @@ const TOOL_DECLARATIONS = [
         contract_code: {
           type: 'string',
           description: 'Mã hợp đồng (nếu có).',
-        },
-        auto_publish: {
-          type: 'boolean',
-          description: 'Tự động đăng bài sau khi viết xong? Mặc định: false.',
-          default: false,
         },
       },
       required: ['name', 'url'],
@@ -354,7 +350,7 @@ const TOOL_DECLARATIONS = [
 /* ─────────────────────────────────────────────────────────────────────────────
    TOOL: create_company
 ───────────────────────────────────────────────────────────────────────────── */
-async function toolCreateCompany({ name, url, industry, info, contract_code, auto_publish = false }, user) {
+async function toolCreateCompany({ name, url, industry, info, contract_code }, user) {
   if (!name?.trim()) return { error: 'Thiếu tên công ty. Cần cung cấp: name.' };
   if (!url?.trim())  return { error: 'Thiếu URL website. Cần cung cấp: url.' };
 
@@ -375,7 +371,7 @@ async function toolCreateCompany({ name, url, industry, info, contract_code, aut
     const createdAt = new Date().toISOString();
 
     await db.execute({
-      sql: 'INSERT INTO companies (id, name, url, info, contract_code, industry, auto_publish, createdAt, createdBy) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      sql: 'INSERT INTO companies (id, name, url, info, contract_code, industry, createdAt, createdBy) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       args: [
         id,
         name.trim(),
@@ -383,7 +379,6 @@ async function toolCreateCompany({ name, url, industry, info, contract_code, aut
         info?.trim() || '',
         contract_code?.trim() || '',
         industry?.trim() || '',
-        auto_publish ? 1 : 0,
         createdAt,
         user.id,
       ],
@@ -398,7 +393,6 @@ async function toolCreateCompany({ name, url, industry, info, contract_code, aut
         industry: industry?.trim() || '',
         info: info?.trim() || '',
         contract_code: contract_code?.trim() || '',
-        auto_publish,
         createdAt,
       },
       message: `✅ Đã tạo công ty "${name.trim()}" thành công! Website: ${normalizedUrl}`,
@@ -882,7 +876,7 @@ async function toolPublishArticle({ article_title }, user) {
   const { db } = require('../data/store');
 
   // Tìm article theo title (LIKE %title%)
-  let sql  = `SELECT a.*, c.name as company_name, c.publish_api_url, c.url as company_url
+  let sql  = `SELECT a.*, c.name as company_name, c.url as company_url
               FROM articles a LEFT JOIN companies c ON a.companyId = c.id WHERE a.title LIKE ?`;
   const args = [`%${article_title}%`];
 
@@ -908,20 +902,14 @@ async function toolPublishArticle({ article_title }, user) {
     return { error: `Bài "${article.title}" đã được đăng rồi. Không cần đăng lại.` };
   }
 
-  // Xác định publish_api_url
-  let userApiUrl = '';
-  if (user.id && user.id !== 'admin') {
-    const u = await db.execute({ sql: 'SELECT publish_api_url FROM users WHERE id = ?', args: [user.id] });
-    userApiUrl = u.rows[0]?.publish_api_url || '';
-  }
-
-  const apiUrl = article.publish_api_url || userApiUrl;
+  // Xác định publish_api_url từ cài đặt hệ thống
+  const apiUrl = await getSetting('publish_api_url');
   if (!apiUrl) {
-    return { error: 'Chưa cấu hình publish API URL. Vui lòng cập nhật trong Cài Đặt → Cấu Hình API.' };
+    return { error: 'Chưa cấu hình publish API URL. Vui lòng cập nhật trong Cài Đặt hệ thống.' };
   }
 
   const { publishArticle } = require('../routes/articles');
-  const company = { url: article.company_url, publish_api_url: article.publish_api_url };
+  const company = { url: article.company_url };
   const email = await (async () => {
     try {
       const r = await db.execute({ sql: 'SELECT u.email FROM keywords k LEFT JOIN users u ON k.createdBy = u.id WHERE k.id = ?', args: [article.keywordId] });
