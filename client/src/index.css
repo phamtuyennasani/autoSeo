@@ -1063,7 +1063,6 @@ select.input-field option {
   font-family: 'Plus Jakarta Sans', sans-serif;
   font-weight: 700;
   color: var(--text-primary);
-  margin-top: 2em;
   margin-bottom: 0.6em;
   line-height: 1.4;
   letter-spacing: -0.2px;

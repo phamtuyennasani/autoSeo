@@ -10,11 +10,9 @@
 const { db } = require('../data/store');
 const { recordWebhookEvent } = require('./metricsService');
 const { decrypt } = require('../utils/crypto');
-const { decodeHtmlEntities, genId, normalizeGmailEmail } = require('../utils/func');
+const { decodeHtmlEntities, genId, normalizeGmailEmail,normalizeUrlWithProtocol } = require('../utils/func');
 
-// ─── Gmail dot-insensitive normalize ──────────────────────────────────────────
-// Gmail: phamtuyennina@gmail.com === phamtuyen.nina@gmail.com === ph.a.m.t.u.y.e.n.n.i.n.a@gmail.com
-// Strip ALL dots trước @ của @gmail.com trước khi so sánh / lưu.
+
 
 // ─── Find or create user từ email webhook ──────────────────────────────────
 // Khi CRM1 gửi webhook kèm email → nếu user chưa tồn tại → tự tạo user mới
@@ -118,7 +116,7 @@ async function findOrCreateCompany(thongtincongtyvietbai, hopDongId, createdBy) 
     const companyId = existing.rows[0].id;
     await db.execute({
       sql: `UPDATE companies SET name = ?, industry = ?, info = ?, hop_dong_id = ?, createdBy = ?, url = ? WHERE id = ?`,
-      args: [TenCongTy, LinhVuc || null, ThongtinMota ? decodeHtmlEntities(ThongtinMota) : null, hopDongId, createdBy || null, Url || '', companyId],
+      args: [TenCongTy, LinhVuc || null, ThongtinMota ? decodeHtmlEntities(ThongtinMota) : null, hopDongId, createdBy || null, normalizeUrlWithProtocol(Url), companyId],
     });
     return companyId;
   }
@@ -127,7 +125,7 @@ async function findOrCreateCompany(thongtincongtyvietbai, hopDongId, createdBy) 
   await db.execute({
     sql: `INSERT INTO companies (id, name, url, info, contract_code, industry, hop_dong_id, createdBy, createdAt)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    args: [companyId, TenCongTy, Url || '', ThongtinMota ? decodeHtmlEntities(ThongtinMota) : null, MaHD, LinhVuc || null, hopDongId, createdBy || null, now],
+    args: [companyId, TenCongTy, normalizeUrlWithProtocol(Url), ThongtinMota ? decodeHtmlEntities(ThongtinMota) : null, MaHD, LinhVuc || null, hopDongId, createdBy || null, now],
   });
   return companyId;
 }
@@ -276,7 +274,7 @@ async function processWebhookEvent(eventId, payload, isRetry = false) {
   });
 
   try {
-    thongtincongtyvietbai.Url = thongtinHD.tenmien || ''; // đảm bảo có trường url để build link map sau này
+    thongtincongtyvietbai.Url = normalizeUrlWithProtocol(thongtinHD.tenmien); // đảm bảo có trường url để build link map sau này
     const hopDongId = await findOrCreateHopDong(thongtinHD);
     const companyId = await findOrCreateCompany(thongtincongtyvietbai, hopDongId, userId);
 

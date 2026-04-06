@@ -38,6 +38,7 @@ function IdCell({ id }) {
 }
 const API_COMPANY    = API.companies;
 const API_ARTICLE    = API.articles;
+const API_PUBLISH    = API.publish;
 const API_BATCH_JOBS = API.batchJobs;
 const API_WRITE_QUEUE = API.writeQueue;
 const API_SETTINGS   = API.settings;
@@ -101,7 +102,7 @@ const Keywords = () => {
   // Edit article modal
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingArticle, setEditingArticle] = useState(null);
-  const [editForm, setEditForm] = useState({ content: '', seo_title: '', seo_description: '' });
+  const [editForm, setEditForm] = useState({ content: '', seo_title: '', seo_description: '', short_content: '' });
   const [isSavingEdit, setIsSavingEdit] = useState(false);
 
   // Version history modal
@@ -461,7 +462,7 @@ const Keywords = () => {
   const handlePublishArticle = async (article) => {
     setPublishingIds(prev => new Set([...prev, article.id]));
     try {
-      const res = await apiClient.post(`${API_ARTICLE}/${article.id}/publish`);
+      const res = await apiClient.post(`${API_PUBLISH}/${article.id}/publish`);
       setArticlesOfKeyword(prev => prev.map(a => a.id === article.id ? res.data : a));
       if (viewingArticle?.id === article.id) setViewingArticle(res.data);
       toast.success(`Đã đăng bài thành công${res.data.publish_external_id ? ' #' + res.data.publish_external_id : ''}!`);
@@ -481,7 +482,7 @@ const Keywords = () => {
     if (unpublished.length === 0) return;
     setIsBatchPublishing(true);
     try {
-      const res = await apiClient.post(`${API_ARTICLE}/publish-batch`, { ids: unpublished.map(a => a.id) });
+      const res = await apiClient.post(`${API_PUBLISH}/publish-batch`, { ids: unpublished.map(a => a.id) });
       toast.success(`Đã đăng ${res.data.succeeded}/${res.data.total} bài thành công`);
       fetchArticlesForKeyword(selectedKeyword.keyword, selectedKeyword.companyId);
     } catch (err) {
@@ -516,6 +517,7 @@ const Keywords = () => {
       content: article.content || '',
       seo_title: article.seo_title || '',
       seo_description: article.seo_description || '',
+      short_content: article.short_content || '',
     });
     setIsEditModalOpen(true);
   };
@@ -813,6 +815,19 @@ const Keywords = () => {
                 </div>
               </div>
             )}
+            {viewingArticle.short_content && (
+              <div style={{ marginTop: '12px' }}>
+                <div style={{ display: 'flex',justifyContent: 'space-between', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)', marginBottom: '5px' }}>
+                  <div style={{ display: 'flex',alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)',  }}>
+                    <AlignLeft size={11} /> Short Content <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>({viewingArticle.short_content.length} ký tự)</span>
+                  </div>
+                  <CopyBtn field="short_content" />
+                </div>
+                <div id="short-content" style={{ fontSize: '13px', color: 'var(--text-secondary)', background: 'var(--bg-panel)', padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', lineHeight: '1.6' }}>
+                  {viewingArticle.short_content}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -924,6 +939,18 @@ const Keywords = () => {
                   />
                   <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
                     {editForm.seo_description.length} ký tự (khuyến nghị ≤ 160)
+                  </div>
+                </div>
+                <div className="input-group">
+                  <label className="input-label">Short Content</label>
+                  <textarea
+                    className="input-field" rows={3}
+                    value={editForm.short_content}
+                    onChange={e => setEditForm(f => ({ ...f, short_content: e.target.value }))}
+                    disabled={isSavingEdit}
+                  />
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                    {editForm.short_content.length} ký tự (khuyến nghị 200–250)
                   </div>
                 </div>
                 <div className="input-group">
@@ -1470,6 +1497,18 @@ const Keywords = () => {
                     />
                     <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
                       {editForm.seo_description.length} ký tự (khuyến nghị ≤ 160)
+                    </div>
+                  </div>
+                  <div className="input-group">
+                    <label className="input-label">Short Content</label>
+                    <textarea
+                      className="input-field" rows={3}
+                      value={editForm.short_content}
+                      onChange={e => setEditForm(f => ({ ...f, short_content: e.target.value }))}
+                      disabled={isSavingEdit}
+                    />
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                      {editForm.short_content.length} ký tự (khuyến nghị 200–250)
                     </div>
                   </div>
                   <div className="input-group">
@@ -2087,6 +2126,18 @@ const Keywords = () => {
                   />
                   <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
                     {editForm.seo_description.length} ký tự (khuyến nghị ≤ 160)
+                  </div>
+                </div>
+                <div className="input-group">
+                  <label className="input-label">Short Content</label>
+                  <textarea
+                    className="input-field" rows={3}
+                    value={editForm.short_content}
+                    onChange={e => setEditForm(f => ({ ...f, short_content: e.target.value }))}
+                    disabled={isSavingEdit}
+                  />
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                    {editForm.short_content.length} ký tự (khuyến nghị 200–250)
                   </div>
                 </div>
                 <div className="input-group">

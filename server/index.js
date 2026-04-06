@@ -98,6 +98,10 @@ app.use('/api/articles', (req, res, next) => {
   next();
 }, articlesRouter);
 
+// Publisher — publish bài viết lên CRM2 (tách riêng để dễ bảo trì)
+const { router: publisherRouter } = require('./services/publisher');
+app.use('/api/publish', publisherRouter);
+
 const PORT = process.env.PORT || 3001;
 
 // Khởi động: init DB trước, sau đó mới listen

@@ -7,64 +7,7 @@ const { getSetting } = require('./settings');
 const { applyInlineStyles } = require('../services/htmlUtils');
 const { applyInternalLinks } = require('../services/internalLinks');
 const { isRoot, getVisibleUserIds, canManageUsers } = require('../services/permissions');
-const { stripDots, slugify } = require('../utils/func');
-
-// ─── Helper: lấy email user tạo từ khóa ──────────────────────────────────────
-async function getKeywordCreatorEmail(keywordId, keywordText) {
-  try {
-    const q = keywordId
-      ? { sql: 'SELECT u.email FROM keywords k LEFT JOIN users u ON k.createdBy = u.id WHERE k.id = ?', args: [keywordId] }
-      : { sql: 'SELECT u.email FROM keywords k LEFT JOIN users u ON k.createdBy = u.id WHERE k.keyword = ? LIMIT 1', args: [keywordText] };
-    const result = await db.execute(q);
-    return result.rows[0]?.email || '';
-  } catch {
-    return '';
-  }
-}
-
-// ─── Helper: thực hiện publish + cập nhật DB ─────────────────────────────────
-async function publishArticle(articleId, article, company, apiUrl, email = '') {
-  const slug    = slugify(article.title || '');
-  const baseUrl = (company.url || '').replace(/\/$/, '');
-  const CRM_CONTENT_SECRET = process.env.CRM_CONTENT_SECRET || '2mSXg77BxgJsiUMz';
-  const token = CRM_CONTENT_SECRET + Math.floor(new Date().setHours(0, 0, 0, 0) / 1000);
-  const payload = {
-    namevi:           article.seo_title        || article.title || '',
-    title:            article.seo_title        || article.title || '',
-    descvi:           article.seo_description  || '',
-    description:      article.seo_description  || '',
-    linkweb:          `${baseUrl}/${slug}`,
-    keyword:          article.keyword          || '',
-    contentvi:        article.content          || '',
-    mahd:             company.contract_code    || '',
-    domain:           company.url              || '',
-    email:            stripDots(email),
-    date_public:      article.chuki            || null,
-    token:            token,
-    type:             (article.content_type=='blog'?'tin-tuc':article.content_type)     || 'tin-tuc',
-    keyword_focus:   article.keyword         || null,
-    // Nếu bài đã từng post lên CRM2 (retry) → truyền publish_external_id để CRM2 cập nhật thay vì tạo mới
-    publish_external_id: article.publish_external_id || null,
-  };
-  const res = await fetch(apiUrl, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify(payload),
-  });
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`API trả về ${res.status}: ${text.slice(0, 200)}`);
-  }
-  const data = res.json().catch(() => ({}));
-  const externalId = String(data?.result?.id || data?.result?.ID || data?.result?.post_id || article.publish_external_id || '');
-  const now = new Date().toISOString();
-  await db.execute({
-    sql:  "UPDATE articles SET publish_status = 'published', published_at = ?, publish_external_id = ? WHERE id = ?",
-    args: [now, externalId, articleId],
-  });
-  return { publish_status: 'published', published_at: now, publish_external_id: externalId };
-}
+const { publishArticle, getKeywordCreatorEmail } = require('../services/publisher');
 
 // ─── Helper: kiểm tra giới hạn bài/ngày (chỉ áp dụng khi dùng key hệ thống) ──
 async function checkArticleLimit(user) {
@@ -105,21 +48,34 @@ async function checkArticleLimit(user) {
 }
 
 // ─── Helper: gọi AI + lưu token + lưu DB ─────────────────────────────────────
-async function generateAndSave(keyword, title, companyId, company, createdBy = null, userConfig = {}, keywordId = null, writtenBy = null, chuki = null, contentType = 'blog', publishExternalId = null) {
+async function generateAndSave(keyword, title, companyId, company, createdBy = null, userConfig = {}, keywordId = null, writtenBy = null, chuki = null, contentType = 'blog', publishExternalId = null, customLinks = null, imageUrls = null) {
   // An toàn: ép tất cả về string/null (SQLite chỉ nhận primitives)
-  keyword    = keyword    == null ? null : String(keyword);
-  title      = title      == null ? null : String(title);
-  companyId  = companyId  == null ? null : String(companyId);
-  createdBy  = createdBy  == null ? null : String(createdBy);
-  keywordId  = keywordId  == null ? null : String(keywordId);
-  writtenBy  = writtenBy  == null ? null : String(writtenBy);
-  chuki      = chuki      == null ? null : String(chuki);
+  keyword     = keyword     == null ? null : String(keyword);
+  title       = title       == null ? null : String(title);
+  companyId   = companyId   == null ? null : String(companyId);
+  createdBy   = createdBy   == null ? null : String(createdBy);
+  keywordId   = keywordId   == null ? null : String(keywordId);
+  writtenBy   = writtenBy   == null ? null : String(writtenBy);
+  chuki       = chuki       == null ? null : String(chuki);
   contentType = contentType == null ? 'blog' : String(contentType);
+  customLinks = customLinks == null ? null : String(customLinks);
+  imageUrls   = imageUrls   == null ? null : String(imageUrls);
+
+  console.log('[generateAndSave] customLinks:', JSON.stringify(customLinks));
+  console.log('[generateAndSave] imageUrls:', JSON.stringify(imageUrls));
 
   const isFanpage = contentType === 'fanpage';
+
+  // Gắn customLinks/imageUrls vào config để truyền cho AI (chỉ áp dụng cho blog)
+  const aiConfig = { ...userConfig };
+  if (!isFanpage) {
+    if (customLinks) aiConfig.customLinks = customLinks;
+    if (imageUrls)   aiConfig.imageUrls   = imageUrls;
+  }
+
   const result = isFanpage
     ? await generateFanpageArticle(keyword, title, company, userConfig)
-    : await generateArticle(keyword, title, company, userConfig);
+    : await generateArticle(keyword, title, company, aiConfig);
 
   if (result.usage) {
     const usageId = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}-article`;
@@ -129,17 +85,19 @@ async function generateAndSave(keyword, title, companyId, company, createdBy = n
     });
   }
 
-  let content, seo_title, seo_description, thumbnail_prompt;
+  let content, seo_title, seo_description, short_content, thumbnail_prompt;
   if (isFanpage) {
     const hashtagStr = Array.isArray(result.hashtags) ? result.hashtags.join(' ') : '';
     content          = result.caption || '';
     seo_title        = result.post_type || title;
     seo_description  = hashtagStr;
+    short_content    = '';
     thumbnail_prompt = result.image_prompt || '';
   } else {
     content          = result.content          || '';
     seo_title        = result.seo_title        || title;
     seo_description  = result.seo_description  || '';
+    short_content    = result.short_content    || '';
     thumbnail_prompt = result.thumbnail_prompt || '';
   }
 
@@ -157,10 +115,10 @@ async function generateAndSave(keyword, title, companyId, company, createdBy = n
     const existingPublishExternalId = existing.rows[0].publish_external_id || null;
     await saveVersion(existing.rows[0].id, existing.rows[0], createdBy);
     await db.execute({
-      sql: 'UPDATE articles SET content = ?, seo_title = ?, seo_description = ?, thumbnail_prompt = ?, keywordId = ?, chuki = ?, content_type = ? WHERE id = ?',
-      args: [content, seo_title, seo_description, thumbnail_prompt, keywordId, chuki, contentType, existing.rows[0].id],
+      sql: 'UPDATE articles SET content = ?, seo_title = ?, seo_description = ?, short_content = ?, thumbnail_prompt = ?, keywordId = ?, chuki = ?, content_type = ? WHERE id = ?',
+      args: [content, seo_title, seo_description, short_content, thumbnail_prompt, keywordId, chuki, contentType, existing.rows[0].id],
     });
-    const updated = { ...existing.rows[0], content, seo_title, seo_description, thumbnail_prompt, keywordId, chuki, content_type: contentType, publish_external_id: existingPublishExternalId };
+    const updated = { ...existing.rows[0], content, seo_title, seo_description, short_content, thumbnail_prompt, keywordId, chuki, content_type: contentType, publish_external_id: existingPublishExternalId };
     // Auto-publish nếu hệ thống bật — truyền publish_external_id cũ để CRM2 cập nhật thay vì tạo mới
     if (await getSetting('auto_publish_enabled') === '1') {
       try {
@@ -183,8 +141,8 @@ async function generateAndSave(keyword, title, companyId, company, createdBy = n
   const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   const createdAt = new Date().toISOString();
   await db.execute({
-    sql: 'INSERT INTO articles (id, keyword, title, companyId, content, seo_title, seo_description, thumbnail_prompt, createdAt, createdBy, keywordId, writtenBy, chuki, content_type, publish_external_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    args: [id, keyword, title, companyId, content, seo_title, seo_description, thumbnail_prompt, createdAt, createdBy, keywordId, writtenBy, chuki, contentType, publishExternalId],
+    sql: 'INSERT INTO articles (id, keyword, title, companyId, content, seo_title, seo_description, short_content, thumbnail_prompt, createdAt, createdBy, keywordId, writtenBy, chuki, content_type, publish_external_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    args: [id, keyword, title, companyId, content, seo_title, seo_description, short_content, thumbnail_prompt, createdAt, createdBy, keywordId, writtenBy, chuki, contentType, publishExternalId],
   });
   const newArticle = { id, keyword, title, companyId, content, seo_title, seo_description, thumbnail_prompt, createdAt, createdBy, writtenBy, keywordId, chuki, content_type: contentType, publish_status: 'unpublished', publish_external_id: publishExternalId };
 
@@ -256,8 +214,8 @@ async function saveVersion(articleId, article, savedBy) {
   try {
     const vId = `v-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     await db.execute({
-      sql: 'INSERT INTO article_versions (id, articleId, content, seo_title, seo_description, savedAt, savedBy) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      args: [vId, articleId, article.content, article.seo_title, article.seo_description, new Date().toISOString(), savedBy],
+      sql: 'INSERT INTO article_versions (id, articleId, content, seo_title, seo_description, short_content, savedAt, savedBy) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      args: [vId, articleId, article.content, article.seo_title, article.seo_description, article.short_content || '', new Date().toISOString(), savedBy],
     });
     // Giữ tối đa 10 phiên bản gần nhất
     await db.execute({
@@ -431,7 +389,7 @@ router.delete('/:id', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     const user = req.user || { id: 'admin', role: 'root' };
-    const { keyword, title, companyId, keywordId = null, onBehalfOf = null } = req.body;
+    const { keyword, title, companyId, keywordId = null, onBehalfOf = null, customLinks = null, imageUrls = null } = req.body;
     if (!keyword || !title || !companyId)
       return res.status(400).json({ error: 'Thiếu thông tin bắt buộc' });
 
@@ -472,7 +430,7 @@ router.post('/', async (req, res) => {
       } catch { /* giữ mặc định nếu lỗi */ }
     }
 
-    const article = await generateAndSave(keyword, title, companyId, company, effectiveCreatedBy, apiConfig, keywordId, writtenBy);
+    const article = await generateAndSave(keyword, title, companyId, company, effectiveCreatedBy, apiConfig, keywordId, writtenBy, null, null, null, customLinks, imageUrls);
     res.json(article);
   } catch (error) {
     console.error('[single] Lỗi:', error.message);
@@ -560,7 +518,7 @@ router.post('/batch', async (req, res) => {
 async function saveArticleFromBatch(jobKeyword, jobCompanyId, result, createdBy = null, jobKeywordId = null, chuki = null, writtenBy = null, contentType = 'blog') {
   if (result.error) return { saved: false, message: `AI error: ${result.error}` };
 
-  const { seo_title = result.title, seo_description = '', thumbnail_prompt = '' } = result;
+  const { seo_title = result.title, seo_description = '', short_content = '', thumbnail_prompt = '' } = result;
   // Inject internal links cho batch articles
   let content = result.content || '';
   try {
@@ -582,10 +540,10 @@ async function saveArticleFromBatch(jobKeyword, jobCompanyId, result, createdBy 
     : [jobKeyword, result.title, jobCompanyId];
 
   const insertResult = await db.execute({
-    sql: `INSERT INTO articles (id, keyword, title, companyId, content, seo_title, seo_description, thumbnail_prompt, createdAt, createdBy, keywordId, chuki, writtenBy, content_type)
-          SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+    sql: `INSERT INTO articles (id, keyword, title, companyId, content, seo_title, seo_description, short_content, thumbnail_prompt, createdAt, createdBy, keywordId, chuki, writtenBy, content_type)
+          SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
           WHERE NOT EXISTS (${existsCheck})`,
-    args: [id, jobKeyword, result.title, jobCompanyId, content, seo_title, seo_description, thumbnail_prompt, createdAt, createdBy, jobKeywordId, chuki, writtenBy, contentType,
+    args: [id, jobKeyword, result.title, jobCompanyId, content, seo_title, seo_description, short_content, thumbnail_prompt, createdAt, createdBy, jobKeywordId, chuki, writtenBy, contentType,
            ...existsArgs],
   });
 
@@ -614,85 +572,6 @@ async function saveArticleFromBatch(jobKeyword, jobCompanyId, result, createdBy 
 
   return { saved: true, id, title: result.title, seo_title, createdAt };
 }
-
-// ─── POST /:id/publish — Publish 1 bài lên API bên thứ 3 ────────────────────
-router.post('/:id/publish', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const aResult = await db.execute({
-      sql: 'SELECT a.*, c.url, c.contract_code, c.industry FROM articles a LEFT JOIN companies c ON a.companyId = c.id WHERE a.id = ?',
-      args: [id],
-    });
-    const article = aResult.rows[0];
-    if (!article) return res.status(404).json({ error: 'Không tìm thấy bài viết' });
-
-    // Chỉ dùng URL từ cài đặt hệ thống
-    const apiUrl = isRoot(req.user) ? await getSetting('publish_api_url') : '';
-    if (!apiUrl) return res.status(400).json({ error: 'Bạn chưa cấu hình URL API đăng bài. Vui lòng liên hệ admin để cập nhật trong Cài Đặt hệ thống.' });
-
-    const company = {
-      url:           article.url,
-      contract_code: article.contract_code,
-      industry:      article.industry,
-    };
-
-    const email = await getKeywordCreatorEmail(article.keywordId, article.keyword);
-    const pubResult = await publishArticle(id, article, company, apiUrl, email);
-
-    const updated = await db.execute({
-      sql: 'SELECT a.*, c.name as companyName FROM articles a LEFT JOIN companies c ON a.companyId = c.id WHERE a.id = ?',
-      args: [id],
-    });
-    res.json(updated.rows[0]);
-  } catch (err) {
-    // Đánh dấu failed trong DB
-    await db.execute({
-      sql:  "UPDATE articles SET publish_status = 'failed' WHERE id = ?",
-      args: [req.params.id],
-    }).catch(() => {});
-    console.error('[articles] publish:', err.message);
-    res.status(500).json({ error: err.message || 'Publish thất bại' });
-  }
-});
-
-// ─── POST /publish-batch — Publish nhiều bài cùng lúc ───────────────────────
-router.post('/publish-batch', async (req, res) => {
-  try {
-    const { ids } = req.body;
-    if (!Array.isArray(ids) || ids.length === 0)
-      return res.status(400).json({ error: 'Thiếu danh sách bài viết cần publish' });
-
-    const defaultApiUrl = await getSetting('publish_api_url');
-    const results = [];
-
-    for (const id of ids) {
-      try {
-        const aResult = await db.execute({
-          sql: 'SELECT a.*, c.url, c.contract_code, c.industry FROM articles a LEFT JOIN companies c ON a.companyId = c.id WHERE a.id = ?',
-          args: [id],
-        });
-        const article = aResult.rows[0];
-        if (!article) { results.push({ id, success: false, error: 'Không tìm thấy' }); continue; }
-
-        const apiUrl = defaultApiUrl;
-        if (!apiUrl) { results.push({ id, success: false, error: 'Chưa cấu hình API URL' }); continue; }
-
-        const company = { url: article.url, contract_code: article.contract_code, industry: article.industry };
-        const email = await getKeywordCreatorEmail(article.keywordId, article.keyword);
-        await publishArticle(id, article, company, apiUrl, email);
-        results.push({ id, success: true });
-      } catch (e) {
-        await db.execute({ sql: "UPDATE articles SET publish_status = 'failed' WHERE id = ?", args: [id] }).catch(() => {});
-        results.push({ id, success: false, error: e.message });
-      }
-    }
-
-    res.json({ results, total: ids.length, succeeded: results.filter(r => r.success).length, failed: results.filter(r => !r.success).length });
-  } catch (err) {
-    console.error('[articles] publish-batch:', err.message);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
 
 module.exports = router;
 module.exports.saveArticleFromBatch = saveArticleFromBatch;

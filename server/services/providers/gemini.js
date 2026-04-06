@@ -82,10 +82,19 @@ async function generateArticle(keyword, title, companyInfo, config = {}) {
   if (config.customPrompt) {
     promptByUser = `\n\n## Yêu cầu phong cách viết của tác giả (bắt buộc tuân theo):\n${config.customPrompt}`;
   }
-  let prompt = buildArticlePrompt(keyword, title, companyInfo, promptByUser);
+  const customLinks = config.customLinks || '';
+  const imageUrls   = config.imageUrls   || '';
+  let prompt = buildArticlePrompt(keyword, title, companyInfo, promptByUser, customLinks, imageUrls);
   return withKeyFallback(keysStr, async (key) => {
     const genAI = new GoogleGenerativeAI(key);
-    const model = genAI.getGenerativeModel({ model: modelName, systemInstruction: ARTICLE_SYSTEM_INSTRUCTION });
+    const model = genAI.getGenerativeModel({ 
+                    model: modelName,
+                    tools: [{ googleSearch: {} }], 
+                    systemInstruction: {
+                      role: "system",
+                      parts: [{ text: ARTICLE_SYSTEM_INSTRUCTION }],
+                    }
+                  });
     const result = await model.generateContent(prompt);
     const raw    = result.response.text().trim();
 
@@ -113,6 +122,7 @@ async function generateArticle(keyword, title, companyInfo, config = {}) {
       return {
         seo_title:        typeof parsed.seo_title === 'string'        ? parsed.seo_title                                                                 : title,
         seo_description:  typeof parsed.seo_description === 'string'  ? parsed.seo_description                                                             : '',
+        short_content:     typeof parsed.short_content === 'string'     ? parsed.short_content                                                            : '',
         thumbnail_prompt: typeof parsed.thumbnail_prompt === 'string' ? parsed.thumbnail_prompt                                                            : '',
         content:          typeof parsed.content === 'string'          ? applyInlineStyles(marked.parse(parsed.content), companyInfo?.article_styles || {}) : '',
         usage,

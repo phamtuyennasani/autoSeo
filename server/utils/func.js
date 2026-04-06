@@ -1,6 +1,9 @@
 const crypto = require('crypto');
 const CHECK_INTERVAL_MS = 60 * 60 * 1000; // 60 phút
 const SCHEDULE_TICK_MS  =      60 * 1000; // 1 phút — kiểm tra lịch chạy
+// ─── Gmail dot-insensitive normalize ──────────────────────────────────────────
+// Gmail: phamtuyennina@gmail.com === phamtuyen.nina@gmail.com === ph.a.m.t.u.y.e.n.n.i.n.a@gmail.com
+// Strip ALL dots trước @ của @gmail.com trước khi so sánh / lưu.
 function stripDots(email) {
   const [local, domain] = email.split('@');
   return local.replace(/\./g, '') + '@' + domain;
@@ -11,7 +14,22 @@ function createNasaniToken(timestamp) {
   if (!secret) throw new Error('NASANI_API_SECRET chưa được cấu hình trong .env');
   return crypto.createHmac('sha256', secret).update(timestamp.toString()).digest('base64');
 }
-
+// ─── Normalize URL: đảm bảo có protocol ──────────────────────────────────────
+/**
+ * Chuẩn hóa URL từ CRM1 (tenmien).
+ * - Nếu không có protocol → thêm 'https://'
+ * - Nếu có 'http://' → giữ nguyên (hoặc nâng cấp lên 'https://')
+ * - Trim trailing slash
+ */
+function normalizeUrlWithProtocol(url) {
+  if (!url) return '';
+  const trimmed = url.trim().replace(/\/+$/, '');
+  if (!trimmed) return '';
+  if (!/^https?:\/\//i.test(trimmed)) {
+    return `http://${trimmed}`;
+  }
+  return trimmed;
+}
 /**
  * Decode HTML entities → raw HTML.
  * CRM1 dùng htmlspecialchars PHP, kết quả truyền lên chứa: &lt; &gt; &quot; &amp; &nbsp;
@@ -83,4 +101,13 @@ function maskKey(key) {
 function LOG(args) {
   console.log(args);
 }
-module.exports = { stripDots, createNasaniToken, normalizeGmailEmail, decodeHtmlEntities, genId, slugify, maskKey,LOG,CHECK_INTERVAL_MS,SCHEDULE_TICK_MS };
+// ─── Strip HTML tags, chỉ lấy text thuần ──────────────────────────────────────
+function stripHtmlTags(str) {
+  if (!str || typeof str !== 'string') return '';
+  return str
+    .replace(/&[a-z]+;/gi, ' ')   // decode HTML entities first
+    .replace(/<[^>]*>/g, ' ')      // strip all tags
+    .replace(/\s+/g, ' ')          // collapse whitespace
+    .trim();
+}
+module.exports = { stripDots,stripHtmlTags,normalizeUrlWithProtocol, createNasaniToken, normalizeGmailEmail, decodeHtmlEntities, genId, slugify, maskKey,LOG,CHECK_INTERVAL_MS,SCHEDULE_TICK_MS };

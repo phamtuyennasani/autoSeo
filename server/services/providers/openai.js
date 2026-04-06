@@ -81,7 +81,9 @@ async function generateArticle(keyword, title, companyInfo, config = {}) {
   if (!keysStr) throw new Error('OpenAI API key chưa được cấu hình. Vào Cài đặt → Cấu hình API để nhập key.');
 
   const modelName = resolveModel(config);
-  const prompt    = buildArticlePrompt(keyword, title, companyInfo);
+  const customLinks = config.customLinks || '';
+  const imageUrls   = config.imageUrls   || '';
+  const prompt      = buildArticlePrompt(keyword, title, companyInfo, '', customLinks, imageUrls);
 
   return withKeyFallback(keysStr, async (key) => {
     const client = new OpenAI({ apiKey: key });
@@ -117,6 +119,7 @@ async function generateArticle(keyword, title, companyInfo, config = {}) {
       return {
         seo_title:        typeof parsed.seo_title === 'string'        ? parsed.seo_title                                                                 : title,
         seo_description:  typeof parsed.seo_description === 'string'  ? parsed.seo_description                                                             : '',
+        short_content:     typeof parsed.short_content === 'string'     ? parsed.short_content                                                            : '',
         thumbnail_prompt: typeof parsed.thumbnail_prompt === 'string' ? parsed.thumbnail_prompt                                                            : '',
         content:          typeof parsed.content === 'string'          ? applyInlineStyles(marked.parse(parsed.content), companyInfo?.article_styles || {}) : '',
         usage,

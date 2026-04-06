@@ -6,7 +6,6 @@ const { getSetting } = require('./settings');
 const { getJob, startJob, stopJob, emitter } = require('../services/writeQueue');
 const { getEffectiveApiConfig } = require('../services/apiConfig');
 const { isRoot, getVisibleUserIds } = require('../services/permissions');
-const { getSetting } = require('./settings');
 
 // ─── POST / — Bắt đầu write-queue job ────────────────────────────────────────
 router.post('/', async (req, res) => {

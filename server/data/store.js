@@ -61,6 +61,7 @@ async function initDb() {
       content TEXT NOT NULL,
       seo_title TEXT,
       seo_description TEXT,
+      short_content TEXT,
       image_prompts TEXT,
       createdAt TEXT NOT NULL,
       FOREIGN KEY (companyId) REFERENCES companies(id)
@@ -97,6 +98,7 @@ async function initDb() {
       content TEXT,
       seo_title TEXT,
       seo_description TEXT,
+      short_content TEXT,
       savedAt TEXT NOT NULL,
       savedBy TEXT
     );
@@ -299,6 +301,7 @@ async function initDb() {
     // chuki — chu kỳ từ CRM1, dùng để gửi lại CRM2 khi publish
     { table: 'batch_jobs', col: 'chuki', ddl: 'ALTER TABLE batch_jobs ADD COLUMN chuki TEXT' },
     { table: 'articles',   col: 'chuki', ddl: 'ALTER TABLE articles ADD COLUMN chuki TEXT' },
+    { table: 'article_versions', col: 'short_content', ddl: 'ALTER TABLE article_versions ADD COLUMN short_content TEXT' },
     // source — 'webhook' nếu tạo từ CRM1, null nếu tạo thủ công
     { table: 'batch_jobs',     col: 'source', ddl: "ALTER TABLE batch_jobs ADD COLUMN source TEXT" },
     { table: 'keywords',       col: 'source',        ddl: "ALTER TABLE keywords ADD COLUMN source TEXT" },

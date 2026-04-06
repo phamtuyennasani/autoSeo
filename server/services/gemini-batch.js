@@ -40,11 +40,12 @@ function parseResponse(raw, titleFallback) {
     return {
       seo_title:        typeof p.seo_title === 'string'        ? p.seo_title        : titleFallback,
       seo_description:  typeof p.seo_description === 'string'  ? p.seo_description  : '',
+      short_content:     typeof p.short_content === 'string'     ? p.short_content     : '',
       thumbnail_prompt: typeof p.thumbnail_prompt === 'string' ? p.thumbnail_prompt : '',
       content:          typeof p.content === 'string'          ? p.content          : '',
     };
   } catch {
-    return { seo_title: titleFallback, seo_description: '', thumbnail_prompt: '', content: raw || '' };
+    return { seo_title: titleFallback, seo_description: '', short_content: '', thumbnail_prompt: '', content: raw || '' };
   }
 }
 
@@ -61,7 +62,7 @@ async function submitBatchJob(keyword, titles, companyInfo, apiKey) {
   if (!keysStr) throw new Error('GEMINI_API_KEY is not configured.');
 
   const inlinedRequests = titles.map((title) => ({
-    contents: [{ parts: [{ text: buildArticlePrompt(keyword, title, companyInfo) }], role: 'user' }],
+    contents: [{ parts: [{ text: buildArticlePrompt(keyword, title, companyInfo) }], role: 'user' }],  // customLinks/imageUrls không áp dụng cho batch
     config: { systemInstruction: { parts: [{ text: ARTICLE_SYSTEM_INSTRUCTION }] }, temperature: 1 },
   }));
 
