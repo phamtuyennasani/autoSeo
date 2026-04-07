@@ -42,24 +42,25 @@ async function generateTitles(keyword, searchContext, count = 10, config = {}) {
     : buildTitlesPrompt(keyword, searchContext, count, config.keywordRequirements);
 
   return withKeyFallback(keysStr, async (key) => {
-    const client = new Anthropic({ apiKey: key,baseURL: "http://pro-x.io.vn" });
+    const clientConfig = { apiKey: key };
+    if (config.claudeBaseUrl) clientConfig.baseURL = config.claudeBaseUrl;
+    const client = new Anthropic(clientConfig);
+   
     const response = await client.messages.create({
       model: modelName,
-      max_tokens: 4096,
       system: 'You are an SEO expert. Return only valid JSON arrays without any explanation or markdown.',
       messages: [
         { role: 'user', content: prompt },
       ],
     });
-
-    const responseText = (response.content[0]?.type === 'text' ? response.content[0].text : '').trim();
+    const textBlock = response.content.find(b => b.type === 'text');
+    const responseText = textBlock?.text?.trim() || '';
     const usage        = buildUsage(response, modelName);
 
     const startIdx = responseText.indexOf('[');
     const endIdx   = responseText.lastIndexOf(']') + 1;
     let jsonStr = responseText;
     if (startIdx !== -1 && endIdx > startIdx) jsonStr = responseText.substring(startIdx, endIdx);
-
     try {
       const raw = JSON.parse(jsonStr);
       const allTitles = raw.map(t =>
@@ -95,17 +96,19 @@ async function generateArticle(keyword, title, companyInfo, config = {}) {
   const prompt = buildArticlePrompt(keyword, title, companyInfo, promptByUser, customLinks, imageUrls);
 
   return withKeyFallback(keysStr, async (key) => {
-    const client = new Anthropic({ apiKey: key,baseURL: "http://pro-x.io.vn" });
+    const clientConfig = { apiKey: key };
+    if (config.claudeBaseUrl) clientConfig.baseURL = config.claudeBaseUrl;
+    const client = new Anthropic(clientConfig);
     const response = await client.messages.create({
       model: modelName,
-      max_tokens: 8192,
       system: ARTICLE_SYSTEM_INSTRUCTION,
       messages: [
         { role: 'user', content: prompt },
       ],
     });
 
-    const raw   = (response.content[0]?.type === 'text' ? response.content[0].text : '').trim();
+    const textBlock = response.content.find(b => b.type === 'text');
+    const raw   = (textBlock?.text || '').trim();
     const usage = buildUsage(response, modelName);
 
     const extractJson = (str) => {
@@ -156,17 +159,19 @@ async function generateFanpageArticle(keyword, title, companyInfo, config = {}) 
   const prompt = buildFanpageArticlePrompt(keyword, title, companyInfo, promptByUser);
 
   return withKeyFallback(keysStr, async (key) => {
-    const client = new Anthropic({ apiKey: key });
+    const clientConfig = { apiKey: key };
+    if (config.claudeBaseUrl) clientConfig.baseURL = config.claudeBaseUrl;
+    const client = new Anthropic(clientConfig);
     const response = await client.messages.create({
       model: modelName,
-      max_tokens: 4096,
       system: ARTICLE_SYSTEM_INSTRUCTION,
       messages: [
         { role: 'user', content: prompt },
       ],
     });
 
-    const raw   = (response.content[0]?.type === 'text' ? response.content[0].text : '').trim();
+    const textBlock = response.content.find(b => b.type === 'text');
+    const raw   = (textBlock?.text || '').trim();
     const usage = buildUsage(response, modelName);
 
     const extractJson = (str) => {
@@ -254,17 +259,19 @@ Ràng buộc:
 - variants là mảng string, KHÔNG được trùng với keyword gốc`;
 
   return withKeyFallback(keysStr, async (key) => {
-    const client = new Anthropic({ apiKey: key,baseURL: "http://pro-x.io.vn" });
+    const clientConfig = { apiKey: key };
+    if (config.claudeBaseUrl) clientConfig.baseURL = config.claudeBaseUrl;
+    const client = new Anthropic(clientConfig);
     const response = await client.messages.create({
       model: modelName,
-      max_tokens: 8192,
       system: 'You are an SEO expert. Return only valid JSON.',
       messages: [
         { role: 'user', content: prompt },
       ],
     });
 
-    const text  = (response.content[0]?.type === 'text' ? response.content[0].text : '').trim();
+    const textBlock = response.content.find(b => b.type === 'text');
+    const text  = (textBlock?.text || '').trim();
     const usage = buildUsage(response, modelName);
 
     let parsed;

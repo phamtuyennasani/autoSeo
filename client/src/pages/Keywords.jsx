@@ -28,7 +28,7 @@ function IdCell({ id }) {
     setTimeout(() => setCopied(false), 1200);
   };
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+    <div className="id-cell-wrap" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
       <span style={{ fontFamily: 'monospace', fontSize: '11px', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis' }}>{id}</span>
       <button onClick={copy} title="Copy ID" style={{ background: 'none', border: 'none', padding: '2px', cursor: 'pointer', color: copied ? 'var(--success)' : 'var(--text-primary)', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
         {copied ? <Check size={11} /> : <Copy size={11} />}
@@ -1218,239 +1218,78 @@ const Keywords = () => {
               const topic = item.topic || '';
               const article = getArticleForTitle(title);
               const isThisWriting = isWritingAll && !article;
-              const isInQueue = writeQueueTitles.has(title); // title này đã được submit vào SSE queue
+              const isInQueue = writeQueueTitles.has(title);
               const queueResult = writeQueueJob?.results?.find(r => r?.title === title);
               const isQueueWritingThis = writeQueueJob?.status === 'running' && writeQueueJob?.currentTitle === title;
-
               const isChecked = checkedTitles.has(title);
-              // Checkable: chưa có bài + không có queue đang chạy + không trong batch + không trong SSE queue hiện tại
               const isCheckable = !article && !writeQueueJob && !pendingBatchTitles.has(title) && !isInQueue;
               const isEditingThis = editingTitleIdx === idx;
+              const hasPost = article?.publish_status === 'published';
+              const hasPostFailed = article?.publish_status === 'failed';
+              const canPublish = selectedKeyword?.content_type !== 'fanpage' && !hasPost && !!systemPublishUrl;
+              const isWritten = !!article;
+              const isPendingBatch = pendingBatchTitles.has(title);
+              const isInSseQueue = isInQueue && writeQueueJob?.status === 'running' && !queueResult;
+              const isQueueError = queueResult?.status === 'error';
+              const isQueueSuccess = queueResult?.status === 'done';
+              const numStr = String(idx + 1).padStart(2, '0');
+
+              const StatusIcon = isWritten || isQueueSuccess
+                ? <CheckCircle2 size={16} color="var(--success)" />
+                : isQueueWritingThis ? <Loader2 size={16} className="animate-spin" color="var(--accent)" />
+                : isQueueError ? <XCircle size={16} color="var(--danger)" />
+                : isPendingBatch ? <Layers size={16} color="var(--info)" />
+                : isInSseQueue ? <Zap size={16} color="var(--accent)" />
+                : <Clock size={16} color="var(--text-muted)" />;
+
+              const rowClass = isWritten
+                ? 'title-desktop-item--written'
+                : isQueueError ? 'title-desktop-item--error'
+                : isPendingBatch ? 'title-desktop-item--pending'
+                : isChecked ? 'title-desktop-item--checked'
+                : 'title-desktop-item--default';
+
               return (
                 <div
                   key={idx}
-                  onClick={isCheckable && !isEditingThis ? () => setCheckedTitles(prev => { const next = new Set(prev); isChecked ? next.delete(title) : next.add(title); return next; }) : undefined}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    padding: '12px 16px',
-                    background: article
-                      ? 'rgba(34,197,94,0.04)'
-                      : isChecked
-                        ? 'rgba(99,102,241,0.05)'
-                        : 'var(--bg-panel)',
-                    border: `1px solid ${article
-                      ? 'rgba(34,197,94,0.2)'
-                      : isChecked
-                        ? 'rgba(99,102,241,0.35)'
-                        : 'var(--border)'}`,
-                    borderRadius: 'var(--radius-md)',
-                    transition: 'all 0.15s',
-                    cursor: isCheckable ? 'pointer' : 'default',
-                  }}>
-                  {/* Custom Checkbox - chỉ hiện cho tiêu đề chưa viết và khi không có queue */}
-                  {isCheckable && (
-                    <div
-                      onClick={e => e.stopPropagation()}
-                      style={{ flexShrink: 0 }}
-                    >
-                      <div
-                        onClick={() => setCheckedTitles(prev => { const next = new Set(prev); isChecked ? next.delete(title) : next.add(title); return next; })}
-                        style={{
-                          width: 18, height: 18, borderRadius: 5, cursor: 'pointer',
-                          border: `2px solid ${isChecked ? 'var(--accent)' : 'var(--border)'}`,
-                          background: isChecked ? 'var(--accent)' : 'transparent',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          transition: 'all 0.15s', flexShrink: 0,
-                        }}
-                      >
-                        {isChecked && <Check size={11} color="#fff" strokeWidth={3} />}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Index */}
-                  <span style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-muted)', width: '20px', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
-                    {String(idx + 1).padStart(2, '0')}
-                  </span>
-
-                  {/* Status Icon */}
-                  {article
-                    ? <CheckCircle2 size={16} color="var(--success)" style={{ flexShrink: 0 }} />
-                    : isQueueWritingThis
-                      ? <Loader2 size={16} className="animate-spin" color="var(--accent)" style={{ flexShrink: 0 }} />
-                      : queueResult?.status === 'done'
-                        ? <CheckCircle2 size={16} color="var(--success)" style={{ flexShrink: 0 }} />
-                        : queueResult?.status === 'error'
-                          ? <XCircle size={16} color="var(--danger)" style={{ flexShrink: 0 }} />
-                          : pendingBatchTitles.has(title)
-                            ? <Layers size={16} color="var(--accent)" style={{ flexShrink: 0 }} />
-                            : isInQueue && writeQueueJob?.status === 'running'
-                              ? <Zap size={16} color="var(--accent)" style={{ flexShrink: 0 }} />
-                              : <Clock size={16} color="var(--text-muted)" style={{ flexShrink: 0 }} />
-                  }
-
-                  {/* Title + Topic tag / Input khi edit */}
-                  {isEditingThis ? (
-                    <input
-                      autoFocus
-                      value={editingTitleValue}
-                      onChange={e => setEditingTitleValue(e.target.value)}
-                      onKeyDown={e => {
-                        if (e.key === 'Enter') handleSaveTitleEdit(idx, title);
-                        if (e.key === 'Escape') setEditingTitleIdx(null);
-                      }}
-                      onClick={e => e.stopPropagation()}
-                      style={{
-                        flex: 1, fontSize: '14px', lineHeight: '1.5', padding: '3px 8px',
-                        border: '1.5px solid var(--accent)', borderRadius: 6,
-                        background: 'var(--bg-input, var(--bg-panel))',
-                        color: 'var(--text-primary)', outline: 'none',
-                      }}
-                    />
-                  ) : (
-                    <span style={{ fontSize: '14px', lineHeight: '1.5', color: 'var(--text-primary)', flex: 1, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                      {title}
-                      {topic && (
-                        <span style={{
-                          fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 20,
-                          background: 'var(--accent-subtle)', color: 'var(--accent)',
-                          border: '1px solid rgba(99,102,241,0.2)', whiteSpace: 'nowrap', flexShrink: 0,
-                        }}>
-                          {topic}
-                        </span>
-                      )}
-                    </span>
-                  )}
-
-                  {/* Date written */}
-                  {article && (
-                    <span style={{ fontSize: '11px', color: 'var(--text-secondary)', flexShrink: 0 }}>
-                      {formatDate(article.createdAt)}
-                    </span>
-                  )}
-
-                  {/* Publish status badge */}
-                  {article?.publish_status === 'published' && (
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: '11px', fontWeight: 600, color: 'var(--success)', background: 'rgba(34,197,94,0.08)', padding: '2px 8px', borderRadius: 20, border: '1px solid rgba(34,197,94,0.2)', flexShrink: 0, whiteSpace: 'nowrap' }}>
-                      <Upload size={10} /> Đã post{article.publish_external_id ? ` #${article.publish_external_id}` : ''}
-                    </span>
-                  )}
-                  {article?.publish_status === 'failed' && (
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: '11px', fontWeight: 600, color: 'var(--danger)', background: 'rgba(239,68,68,0.08)', padding: '2px 8px', borderRadius: 20, border: '1px solid rgba(239,68,68,0.2)', flexShrink: 0 }}>
-                      Lỗi post
-                    </span>
-                  )}
-
-                  {/* Actions */}
-                  <div onClick={e => e.stopPropagation()} style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                  onClick={isCheckable && !isEditingThis ? () => setCheckedTitles(prev => { const n = new Set(prev); isChecked ? n.delete(title) : n.add(title); return n; }) : undefined}
+                  className={`title-desktop-item ${rowClass}`}
+                >
+                  <span className="title-desktop-num">{numStr}</span>
+                  {StatusIcon}
+                  <div className="title-desktop-title">
                     {isEditingThis ? (
-                      <>
-                        <button
-                          onClick={() => handleSaveTitleEdit(idx, title)}
-                          className="btn btn-sm btn-primary"
-                          style={{ gap: 4 }}
-                          title="Lưu (Enter)"
-                        >
-                          <Check size={13} /> Lưu
-                        </button>
-                        <button
-                          onClick={() => setEditingTitleIdx(null)}
-                          className="btn btn-sm btn-outline"
-                          title="Hủy (Esc)"
-                        >
-                          <X size={13} />
-                        </button>
-                      </>
-                    ) : article ? (
-                      <>
-                        <button
-                          onClick={() => setViewingArticle(article)}
-                          className="btn btn-sm btn-highlight"
-                          style={{ gap: '5px' }}
-                        >
-                          <Eye size={13} /> Xem bài
-                        </button>
-                        <button
-                          onClick={() => handleEditArticle(article)}
-                          className="btn btn-sm btn-outline"
-                          style={{ gap: '5px' }}
-                        >
-                          <Edit3 size={13} /> Sửa
-                        </button>
-                        {selectedKeyword?.content_type !== 'fanpage' &&
-                         article.publish_status !== 'published' &&
-                         systemPublishUrl && (
-                          <button
-                            onClick={() => handlePublishArticle(article)}
-                            className="btn btn-sm btn-outline"
-                            style={{ gap: '5px', color: 'var(--success)', borderColor: 'rgba(34,197,94,0.3)' }}
-                            disabled={publishingIds.has(article.id)}
-                            title={article.publish_status === 'failed' ? 'Thử lại đăng bài' : 'Đăng bài lên API'}
-                          >
-                            {publishingIds.has(article.id)
-                              ? <><Loader2 size={13} className="animate-spin" /> Đang post...</>
-                              : <><Upload size={13} /> {article.publish_status === 'failed' ? 'Thử lại' : 'Post'}</>
-                            }
-                          </button>
-                        )}
-                        <button
-                          onClick={() => {
-                            setViewingArticle(null);
-                            handleRewrite(article);
-                          }}
-                          className="btn btn-sm btn-outline"
-                          style={{ gap: '5px', color: 'var(--warning)', borderColor: 'rgba(245,158,11,0.3)' }}
-                          disabled={isWritingAll}
-                        >
-                          <RefreshCw size={13} /> Viết lại
-                        </button>
-                      </>
-                    ) : isQueueWritingThis ? (
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '11px', fontWeight: '600', color: 'var(--accent)', background: 'var(--accent-subtle)', padding: '3px 9px', borderRadius: 20 }}>
-                        <Loader2 className="animate-spin" size={11} /> Đang viết...
-                      </span>
-                    ) : isInQueue && writeQueueJob?.status === 'running' && queueResult === undefined ? (
-                      // Title này đã submit vào queue, đang chờ lượt viết
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '11px', fontWeight: '600', color: 'var(--text-muted)', background: 'var(--bg-panel)', padding: '3px 9px', borderRadius: 20, border: '1px solid var(--border)' }}>
-                        <Clock size={11} /> Chờ viết
-                      </span>
-                    ) : queueResult?.status === 'error' ? (
-                      <button
-                        onClick={() => { setWriteModalTitle(title); setIsWriteModalOpen(true); }}
-                        className="btn btn-primary btn-sm"
-                        title={queueResult.error}
-                      >
-                        <RefreshCw size={13} /> Thử lại
-                      </button>
-                    ) : pendingBatchTitles.has(title) ? (
-                      // Tiêu đề này đang nằm trong batch job đang chờ
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '11px', fontWeight: '600', color: 'var(--accent)', background: 'var(--accent-subtle)', padding: '3px 9px', borderRadius: 20 }}>
-                        <Layers size={11} /> Đã gửi Batch
-                      </span>
+                      <input autoFocus value={editingTitleValue}
+                        onChange={e => setEditingTitleValue(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') handleSaveTitleEdit(idx, title); if (e.key === 'Escape') setEditingTitleIdx(null); }}
+                        onClick={e => e.stopPropagation()}
+                        style={{ flex: 1, fontSize: '14px', padding: '3px 8px', border: '1.5px solid var(--accent)', borderRadius: 6, background: 'var(--bg-panel)', color: 'var(--text-primary)', outline: 'none', minWidth: 0 }}
+                      />
                     ) : (
-                      <button
-                        onClick={() => { setWriteModalTitle(title); setIsWriteModalOpen(true); }}
-                        className="btn btn-primary btn-sm"
-                        disabled={isWritingAll}
-                      >
-                        {isThisWriting
-                          ? <><Loader2 className="animate-spin" size={13} /> Đang viết...</>
-                          : <><PenTool size={13} /> Viết bài</>
-                        }
-                      </button>
+                      <span className="title-desktop-title-text">{title}</span>
                     )}
-                    {/* Nút sửa tiêu đề — chỉ hiện khi chưa có bài, không trong queue/batch */}
+                  </div>
+                  {isWritten && article && (
+                    <span className="title-desktop-date">{formatDate(article.createdAt)}</span>
+                  )}
+                  <div onClick={e => e.stopPropagation()} className="title-desktop-actions">
+                    {isEditingThis ? (
+                      <><button onClick={() => handleSaveTitleEdit(idx, title)} className="btn btn-sm btn-primary" title="Lưu"><Check size={13} /></button><button onClick={() => setEditingTitleIdx(null)} className="btn btn-sm btn-outline" title="Hủy"><X size={13} /></button></>
+                    ) : isWritten ? (
+                      <><button onClick={() => setViewingArticle(article)} className="btn btn-sm btn-highlight" style={{ gap: 5 }}><Eye size={13} /> Xem bài</button><button onClick={() => handleEditArticle(article)} className="btn btn-sm btn-outline" style={{ gap: 5 }}><Edit3 size={13} /> Sửa</button>{canPublish && <button onClick={() => handlePublishArticle(article)} className="btn btn-sm btn-outline" style={{ gap: 5, color: 'var(--success)', borderColor: 'rgba(34,197,94,0.3)' }} disabled={publishingIds.has(article.id)}>{publishingIds.has(article.id) ? <><Loader2 className="animate-spin" size={13} />...</> : <><Upload size={13} /> Post</>}</button>}<button onClick={() => { setViewingArticle(null); handleRewrite(article); }} className="btn btn-sm btn-outline" style={{ gap: 5, color: 'var(--warning)', borderColor: 'rgba(245,158,11,0.3)' }} disabled={isWritingAll}><RefreshCw size={13} /> Viết lại</button></>
+                    ) : isQueueWritingThis ? (
+                      <span className="btn btn-sm btn-outline" style={{ gap: 5, color: 'var(--accent)', borderColor: 'rgba(99,102,241,0.3)', cursor: 'default' }}><Loader2 className="animate-spin" size={13} /> Đang viết...</span>
+                    ) : isInSseQueue && !queueResult ? (
+                      <span className="btn btn-sm btn-outline" style={{ gap: 5, color: 'var(--text-muted)', cursor: 'default' }}><Clock size={13} /> Chờ viết</span>
+                    ) : isQueueError ? (
+                      <button onClick={() => { setWriteModalTitle(title); setIsWriteModalOpen(true); }} className="btn btn-sm btn-primary"><RefreshCw size={13} /> Thử lại</button>
+                    ) : isPendingBatch ? (
+                      <span className="btn btn-sm btn-outline" style={{ gap: 5, color: 'var(--info)', borderColor: 'rgba(6,182,212,0.3)', cursor: 'default' }}><Layers size={13} /> Đã gửi Batch</span>
+                    ) : (
+                      <button onClick={() => { setWriteModalTitle(title); setIsWriteModalOpen(true); }} className="btn btn-sm btn-primary" disabled={isWritingAll}><PenTool size={13} /> Viết bài</button>
+                    )}
                     {!isEditingThis && !article && !isQueueWritingThis && !isInQueue && !pendingBatchTitles.has(title) && (
-                      <button
-                        onClick={() => { setEditingTitleIdx(idx); setEditingTitleValue(title); }}
-                        className="btn btn-sm btn-outline"
-                        title="Chỉnh sửa tiêu đề"
-                        style={{ padding: '3px 7px', color: 'var(--text-muted)' }}
-                      >
-                        <Edit3 size={12} />
-                      </button>
+                      <button onClick={() => { setEditingTitleIdx(idx); setEditingTitleValue(title); }} className="btn btn-sm btn-outline" title="Chỉnh sửa" style={{ color: 'var(--text-muted)' }}><Edit3 size={12} /></button>
                     )}
                   </div>
                 </div>
@@ -1840,11 +1679,11 @@ const Keywords = () => {
       </div>
 
       {/* FILTER BAR */}
-      <div className="panel" style={{ padding: '10px 14px', marginBottom: 16 }}>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-
-          {/* Ô tìm kiếm */}
-          <div style={{ position: 'relative', flex: '1 1 200px', minWidth: 160 }}>
+      <div className="panel kw-filter-bar" style={{ padding: '10px 14px', marginBottom: 16 }}>
+        {/* Single row: search + selects + result count — all in one line on desktop */}
+        <div className="kw-filter-row">
+          {/* Search */}
+          <div style={{ position: 'relative', flex: '1 1 0', minWidth: 0 }}>
             <Search size={14} style={{
               position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)',
               color: 'var(--text-muted)', pointerEvents: 'none',
@@ -1876,50 +1715,46 @@ const Keywords = () => {
             )}
           </div>
 
-          {/* Lọc theo user — chỉ admin và khi AUTH bật */}
+          {/* Lọc theo user */}
           {showMultiUser && userList.length > 0 && (
-            <div style={{ flex: '1 1 160px', minWidth: 140 }}>
-              <AppSelect
-                value={filterUserId}
-                onChange={uid => {
-                  setFilterUserId(uid);
-                  setFilterCompanyId('');
-                  setKwPage(1);
-                  fetchData(uid, 1, searchText, '');
-                }}
-                icon={<UsersIcon size={13} />}
-                active={!!filterUserId}
-                options={[
-                  { value: '', label: 'Tất cả Tài Khoản' },
-                  ...userList.map(u => ({
-                    value: String(u.id),
-                    label: `${u.full_name || u.username}${u.role === 'root' || u.role === 'admin' ? ' (root)' : u.role === 'senior_manager' ? ' (QL Cấp Cao)' : u.role === 'manager' ? ' (Quản Lý)' : ''}`,
-                  })),
-                ]}
-              />
-            </div>
-          )}
-
-          {/* Lọc theo công ty — hiển thị theo user đang filter */}
-          <div style={{ flex: '1 1 160px', minWidth: 140 }}>
             <AppSelect
-              value={filterCompanyId}
-              onChange={cid => {
-                setFilterCompanyId(cid);
+              value={filterUserId}
+              onChange={uid => {
+                setFilterUserId(uid);
+                setFilterCompanyId('');
                 setKwPage(1);
-                fetchData(filterUserId, 1, searchText, cid);
+                fetchData(uid, 1, searchText, '');
               }}
-              icon={<Building2 size={13} />}
-              active={!!filterCompanyId}
+              icon={<UsersIcon size={13} />}
+              active={!!filterUserId}
               options={[
-                { value: '', label: 'Danh sách Website/Công ty' },
-                ...filterCompanies.map(c => ({ value: String(c.id), label: c.name })),
+                { value: '', label: 'Tất cả Tài Khoản' },
+                ...userList.map(u => ({
+                  value: String(u.id),
+                  label: `${u.full_name || u.username}${u.role === 'root' || u.role === 'admin' ? ' (root)' : u.role === 'senior_manager' ? ' (QL Cấp Cao)' : u.role === 'manager' ? ' (Quản Lý)' : ''}`,
+                })),
               ]}
             />
-          </div>
+          )}
+
+          {/* Lọc theo công ty */}
+          <AppSelect
+            value={filterCompanyId}
+            onChange={cid => {
+              setFilterCompanyId(cid);
+              setKwPage(1);
+              fetchData(filterUserId, 1, searchText, cid);
+            }}
+            icon={<Building2 size={13} />}
+            active={!!filterCompanyId}
+            options={[
+              { value: '', label: 'Danh sách Website/Công ty' },
+              ...filterCompanies.map(c => ({ value: String(c.id), label: c.name })),
+            ]}
+          />
 
           {/* Số kết quả + nút xóa filter */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto', flexShrink: 0 }}>
+          <div className="kw-filter-right">
             {(searchText || filterCompanyId || filterUserId) && (
               <button
                 onClick={() => {
@@ -1996,103 +1831,151 @@ const Keywords = () => {
 
       {/* TABLE */}
       {loading ? (
-        <div className="table-container">
+        <div className="kw-card-list">
           {[1, 2, 3, 4].map(i => (
-            <div key={i} style={{ padding: '18px 20px', borderBottom: '1px solid var(--border)', display: 'flex', gap: '16px', alignItems: 'center' }}>
-              <div className="skeleton" style={{ height: 14, width: '20%', borderRadius: 4 }}></div>
-              <div className="skeleton" style={{ height: 14, width: '15%', borderRadius: 4 }}></div>
+            <div key={i} className="kw-card-skeleton">
+              <div className="skeleton" style={{ height: 14, width: '60%', borderRadius: 4 }}></div>
+              <div className="skeleton" style={{ height: 11, width: '40%', borderRadius: 4, marginTop: 4 }}></div>
+              <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+                <div className="skeleton" style={{ height: 20, width: 80, borderRadius: 20 }}></div>
+                <div className="skeleton" style={{ height: 20, width: 60, borderRadius: 20 }}></div>
+              </div>
             </div>
           ))}
         </div>
         ) : filteredKeywords.length === 0 ? (
-          <div className="table-container">
-            <div className="table-empty">
-              <div className="table-empty-icon"><Search size={24} /></div>
-              <div className="table-empty-text">{keywords.length === 0 ? 'Chưa có từ khóa nào' : 'Không tìm thấy kết quả'}</div>
-              <div className="table-empty-hint">{keywords.length === 0 ? 'Nhấn "Thêm Từ Khóa" để bắt đầu' : 'Thử thay đổi bộ lọc'}</div>
+          <div className="kw-card-list">
+            <div className="kw-empty">
+              <div className="kw-empty-icon"><Search size={28} /></div>
+              <div className="kw-empty-title">{keywords.length === 0 ? 'Chưa có từ khóa nào' : 'Không tìm thấy kết quả'}</div>
+              <div className="kw-empty-hint">{keywords.length === 0 ? 'Nhấn "Thêm Từ Khóa" để bắt đầu' : 'Thử thay đổi bộ lọc'}</div>
             </div>
           </div>
         ) : (
-          <div className="table-container">
-            <div className="table-header" style={{ gridTemplateColumns: showMultiUser ? '170px 1fr 130px 110px 160px 110px' : '200px 1fr 130px 110px 110px' }}>
-              <div>ID</div>
-              <div>Từ Khóa</div>
-              <div>Thống Kê</div>
-              <div>Ngày Tạo</div>
-              {showMultiUser && <div>Người Tạo</div>}
-              <div></div>
+          <>
+            {/* Desktop table */}
+            <div className="table-container kw-desktop-table">
+              <div className="table-header" style={{ gridTemplateColumns: showMultiUser ? '170px 1fr 130px 110px 160px 130px' : '200px 1fr 130px 110px 130px' }}>
+                <div>ID</div>
+                <div>Từ Khóa</div>
+                <div>Thống Kê</div>
+                <div>Ngày Tạo</div>
+                {showMultiUser && <div>Người Tạo</div>}
+                <div></div>
+              </div>
+              {filteredKeywords.map(item => {
+                const company = getCompany(item.companyId);
+                const creator = showMultiUser ? userList.find(u => u.id === item.createdBy) : null;
+                return (
+                  <div key={item.id} className="table-row" style={{ gridTemplateColumns: showMultiUser ? '170px 1fr 130px 110px 160px 130px' : '200px 1fr 130px 110px 130px' }}>
+                    <IdCell id={item.id} />
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: '4px' }}>
+                        <span style={{ fontWeight: '600', fontSize: '14px', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.keyword}</span>
+                        {item.content_type === 'fanpage' && <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 10, background: 'rgba(236,72,153,0.1)', color: '#ec4899', border: '1px solid rgba(236,72,153,0.25)', flexShrink: 0 }}>📱 Fanpage</span>}
+                      </div>
+                      {company ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                          <div style={{ width: 16, height: 16, borderRadius: 3, background: 'var(--accent-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '9px', fontWeight: '700', color: 'var(--accent)', flexShrink: 0 }}>{(company.name || 'C')[0].toUpperCase()}</div>
+                          <span style={{ fontSize: '12px', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{company.name}</span>
+                        </div>
+                      ) : (
+                        <div className="badge badge-purple" style={{ fontSize: '10px', padding: '1px 6px', width: 'fit-content' }}>SEO Keyword</div>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <div className="badge badge-blue" style={{ width: 'fit-content' }}><Hash size={10} /> {item.titleCount || 0} tiêu đề</div>
+                      <div className="badge badge-green" style={{ width: 'fit-content' }}><FileText size={10} /> {item.articleCount || 0} bài</div>
+                    </div>
+                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{formatDate(item.createdAt)}</div>
+                    {showMultiUser && (
+                      <div>
+                        {creator ? (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 99, fontSize: 11, fontWeight: 600, background: 'var(--bg-hover)', border: '1px solid var(--border)', color: 'var(--text-secondary)', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{creator.full_name || creator.username}</span>
+                        ) : <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>—</span>}
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+                      <button onClick={() => handleSelectKeyword(item)} className="btn btn-highlight btn-sm"><Eye size={14} /> Chi tiết</button>
+                      <button onClick={(e) => handleDeleteKeyword(item.id, e)} className="btn btn-danger-ghost btn-icon" title="Xóa"><Trash2 size={14} /></button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
+
+            {/* Mobile cards */}
+            <div className="kw-card-list">
             {filteredKeywords.map(item => {
               const company = getCompany(item.companyId);
               const creator = showMultiUser ? userList.find(u => u.id === item.createdBy) : null;
+              const isFanpage = item.content_type === 'fanpage';
               return (
-                <div key={item.id} className="table-row" style={{ gridTemplateColumns: showMultiUser ? '170px 1fr 130px 110px 160px 110px' : '200px 1fr 130px 110px 110px' }}>
-                  {/* ID */}
-                  <IdCell id={item.id} />
-
-                  {/* Từ khóa + công ty */}
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: '4px' }}>
-                      <span style={{ fontWeight: '600', fontSize: '14px', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {item.keyword}
-                      </span>
-                      {item.content_type === 'fanpage' && (
-                        <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 10, background: 'rgba(236,72,153,0.1)', color: '#ec4899', border: '1px solid rgba(236,72,153,0.25)', flexShrink: 0 }}>
-                          📱 Fanpage
-                        </span>
-                      )}
+                <div key={item.id} className="kw-card">
+                  {/* ── Row 1: keyword ── */}
+                  <div className="kw-card-top">
+                    <div className="kw-card-info">
+                      <span className="kw-card-title">{item.keyword}</span>
                     </div>
-                    {company ? (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                        <div style={{ width: 16, height: 16, borderRadius: 3, background: 'var(--accent-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '9px', fontWeight: '700', color: 'var(--accent)', flexShrink: 0 }}>
+                  </div>
+
+                  {/* ── Row 2: company + date ── */}
+                  <div className="kw-card-meta">
+                    {company && (
+                      <span className="kw-card-company">
+                        <span className="kw-card-company-avatar">
                           {(company.name || 'C')[0].toUpperCase()}
-                        </div>
-                        <span style={{ fontSize: '12px', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {company.name}
                         </span>
-                      </div>
-                    ) : (
-                      <div className="badge badge-purple" style={{ fontSize: '10px', padding: '1px 6px', width: 'fit-content' }}>SEO Keyword</div>
+                        {company.name}
+                      </span>
+                    )}
+                    {!company && (
+                      <span className="badge badge-purple kw-card-seo-badge">SEO Keyword</span>
+                    )}
+                    <span className="kw-card-date">
+                      <Calendar size={11} /> {formatDate(item.createdAt)}
+                    </span>
+                  </div>
+
+                  {/* ── Row 3: stats ── */}
+                  <div className="kw-card-stats">
+                    <span className="badge badge-blue">
+                      <Hash size={10} /> {item.titleCount || 0} tiêu đề
+                    </span>
+                    <span className="badge badge-green">
+                      <FileText size={10} /> {item.articleCount || 0} bài
+                    </span>
+                    {showMultiUser && creator && (
+                      <span className="kw-card-creator">
+                        <UsersIcon size={11} /> {creator.full_name || creator.username}
+                      </span>
                     )}
                   </div>
 
-                  {/* Thống kê */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <div className="badge badge-blue" style={{ width: 'fit-content' }}><Hash size={10} /> {item.titleCount || 0} tiêu đề</div>
-                    <div className="badge badge-green" style={{ width: 'fit-content' }}><FileText size={10} /> {item.articleCount || 0} bài</div>
-                  </div>
-
-                  {/* Ngày tạo */}
-                  <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{formatDate(item.createdAt)}</div>
-
-                  {/* Người tạo */}
-                  {showMultiUser && (
-                    <div>
-                      {creator ? (
-                        <span style={{
-                          display: 'inline-flex', alignItems: 'center', gap: 4,
-                          padding: '2px 8px', borderRadius: 99, fontSize: 11, fontWeight: 600,
-                          background: 'var(--bg-hover)', border: '1px solid var(--border)',
-                          color: 'var(--text-secondary)', maxWidth: '100%',
-                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                        }}>
-                          {creator.full_name || creator.username}
-                        </span>
-                      ) : (
-                        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>—</span>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Hành động */}
-                  <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
-                    <button onClick={() => handleSelectKeyword(item)} className="btn btn-highlight btn-sm"><Eye size={14} /> Chi tiết</button>
-                    <button onClick={(e) => handleDeleteKeyword(item.id, e)} className="btn btn-danger-ghost btn-icon" title="Xóa"><Trash2 size={14} /></button>
+                  {/* ── Row 4: action buttons ── */}
+                  <div className={`kw-card-actions-row${isFanpage ? ' has-fanpage' : ''}`}>
+                    {isFanpage && (
+                      <span className="badge badge-pink kw-fanpage-badge-cell">📱 Fanpage</span>
+                    )}
+                    <button
+                      onClick={() => handleSelectKeyword(item)}
+                      className="btn btn-highlight kw-btn-mobile-action"
+                    >
+                      <Eye size={13} /> Chi tiết
+                    </button>
+                    <button
+                      onClick={(e) => handleDeleteKeyword(item.id, e)}
+                      className="btn btn-danger-ghost kw-btn-mobile-action"
+                      title="Xóa"
+                    >
+                      <Trash2 size={13} /> Xóa
+                    </button>
                   </div>
                 </div>
               );
             })}
           </div>
+          </>
         )}
 
       {/* PAGINATION */}

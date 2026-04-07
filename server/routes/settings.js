@@ -118,14 +118,14 @@ router.get('/api-config', async (req, res) => {
     // User thường khi AUTH bật → đọc key cá nhân từ bảng users (giải mã trước khi mask)
     if (authEnabled && !isRoot(user)) {
       const result = await db.execute({
-        sql: 'SELECT gemini_api_key, gemini_model, openai_api_key, openai_model, serpapi_api_key, publish_api_url, ai_provider, claude_api_key, claude_model FROM users WHERE id = ?',
+        sql: 'SELECT gemini_api_key, gemini_model, openai_api_key, openai_model, serpapi_api_key, publish_api_url, ai_provider, anthropic_api_key, claude_model FROM users WHERE id = ?',
         args: [user.id],
       });
       const row = result.rows[0] || {};
       // Decrypt nếu là encrypted, giữ nguyên nếu là legacy plain text
-      const rawGemini  = row.gemini_api_key  ? decrypt(row.gemini_api_key)  : '';
-      const rawOpenAI  = row.openai_api_key  ? decrypt(row.openai_api_key)  : '';
-      const rawClaude = row.claude_api_key   ? decrypt(row.claude_api_key)  : '';
+      const rawGemini  = row.gemini_api_key     ? decrypt(row.gemini_api_key)     : '';
+      const rawOpenAI  = row.openai_api_key     ? decrypt(row.openai_api_key)     : '';
+      const rawClaude  = row.anthropic_api_key  ? decrypt(row.anthropic_api_key)  : '';
       const rawSerp    = row.serpapi_api_key  ? decrypt(row.serpapi_api_key)  : '';
       return res.json({
         gemini_api_key:      rawGemini   ? maskKey(rawGemini)   : '',
@@ -146,7 +146,7 @@ router.get('/api-config', async (req, res) => {
 
     // Admin hoặc AUTH tắt → đọc system key từ settings table
     const result = await db.execute(
-      `SELECT key, value FROM settings WHERE key IN ('gemini_api_key', 'gemini_model', 'openai_api_key', 'openai_model', 'claude_api_key', 'claude_model', 'serpapi_api_key', 'default_ai_provider', 'open_key_mode')`
+      `SELECT key, value FROM settings WHERE key IN ('gemini_api_key', 'gemini_model', 'openai_api_key', 'openai_model', 'claude_api_key', 'claude_model', 'claude_base_url', 'serpapi_api_key', 'default_ai_provider', 'open_key_mode')`
     );
     const map = {};
     for (const row of result.rows) map[row.key] = row.value;
@@ -160,6 +160,7 @@ router.get('/api-config', async (req, res) => {
       claude_api_key:      map.claude_api_key  ? maskKey(map.claude_api_key)  : '',
       claude_api_key_set:  !!map.claude_api_key,
       claude_model:        map.claude_model    || 'claude-sonnet-4-20250514',
+      claude_base_url:     map.claude_base_url || '',
       serpapi_api_key:     map.serpapi_api_key ? maskKey(map.serpapi_api_key) : '',
       serpapi_api_key_set: !!map.serpapi_api_key,
       default_ai_provider: map.default_ai_provider || process.env.DEFAULT_AI_PROVIDER || 'gemini',
@@ -178,7 +179,7 @@ router.put('/api-config', async (req, res) => {
   try {
     const user        = req.user || { id: 'admin', role: 'admin' };
     const authEnabled = process.env.AUTH_ENABLED === 'true';
-    const { gemini_api_key, gemini_model, openai_api_key, openai_model, claude_api_key, claude_model, serpapi_api_key, default_ai_provider } = req.body;
+    const { gemini_api_key, gemini_model, openai_api_key, openai_model, claude_api_key, claude_model, claude_base_url, serpapi_api_key, default_ai_provider } = req.body;
 
     // User thường khi AUTH bật → lưu vào users table (encrypt trước khi lưu)
     if (authEnabled && !isRoot(user)) {
@@ -186,25 +187,26 @@ router.put('/api-config', async (req, res) => {
       const args    = [];
       /* Bỏ qua key bị mask (•••) → giữ nguyên key cũ trong DB */
       const skipMasked = (v) => !v || String(v).includes('•••');
+      const norm = v => String(v).trim().replace(/\n+/g, '||').replace(/\s*\|\|\s*/g, '||');
 
       if (gemini_api_key !== undefined && !skipMasked(gemini_api_key)) {
         updates.push('gemini_api_key = ?');
-        args.push(encrypt(String(gemini_api_key).trim()));
+        args.push(encrypt(norm(gemini_api_key)));
       }
       if (gemini_model !== undefined) { updates.push('gemini_model = ?'); args.push(String(gemini_model).trim()); }
       if (openai_api_key !== undefined && !skipMasked(openai_api_key)) {
         updates.push('openai_api_key = ?');
-        args.push(encrypt(String(openai_api_key).trim()));
+        args.push(encrypt(norm(openai_api_key)));
       }
       if (openai_model !== undefined) { updates.push('openai_model = ?'); args.push(String(openai_model).trim()); }
       if (claude_api_key !== undefined && !skipMasked(claude_api_key)) {
-        updates.push('claude_api_key = ?');
-        args.push(encrypt(String(claude_api_key).trim()));
+        updates.push('anthropic_api_key = ?');
+        args.push(encrypt(norm(claude_api_key)));
       }
       if (claude_model !== undefined) { updates.push('claude_model = ?'); args.push(String(claude_model).trim()); }
       if (serpapi_api_key !== undefined && !skipMasked(serpapi_api_key)) {
         updates.push('serpapi_api_key = ?');
-        args.push(encrypt(String(serpapi_api_key).trim()));
+        args.push(encrypt(norm(serpapi_api_key)));
       }
       if (default_ai_provider !== undefined) { updates.push('ai_provider = ?'); args.push(String(default_ai_provider).trim()); }
 
@@ -232,6 +234,7 @@ router.put('/api-config', async (req, res) => {
       openai_model:    rest.openai_model,
       claude_api_key:  rest.claude_api_key,
       claude_model:    rest.claude_model,
+      claude_base_url: rest.claude_base_url || '',
       serpapi_api_key: rest.serpapi_api_key,
     };
     const envMap = {
@@ -241,6 +244,7 @@ router.put('/api-config', async (req, res) => {
       openai_model:    'OPENAI_MODEL',
       claude_api_key:  'ANTHROPIC_API_KEY',
       claude_model:    'CLAUDE_MODEL',
+      claude_base_url: 'CLAUDE_BASE_URL',
       serpapi_api_key: 'SERPAPI_API_KEY',
     };
 
@@ -250,26 +254,31 @@ router.put('/api-config', async (req, res) => {
       /* Bỏ qua key bị mask (•••) → giữ nguyên key cũ trong DB */
       if (!val || val.includes('•••')) continue;
 
+      // Chuẩn hóa multi-key: xuống dòng → || (để keyRotation đọc đúng)
+      const normalized = val.replace(/\n+/g, '||').replace(/\s*\|\|\s*/g, '||');
       // Encrypt API keys khi lưu vào settings table
       const dbValue = (key === 'gemini_api_key' || key === 'serpapi_api_key' || key === 'claude_api_key' || key === 'openai_api_key')
-        ? encrypt(val)
-        : val;
+        ? encrypt(normalized)
+        : normalized;
 
       await db.execute({
         sql: 'INSERT INTO settings (key, value, label, updatedAt) VALUES (?, ?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updatedAt = excluded.updatedAt',
         args: [key, dbValue, key, updatedAt],
       });
       // process.env giữ plain text để AI providers đọc trực tiếp
-      process.env[envMap[key]] = val;
+      process.env[envMap[key]] = normalized;
     }
 
     // default_ai_provider — lưu riêng vì không cần encrypt
     if (rest.default_ai_provider !== undefined) {
+      const providerVal = String(rest.default_ai_provider).trim();
       await db.execute({
         sql: `INSERT INTO settings (key, value, label, updatedAt) VALUES ('default_ai_provider', ?, 'AI Provider mặc định', ?)
               ON CONFLICT(key) DO UPDATE SET value = excluded.value, updatedAt = excluded.updatedAt`,
-        args: [String(rest.default_ai_provider).trim(), updatedAt],
+        args: [providerVal, updatedAt],
       });
+      // Cập nhật process.env ngay để provider được chọn đúng mà không cần restart
+      process.env.DEFAULT_AI_PROVIDER = providerVal;
     }
 
     // Open Key mode

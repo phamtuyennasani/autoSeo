@@ -10,7 +10,8 @@
  * Per-user provider (cột ai_provider trong bảng users):
  *  - Nếu user có ai_provider riêng → dùng provider đó thay vì system default
  *  - Gemini: key hierarchy đầy đủ (user → manager → system)
- *  - OpenAI / provider khác: dùng system key, nhưng dùng model của user (openai_model) nếu có
+ *  - OpenAI / Claude / provider khác: dùng system key (từ DB → process.env fallback),
+ *    nhưng dùng model/key riêng của user nếu có
  *
  * Giới hạn bài/token chỉ áp dụng khi dùng key hệ thống (usingSystemKey: true).
  * AUTH_ENABLED=false hoặc role root → luôn dùng system key, usingSystemKey: true
@@ -22,51 +23,84 @@
 const { db } = require('../data/store');
 const { decrypt } = require('../utils/crypto');
 
-// ─── Build system config theo provider ───────────────────────────────────────
-function buildSystemConfig(provider) {
+// ─── Build system config theo provider (DB first, env fallback) ─────────────────
+function buildSystemConfig(provider, sv = {}) {
+  /**
+   * sv = systemValues: { gemini_api_key, openai_api_key, claude_api_key,
+   *                      gemini_model, openai_model, claude_model, claude_base_url,
+   *                      serpapi_api_key }
+   * Nếu không có trong sv → fallback về process.env tương ứng.
+   */
+
+  const openaiKey = sv.openai_api_key || process.env.OPENAI_API_KEY || '';
+  const claudeKey = sv.claude_api_key || process.env.ANTHROPIC_API_KEY || '';
+  const geminiKey = sv.gemini_api_key || process.env.GEMINI_API_KEY || '';
+  const claudeBaseUrl = sv.claude_base_url || process.env.CLAUDE_BASE_URL || '';
+
   if (provider === 'openai') {
-    const apiKey = process.env.OPENAI_API_KEY || '';
     return {
       provider:       'openai',
-      apiKey,
-      modelName:      process.env.OPENAI_MODEL    || 'gpt-4o-mini',
-      serpApiKey:     process.env.SERPAPI_API_KEY || '',
+      apiKey:         openaiKey,
+      modelName:      sv.openai_model || process.env.OPENAI_MODEL || 'gpt-4o-mini',
+      serpApiKey:     sv.serpapi_api_key || process.env.SERPAPI_API_KEY || '',
       usingSystemKey: true,
-      blocked:        !apiKey,
-      message:        !apiKey ? 'OPENAI_API_KEY chưa được cấu hình. Vào Cài đặt → Cấu hình API để nhập key.' : undefined,
+      blocked:        !openaiKey,
+      message:        !openaiKey ? 'OpenAI API key chưa được cấu hình. Vào Cài đặt → Cấu hình API để nhập key.' : undefined,
     };
   }
 
   if (provider === 'claude') {
-    const apiKey = process.env.ANTHROPIC_API_KEY || '';
     return {
       provider:       'claude',
-      apiKey,
-      modelName:      process.env.CLAUDE_MODEL    || 'claude-sonnet-4-20250514',
-      serpApiKey:     process.env.SERPAPI_API_KEY || '',
+      apiKey:         claudeKey,
+      modelName:      sv.claude_model || process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514',
+      claudeBaseUrl,
+      serpApiKey:     sv.serpapi_api_key || process.env.SERPAPI_API_KEY || '',
       usingSystemKey: true,
-      blocked:        !apiKey,
-      message:        !apiKey ? 'ANTHROPIC_API_KEY chưa được cấu hình. Vào Cài đặt → Cấu hình API để nhập key.' : undefined,
+      blocked:        !claudeKey,
+      message:        !claudeKey ? 'Claude API key chưa được cấu hình. Vào Cài đặt → Cấu hình API để nhập key.' : undefined,
     };
   }
 
   // Mặc định: gemini
-  const geminiKey = process.env.GEMINI_API_KEY || '';
   return {
     provider:       'gemini',
     apiKey:         geminiKey,
-    modelName:      process.env.GEMINI_MODEL    || 'gemini-2.5-flash-lite',
-    serpApiKey:     process.env.SERPAPI_API_KEY || '',
+    modelName:      sv.gemini_model || process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite',
+    serpApiKey:     sv.serpapi_api_key || process.env.SERPAPI_API_KEY || '',
     usingSystemKey: true,
     blocked:        !geminiKey,
-    message:        !geminiKey ? 'GEMINI_API_KEY chưa được cấu hình. Vào Cài đặt → Cấu hình API để nhập key.' : undefined,
+    message:        !geminiKey ? 'Gemini API key chưa được cấu hình. Vào Cài đặt → Cấu hình API để nhập key.' : undefined,
   };
+}
+
+// ─── Fetch all system settings từ DB (decrypted) ──────────────────────────────
+async function fetchSystemValues() {
+  try {
+    const rows = await db.execute({
+      sql: `SELECT key, value FROM settings WHERE key IN (
+        'gemini_api_key', 'openai_api_key', 'claude_api_key',
+        'gemini_model', 'openai_model', 'claude_model', 'claude_base_url', 'serpapi_api_key'
+      )`,
+    });
+    const sv = {};
+    for (const row of rows.rows) {
+      if (!row.value) continue;
+      const isKey = ['gemini_api_key', 'openai_api_key', 'claude_api_key', 'serpapi_api_key'].includes(row.key);
+      sv[row.key] = isKey ? decrypt(row.value) : row.value;
+    }
+    return sv;
+  } catch {
+    return {};
+  }
 }
 
 async function getEffectiveApiConfig(userId) {
   const authEnabled    = process.env.AUTH_ENABLED === 'true';
-  const systemProvider = process.env.DEFAULT_AI_PROVIDER || 'gemini';
-  const systemConfig   = buildSystemConfig(systemProvider);
+  // Đọc provider từ DB trước, fallback env
+  const sv             = await fetchSystemValues();
+  const systemProvider = sv.default_ai_provider || process.env.DEFAULT_AI_PROVIDER || 'gemini';
+  const systemConfig   = buildSystemConfig(systemProvider, sv);
 
   // Không auth hoặc không có userId → dùng system config
   if (!authEnabled || !userId) return systemConfig;
@@ -97,7 +131,7 @@ async function getEffectiveApiConfig(userId) {
   if (openKeyMode && (row.ai_provider || systemProvider) === 'gemini') {
     const customPrompt = row.custom_prompt || null;
     const isRootUser   = row.role === 'root' || row.role === 'admin';
-    const geminiSystemKey = process.env.GEMINI_API_KEY || '';
+    const geminiSystemKey = sv.gemini_api_key || process.env.GEMINI_API_KEY || '';
 
     // Gom tất cả key Gemini + SerpAPI của toàn bộ user
     const allUsersRes = await db.execute({
@@ -115,7 +149,7 @@ async function getEffectiveApiConfig(userId) {
     serpOnlyRes.rows.forEach(r => { if (r.serpapi_api_key) pooledSerpKeys.push(decrypt(r.serpapi_api_key)); });
 
     // Key hệ thống: thêm nếu user có quyền (use_system_key = 1) hoặc là root
-    const systemSerpKey = process.env.SERPAPI_API_KEY || '';
+    const systemSerpKey = sv.serpapi_api_key || process.env.SERPAPI_API_KEY || '';
     if (geminiSystemKey && (isRootUser || row.use_system_key)) {
       pooledKeys.push(geminiSystemKey);
       if (systemSerpKey) pooledSerpKeys.push(systemSerpKey);
@@ -142,7 +176,7 @@ async function getEffectiveApiConfig(userId) {
 
   // ── Xác định effective provider: ưu tiên setting của user, fallback về system ─
   const effectiveProvider     = row.ai_provider || systemProvider;
-  const effectiveSystemConfig = buildSystemConfig(effectiveProvider);
+  const effectiveSystemConfig = buildSystemConfig(effectiveProvider, sv);
 
   const customPrompt = row.custom_prompt || null;
 
@@ -153,10 +187,15 @@ async function getEffectiveApiConfig(userId) {
 
   // ── Non-Gemini provider: dùng system key, nhưng dùng model riêng của user nếu có
   if (effectiveProvider === 'openai') {
-    if (row.openai_model) {
-      return { ...effectiveSystemConfig, modelName: row.openai_model, customPrompt };
-    }
-    return { ...effectiveSystemConfig, customPrompt };
+    return {
+      provider:       'openai',
+      apiKey:         sv.openai_api_key || process.env.OPENAI_API_KEY || '',
+      modelName:      row.openai_model || sv.openai_model || process.env.OPENAI_MODEL || 'gpt-4o-mini',
+      serpApiKey:     sv.serpapi_api_key || process.env.SERPAPI_API_KEY || '',
+      usingSystemKey: true,
+      blocked:        !(sv.openai_api_key || process.env.OPENAI_API_KEY),
+      customPrompt,
+    };
   }
 
   if (effectiveProvider === 'claude') {
@@ -165,14 +204,24 @@ async function getEffectiveApiConfig(userId) {
       return {
         provider:       'claude',
         apiKey:         userKey,
-        modelName:      row.anthropic_model || 'claude-sonnet-4-20250514',
+        modelName:      row.anthropic_model || sv.claude_model || process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514',
+        claudeBaseUrl: sv.claude_base_url || process.env.CLAUDE_BASE_URL || '',
         usingSystemKey: false,
         blocked:        false,
         customPrompt,
       };
     }
-    // Fallback: dùng system env
-    return { ...effectiveSystemConfig, customPrompt };
+    // Fallback: dùng system key (DB → env)
+    return {
+      provider:       'claude',
+      apiKey:         sv.claude_api_key || process.env.ANTHROPIC_API_KEY || '',
+      modelName:      sv.claude_model || process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514',
+      claudeBaseUrl: sv.claude_base_url || process.env.CLAUDE_BASE_URL || '',
+      serpApiKey:     sv.serpapi_api_key || process.env.SERPAPI_API_KEY || '',
+      usingSystemKey: true,
+      blocked:        !(sv.claude_api_key || process.env.ANTHROPIC_API_KEY),
+      customPrompt,
+    };
   }
 
   // Mặc định gemini → key hierarchy (giữ nguyên logic cũ)

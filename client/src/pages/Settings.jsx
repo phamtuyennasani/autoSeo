@@ -211,7 +211,6 @@ const GEMINI_MODELS = [
 const CLAUDE_MODELS = [
   'claude-opus-4-6',
   'claude-sonnet-4-6',
-  'claude-haiku-4-5-20251001',
 ];
 
 const OPENAI_MODELS = [
@@ -271,7 +270,7 @@ function GeminiKeyField({ value, onChange, show, onToggleShow }) {
         <div style={{ flex: 1 }}>
           <div style={{ fontWeight: 700, fontSize: 14 }}>Gemini API Key</div>
           <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-            Lấy tại <strong>aistudio.google.com</strong> → Get API Key — nhập nhiều key cách nhau bằng dấu <strong>,</strong> để xoay vòng
+            Lấy tại <strong>aistudio.google.com</strong> → Get API Key — nhập nhiều key cách nhau bằng dấu <strong>Enter</strong> để xoay vòng
           </div>
         </div>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -294,7 +293,7 @@ function GeminiKeyField({ value, onChange, show, onToggleShow }) {
           rows={keyCount > 1 ? Math.min(keyCount + 1, 5) : 2}
           value={value}
           onChange={e => onChange(e.target.value)}
-          placeholder={'AIza... (1 key)\nhoặc: AIza..., AIza..., AIza... (nhiều key xoay vòng)'}
+          placeholder={'AIza... (1 key)\nhoặc: mỗi dòng 1 key (nhiều key xoay vòng)'}
           style={{
             resize: 'vertical',
             fontFamily: 'monospace',
@@ -329,6 +328,79 @@ function GeminiKeyField({ value, onChange, show, onToggleShow }) {
   );
 }
 
+// Component multi-key dùng chung cho Claude & OpenAI
+function MultiKeyField({ label, description, getLink, color, value, onChange, show, onToggleShow, placeholder }) {
+  const keys = value ? value.split('||').map(k => k.trim()).filter(Boolean) : [];
+  const keyCount = keys.length;
+
+  return (
+    <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 18px', borderBottom: '1px solid var(--border)', background: 'var(--bg-panel)' }}>
+        <div style={{ width: 34, height: 34, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', background: `${color}18`, flexShrink: 0 }}>
+          <KeyRound size={16} color={color} />
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontWeight: 700, fontSize: 14 }}>{label}</div>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+            Lấy tại <strong>{getLink}</strong> — nhập nhiều key cách nhau bằng dấu <strong>,</strong> để xoay vòng
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          {keyCount > 1 && (
+            <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: `${color}18`, color }}>
+              {keyCount} keys
+            </span>
+          )}
+          {keyCount > 0
+            ? <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: 'var(--success-subtle)', color: 'var(--success)' }}>Đã cấu hình</span>
+            : <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: 'var(--bg-panel)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>Chưa cấu hình</span>
+          }
+        </div>
+      </div>
+
+      {/* Input */}
+      <div style={{ padding: '14px 18px', position: 'relative' }}>
+        <textarea
+          className="input-field"
+          rows={keyCount > 1 ? Math.min(keyCount + 1, 5) : 2}
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          placeholder={placeholder}
+          style={{
+            resize: 'vertical',
+            fontFamily: 'monospace',
+            fontSize: 13,
+            paddingRight: 42,
+            filter: show ? 'none' : 'blur(4px)',
+            transition: 'filter 0.2s',
+            userSelect: show ? 'auto' : 'none',
+          }}
+        />
+        <button
+          onClick={onToggleShow}
+          style={{ position: 'absolute', right: 28, top: 24, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex' }}
+          title={show ? 'Ẩn key' : 'Hiện key'}
+        >
+          {show ? <EyeOff size={16} /> : <Eye size={16} />}
+        </button>
+      </div>
+
+      {/* Key list preview khi show */}
+      {show && keyCount > 1 && (
+        <div style={{ padding: '0 18px 14px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {keys.map((k, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-secondary)' }}>
+              <span style={{ width: 18, height: 18, borderRadius: '50%', background: `${color}18`, color, fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{i + 1}</span>
+              <span style={{ fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{k.slice(0, 12)}...{k.slice(-4)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SerpKeyField({ value, onChange, show, onToggleShow }) {
   const keys = value ? value.split('||').map(k => k.trim()).filter(Boolean) : [];
   const keyCount = keys.length;
@@ -346,7 +418,7 @@ function SerpKeyField({ value, onChange, show, onToggleShow }) {
             <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text-muted)' }}>(Tùy chọn)</span>
           </div>
           <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-            Lấy tại <strong>serpapi.com</strong> — Nhập nhiều key cách nhau bằng dấu <strong>,</strong> để xoay vòng. Để trống nếu không dùng.
+            Lấy tại <strong>serpapi.com</strong> — Nhập nhiều key, mỗi dòng 1 key để xoay vòng. Để trống nếu không dùng.
           </div>
         </div>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -369,7 +441,7 @@ function SerpKeyField({ value, onChange, show, onToggleShow }) {
           rows={keyCount > 1 ? Math.min(keyCount + 1, 5) : 2}
           value={value}
           onChange={e => onChange(e.target.value)}
-          placeholder={'sk-... (1 key)\nNhiều key: sk-..., sk-..., sk-... (xoay vòng)'}
+          placeholder={'d4cb1a47... (1 key)\nMỗi dòng 1 key (nhiều key xoay vòng)'}
           style={{
             resize: 'vertical',
             fontFamily: 'monospace',
@@ -404,42 +476,6 @@ function SerpKeyField({ value, onChange, show, onToggleShow }) {
   );
 }
 
-// Component cho Claude API Key
-function ClaudeKeyField({ value, onChange, show, onToggleShow }) {
-  const hasKey = !!value;
-  return (
-    <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 18px', borderBottom: '1px solid var(--border)', background: 'var(--bg-panel)' }}>
-        <div style={{ width: 34, height: 34, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(211, 93, 66, 0.12)', flexShrink: 0 }}>
-          <KeyRound size={16} color="#D35D42" />
-        </div>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontWeight: 700, fontSize: 14 }}>Claude API Key</div>
-          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-            Lấy tại <strong>console.anthropic.com</strong> → API Keys
-          </div>
-        </div>
-        {hasKey
-          ? <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: 'var(--success-subtle)', color: 'var(--success)' }}>Đã cấu hình</span>
-          : <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: 'var(--bg-panel)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>Chưa cấu hình</span>
-        }
-      </div>
-      <div style={{ padding: '14px 18px', position: 'relative' }}>
-        <input
-          type={show ? 'text' : 'password'}
-          className="input-field"
-          value={value}
-          onChange={e => onChange(e.target.value)}
-          placeholder="sk-ant-api03-..."
-          style={{ paddingRight: 42, fontFamily: 'monospace', fontSize: 13 }}
-        />
-        <button onClick={onToggleShow} style={{ position: 'absolute', right: 28, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex' }}>
-          {show ? <EyeOff size={16} /> : <Eye size={16} />}
-        </button>
-      </div>
-    </div>
-  );
-}
 
 function ApiConfigTab() {
   const { user, authEnabled, updateUser, isRoot } = useAuth();
@@ -448,7 +484,7 @@ function ApiConfigTab() {
   const [form, setForm] = useState({
     gemini_api_key: '', gemini_model: 'gemini-2.5-flash-lite',
     openai_api_key: '', openai_model: 'gpt-4o-mini',
-    claude_api_key: '', claude_model: 'claude-sonnet-4-20250514',
+    claude_api_key: '', claude_model: 'claude-sonnet-4-6', claude_base_url: '',
     serpapi_api_key: '', open_key_mode: false,
     default_ai_provider: 'gemini',
   });
@@ -589,11 +625,16 @@ function ApiConfigTab() {
       {/* Claude API Key */}
       {form.default_ai_provider === 'claude' && (
         <>
-          <ClaudeKeyField
+          <MultiKeyField
+            label="Claude API Key"
+            description="Lấy tại console.anthropic.com → API Keys"
+            getLink="console.anthropic.com"
+            color="#D35D42"
             value={form.claude_api_key}
             onChange={v => setForm({ ...form, claude_api_key: v })}
             show={showClaude}
             onToggleShow={() => setShowClaude(v => !v)}
+            placeholder={'sk-ant-api03-... (1 key)\nhoặc: sk-ant..., sk-ant..., sk-ant... (nhiều key xoay vòng)'}
           />
 
           {/* Claude Model */}
@@ -621,6 +662,35 @@ function ApiConfigTab() {
               />
             </div>
           </div>
+
+          {/* Claude Base URL */}
+          <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 18px', borderBottom: '1px solid var(--border)', background: 'var(--bg-panel)' }}>
+              <div style={{ width: 34, height: 34, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(211,93,66,0.12)', flexShrink: 0 }}>
+                <Globe size={16} color="#D35D42" />
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 700, fontSize: 14 }}>Claude Base URL</div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                  Proxy/custom endpoint (để trống = dùng API chính thức của Anthropic)
+                </div>
+              </div>
+              {form.claude_base_url
+                ? <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: 'var(--success-subtle)', color: 'var(--success)' }}>Đã cấu hình</span>
+                : <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: 'var(--bg-panel)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>Mặc định</span>
+              }
+            </div>
+            <div style={{ padding: '14px 18px' }}>
+              <input
+                type="text"
+                className="input-field"
+                value={form.claude_base_url}
+                onChange={e => setForm({ ...form, claude_base_url: e.target.value })}
+                placeholder="https://api.example.com/v1 (để trống = API chính thức)"
+                style={{ fontFamily: 'monospace', fontSize: 13 }}
+              />
+            </div>
+          </div>
         </>
       )}
 
@@ -635,36 +705,17 @@ function ApiConfigTab() {
       {/* OpenAI API Key */}
       {form.default_ai_provider === 'openai' && (
         <>
-          <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 18px', borderBottom: '1px solid var(--border)', background: 'var(--bg-panel)' }}>
-              <div style={{ width: 34, height: 34, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(16,185,129,0.12)', flexShrink: 0 }}>
-                <KeyRound size={16} color="#10B981" />
-              </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 700, fontSize: 14 }}>OpenAI API Key</div>
-                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                  Lấy tại <strong>platform.openai.com</strong> → API Keys
-                </div>
-              </div>
-              {form.openai_api_key
-                ? <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: 'var(--success-subtle)', color: 'var(--success)' }}>Đã cấu hình</span>
-                : <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: 'var(--bg-panel)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>Chưa cấu hình</span>
-              }
-            </div>
-            <div style={{ padding: '14px 18px', position: 'relative' }}>
-              <input
-                type={showOpenAI ? 'text' : 'password'}
-                className="input-field"
-                value={form.openai_api_key}
-                onChange={e => setForm({ ...form, openai_api_key: e.target.value })}
-                placeholder="sk-proj-..."
-                style={{ paddingRight: 42, fontFamily: 'monospace', fontSize: 13 }}
-              />
-              <button onClick={() => setShowOpenAI(v => !v)} style={{ position: 'absolute', right: 28, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex' }}>
-                {showOpenAI ? <EyeOff size={16} /> : <Eye size={16} />}
-              </button>
-            </div>
-          </div>
+          <MultiKeyField
+            label="OpenAI API Key"
+            description="Lấy tại platform.openai.com → API Keys"
+            getLink="platform.openai.com"
+            color="#10B981"
+            value={form.openai_api_key}
+            onChange={v => setForm({ ...form, openai_api_key: v })}
+            show={showOpenAI}
+            onToggleShow={() => setShowOpenAI(v => !v)}
+            placeholder={'sk-proj-... (1 key)\nhoặc: sk-proj..., sk-proj..., sk-proj... (nhiều key xoay vòng)'}
+          />
 
           {/* OpenAI Model */}
           <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
@@ -838,7 +889,7 @@ function CostCalculatorTab() {
           <span style={{ fontWeight: 700, fontSize: 14 }}>Thông số tính toán</span>
         </div>
 
-        <div style={{ padding: '16px 18px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14 }}>
+        <div className="calc-grid-row" style={{ padding: '16px 18px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14 }}>
           {[
             { label: 'Số bài viết', value: articles, set: setArticles, min: 1, hint: 'bài' },
             { label: 'Input tokens / bài', value: inputTok, set: setInputTok, min: 100, hint: 'tokens', sub: 'Prompt + ngữ cảnh công ty' },
@@ -930,7 +981,7 @@ function CostCalculatorTab() {
                 </div>
 
                 {/* Standard vs Batch */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div className="calc-result-col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                   {[
                     { label: 'Standard (Realtime)', price: p.standard, cost: stdCost, isCheapest: isCheapestStd },
                     { label: 'Batch API (−50%)', price: p.batch, cost: batchCost, isCheapest: isCheapestBatch, isBatch: true },
@@ -1155,7 +1206,7 @@ export default function SettingsPage() {
         </div>
 
         {/* Tabs */}
-        <div style={{ display: 'flex', gap: 4, marginBottom: 24, borderBottom: '1px solid var(--border)', paddingBottom: 0 }}>
+        <div className="settings-tab-bar" style={{ display: 'flex', gap: 4, marginBottom: 24, borderBottom: '1px solid var(--border)', paddingBottom: 0 }}>
           {tabs.map(tab => (
             <button
               key={tab.id}
@@ -1195,7 +1246,7 @@ export default function SettingsPage() {
                       <Calendar size={9} style={{ display: 'inline', marginRight: 3 }} />{data?.today.date}
                     </span>
                   </div>
-                  <div style={{ display: 'flex', gap: 12 }}>
+                  <div className="statcard-mobile-stack" style={{ display: 'flex', gap: 12 }}>
                     <StatCard icon={<Zap />} label="Tokens đã dùng" value={tokensToday} limit={tLimit} color="var(--accent)" />
                     <StatCard icon={<FileText />} label="Bài viết đã tạo" value={articlesToday} limit={aLimit} color="var(--success)" unit="bài" />
                   </div>

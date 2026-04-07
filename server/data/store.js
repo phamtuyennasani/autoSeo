@@ -432,6 +432,9 @@ async function initDb() {
     { key: 'publish_api_url',           value: '', label: 'URL API đăng bài mặc định (bên thứ 3)' },
     // AI Provider
     { key: 'default_ai_provider', value: process.env.DEFAULT_AI_PROVIDER || 'gemini', label: 'AI Provider mặc định (gemini | openai)' },
+    { key: 'claude_api_key',      value: process.env.ANTHROPIC_API_KEY || '', label: 'Claude API Key' },
+    { key: 'claude_model',        value: process.env.CLAUDE_MODEL     || 'claude-sonnet-4-6', label: 'Claude Model' },
+    { key: 'claude_base_url',      value: process.env.CLAUDE_BASE_URL || '', label: 'Claude Base URL proxy (để trống = dùng API chính thức)' },
     { key: 'openai_api_key',      value: process.env.OPENAI_API_KEY      || '',       label: 'OpenAI API Key' },
     { key: 'openai_model',        value: process.env.OPENAI_MODEL        || 'gpt-4o-mini', label: 'OpenAI Model' },
     { key: 'open_key_mode',       value: '0',                                          label: 'Chế độ Open Key — gom key toàn user và xoay vòng' },
@@ -445,7 +448,7 @@ async function initDb() {
 
   // Sync API config từ DB → process.env (DB là nguồn sự thật sau lần đầu cấu hình)
   const apiCfg = await db.execute(
-    `SELECT key, value FROM settings WHERE key IN ('gemini_api_key', 'gemini_model', 'serpapi_api_key', 'openai_api_key', 'openai_model', 'default_ai_provider')`
+    `SELECT key, value FROM settings WHERE key IN ('gemini_api_key', 'gemini_model', 'serpapi_api_key', 'openai_api_key', 'openai_model', 'default_ai_provider', 'claude_api_key', 'claude_model', 'claude_base_url')`
   );
   const envMap = {
     gemini_api_key:      'GEMINI_API_KEY',
@@ -454,11 +457,14 @@ async function initDb() {
     openai_api_key:      'OPENAI_API_KEY',
     openai_model:        'OPENAI_MODEL',
     default_ai_provider: 'DEFAULT_AI_PROVIDER',
+    claude_api_key:      'ANTHROPIC_API_KEY',
+    claude_model:        'CLAUDE_MODEL',
+    claude_base_url:     'CLAUDE_BASE_URL',
   };
   for (const row of apiCfg.rows) {
     if (!row.value) continue;
     // Decrypt API keys before loading into process.env for AI providers
-    const isApiKey = ['gemini_api_key', 'serpapi_api_key', 'openai_api_key'].includes(row.key);
+    const isApiKey = ['gemini_api_key', 'serpapi_api_key', 'openai_api_key', 'claude_api_key'].includes(row.key);
     process.env[envMap[row.key]] = isApiKey ? decrypt(row.value) : row.value;
   }
   console.log('[store] DB initialized ✅');

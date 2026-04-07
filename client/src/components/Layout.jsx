@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { Search, Building2, Zap, Settings, HelpCircle, Sun, Moon, Cpu, TrendingUp, Layers, Users, LogOut, BarChart3, FileSignature, Webhook, ListTodo, Globe, Database, Terminal } from 'lucide-react';
+import { Search, Building2, Zap, Settings, HelpCircle, Sun, Moon, Cpu, TrendingUp, Layers, Users, LogOut, BarChart3, FileSignature, Webhook, ListTodo, Globe, Database, Terminal, Menu, X } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { useToken } from '../context/TokenContext';
 import { useAuth } from '../context/AuthContext';
@@ -35,6 +35,7 @@ const Layout = () => {
   const { theme, toggleTheme } = useTheme();
   const { tokenStats } = useToken();
   const { user, logout, authEnabled, canManageUsers } = useAuth();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const currentTitle = pageTitles[location.pathname] || 'Dashboard';
   const handleLogout = async () => {
     await logout();
@@ -51,8 +52,16 @@ const Layout = () => {
   const avatarChar = displayName.charAt(0).toUpperCase();
   return (
     <div className="app-container">
+      {/* MOBILE SIDEBAR OVERLAY */}
+      {sidebarOpen && (
+        <div
+          className="sidebar-overlay-backdrop"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
       {/* SIDEBAR */}
-      <aside className="sidebar">
+      <aside className={`sidebar sidebar-mobile${sidebarOpen ? ' sidebar-open' : ''}`}>
         <div className="sidebar-header">
           <div className="logo">
             <div className="logo-icon">
@@ -60,6 +69,13 @@ const Layout = () => {
             </div>
             <span className="logo-text">AutoSEO</span>
             <span className="logo-badge">PRO</span>
+            <button
+              className="sidebar-close-btn"
+              onClick={() => setSidebarOpen(false)}
+              title="Đóng menu"
+            >
+              <X size={18} />
+            </button>
           </div>
         </div>
 
@@ -155,15 +171,24 @@ const Layout = () => {
       <div className="main-wrapper">
         {/* TOPBAR */}
         <div className="topbar">
+          {/* Mobile hamburger */}
+          <button
+            className="topbar-hamburger"
+            onClick={() => setSidebarOpen(v => !v)}
+            title="Mở menu"
+          >
+            <Menu size={20} />
+          </button>
+
           <div className="topbar-breadcrumb">
-            <span style={{ color: 'var(--text-secondary)' }}>AutoSEO</span>
+            <span style={{ color: 'var(--text-secondary)', fontWeight: 700, fontSize: 15 }}>AutoSEO</span>
             <span className="topbar-breadcrumb-sep">/</span>
             <span>{currentTitle}</span>
           </div>
 
           <div className="topbar-right">
-            {/* TOKEN STATS */}
-            <div className="topbar-token-stats">
+            {/* TOKEN STATS — desktop only (hidden via CSS on mobile) */}
+            <div className="topbar-token-stats topbar-token-mobile">
               <div className="topbar-token-item" title={`Input: ${tokenStats.total_input?.toLocaleString() || 0} | Output: ${tokenStats.total_output?.toLocaleString() || 0}`}>
                 <Cpu size={13} style={{ opacity: 0.7 }} />
                 <span className="topbar-token-label">Tokens</span>
@@ -185,7 +210,7 @@ const Layout = () => {
                 display: 'flex',
                 alignItems: 'center',
                 gap: '6px',
-                padding: '6px 12px',
+                padding: '6px 10px',
                 borderRadius: 'var(--radius-md)',
                 border: '1px solid var(--border)',
                 background: 'var(--bg-panel)',
@@ -197,9 +222,9 @@ const Layout = () => {
               }}
             >
               {theme === 'dark' ? (
-                <><Sun size={15} color="#f59e0b" /> Sáng</>
+                <><Sun size={15} color="#f59e0b" /> <span className="topbar-theme-label">Sáng</span></>
               ) : (
-                <><Moon size={15} color="#6366f1" /> Tối</>
+                <><Moon size={15} color="#6366f1" /> <span className="topbar-theme-label">Tối</span></>
               )}
             </button>
           </div>

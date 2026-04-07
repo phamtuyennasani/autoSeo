@@ -33,6 +33,7 @@ const PROVIDERS = {
  */
 function getProvider(name = 'gemini') {
   const provider = PROVIDERS[name];
+  console.log(`Using AI provider: ${name}`);
   if (!provider) {
     const supported = Object.keys(PROVIDERS).join(', ');
     throw new Error(`AI provider "${name}" không hợp lệ. Các provider hỗ trợ: ${supported}`);
