@@ -252,9 +252,9 @@ async function processKeywordJob(job) {
     console.info(`[CRMQueue - KW-Worker]    titles count=${titles.length}, titlesJson=${tqTitlesJson}`);
     LOG(`[CRMQueue - KW-Worker] 📋 Insert title_queue: id=${titleQueueId}, keyword_q_id=${job.id}, titles count=${titles.length}`);
     await db.execute({
-      sql: `INSERT INTO title_queue (id, keyword_q_id, keyword, titles_json, company_id, hop_dong_id, chuki, created_by, content_type, status, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
-      args: [titleQueueId, job.id, job.keyword, tqTitlesJson, job.company_id, job.hop_dong_id || null, job.chuki || null, job.created_by || null, job.content_type || 'blog', new Date().toISOString()],
+      sql: `INSERT INTO title_queue (id, keyword_q_id, keyword, titles_json, company_id, hop_dong_id, chuki, created_by, yeucau, content_type, status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
+      args: [titleQueueId, job.id, job.keyword, tqTitlesJson, job.company_id, job.hop_dong_id || null, job.chuki || null, job.created_by || null, job.yeucau || null, job.content_type || 'blog', new Date().toISOString()],
     });
 
     // Đánh dấu done
@@ -439,8 +439,9 @@ async function processTitleJob(job) {
     try { if (company.article_styles) company.article_styles = JSON.parse(company.article_styles); } catch { company.article_styles = {}; }
 
     const apiConfig = await getApiConfig(job.created_by);
-    // content_type từ webhook CRM1 → truyền vào apiConfig để generateAndSave dùng đúng prompt
+    // content_type + yeucau từ webhook CRM1 → truyền vào apiConfig để generateAndSave dùng đúng prompt
     if (job.content_type) apiConfig.contentType = job.content_type;
+    if (job.yeucau) apiConfig.yeucau = job.yeucau;
 
     // Lazy-require để tránh circular dependency
     const { generateAndSave } = require('../routes/articles');

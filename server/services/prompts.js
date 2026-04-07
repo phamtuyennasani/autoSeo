@@ -33,7 +33,7 @@ function buildArticlePrompt(keyword, title, company, optionsPromt = '', customLi
 
   // Chèn custom image URLs vào prompt nếu có
   const imageUrlsBlock = imageUrls
-    ? `\n\n**DANH SÁCH URL HÌNH ẢNH (chèn vào bài viết khi phù hợp, dùng markdown: ![alt](url)):**\n${imageUrls}\n`
+    ? `\n\n**DANH SÁCH URL HÌNH ẢNH (chèn vào bài viết một cách ngẫu nhiên từ thẻ H2 thứ 2 trở đi,**Không chèn vào các vùng CTA** , dùng markdown: ![alt](url)):**\n${imageUrls}\n`
     : '';
 
   return `# VAI TRÒ
@@ -63,11 +63,11 @@ ${stripHtmlTags(company.info) || ''}
 
 ## 2. seo_description
 - Tóm tắt nội dung bài viết, chứa từ khóa chính
-- Độ dài: 150-160 ký tự
+- Độ dài: **150-180 ký tự**
 
 ## 3. short_content
 - Tóm tắt ngắn gọn nội dung bài viết cho các mục đích như meta description, mô tả rút gọn trên trang chủ, hoặc đoạn trích hiển thị trên mạng xã hội.
-- **Độ dài tối thiểu: 400 - 450 ký tự**
+- **Độ dài tối thiểu: 250 - 300 ký tự**
 - **Không cần chèn liên kết trong phần này, chỉ cần một đoạn văn bản thuần túy hấp dẫn, chứa từ khóa chính và tóm tắt nội dung bài viết một cách rõ ràng.**
 
 ## 4. thumbnail_prompt

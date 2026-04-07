@@ -12,7 +12,6 @@ const express = require('express');
 const router  = express.Router();
 const { db }  = require('../data/store');
 const { getSetting } = require('../routes/settings');
-const { isRoot } = require('./permissions');
 const { stripDots, slugify } = require('../utils/func');
 
 // ─── Helper: lấy email user tạo từ khóa ──────────────────────────────────────
@@ -44,7 +43,7 @@ async function publishArticle(articleId, article, company, apiUrl, email = '') {
   const token = CRM_CONTENT_SECRET + Math.floor(new Date().setHours(0, 0, 0, 0) / 1000);
 
   const payload = {
-    namevi:             article.seo_title        || article.title || '',
+    namevi:             article.title        || article.seo_title || '',
     title:              article.seo_title        || article.title || '',
     descvi:             article.short_content  || '',
     description:        article.seo_description  || '',
@@ -61,7 +60,7 @@ async function publishArticle(articleId, article, company, apiUrl, email = '') {
     // Retry: truyền publish_external_id để CRM2 cập nhật thay vì tạo mới
     publish_external_id: article.publish_external_id || null,
   };
-
+  console.log('[publishArticle] Payload gửi đến CRM:', JSON.stringify(payload));
   const res = await fetch(apiUrl, {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -73,12 +72,19 @@ async function publishArticle(articleId, article, company, apiUrl, email = '') {
     throw new Error(`CRM API trả về ${res.status}: ${text.slice(0, 200)}`);
   }
 
-  const data = res.json().catch(() => ({}));
+  const data = await res.json().catch(() => ({}));
+
+  // Kiểm tra kết quả ở tầng business — CRM có thể trả HTTP 200 nhưng status = "Fail"
+  const crmStatus = data?.result?.status || data?.status;
+  if (crmStatus === 'Fail' || crmStatus === 'fail' || crmStatus === 'error' || crmStatus === 'error') {
+    const msg = data?.result?.mess || data?.result?.message || data?.message || 'CRM báo lỗi không xác định';
+    throw new Error(`CRM báo lỗi: ${msg}`);
+  }
+
   const externalId = String(
-    data?.result?.id || data?.result?.ID || data?.result?.post_id || article.publish_external_id || ''
+    data?.result?.id || data?.result?.ID || data?.result?.post_id || data?.id || data?.ID || article.publish_external_id || ''
   );
   const now = new Date().toISOString();
-
   await db.execute({
     sql:  "UPDATE articles SET publish_status = 'published', published_at = ?, publish_external_id = ? WHERE id = ?",
     args: [now, externalId, articleId],
@@ -99,7 +105,7 @@ router.post('/:id/publish', async (req, res) => {
     const article = aResult.rows[0];
     if (!article) return res.status(404).json({ error: 'Không tìm thấy bài viết' });
 
-    const apiUrl = isRoot(req.user) ? await getSetting('publish_api_url') : '';
+    const apiUrl = await getSetting('publish_api_url');
     if (!apiUrl) {
       return res.status(400).json({ error: 'Bạn chưa cấu hình URL API đăng bài. Vui lòng liên hệ admin để cập nhật trong Cài Đặt hệ thống.' });
     }

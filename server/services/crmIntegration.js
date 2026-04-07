@@ -277,21 +277,16 @@ async function processWebhookEvent(eventId, payload, isRetry = false) {
     thongtincongtyvietbai.Url = normalizeUrlWithProtocol(thongtinHD.tenmien); // đảm bảo có trường url để build link map sau này
     const hopDongId = await findOrCreateHopDong(thongtinHD);
     const companyId = await findOrCreateCompany(thongtincongtyvietbai, hopDongId, userId);
-
     // Hỗ trợ payload cũ (single) và mới (batch tukhoas[])
     const items = tukhoas || [{ tukhoa, soluongtieude }];
     const queueIds = [];
-
     for (const item of items) {
       const { tukhoa: keyword, soluongtieude: count, yeucau, tieudecodinh, content_type } = item;
-
       console.info(`[crm] Event ${eventId} — ITEM: keyword="${keyword}", count=${count}, yeucau="${yeucau}", content_type="${content_type || 'blog'}"`);
-
       if (!keyword) {
         console.log(`[crm] Event ${eventId} — skip item rỗng`);
         continue;
       }
-
       // Skip keyword đã tồn tại với cùng (keyword + yeucau + content_type)
       // Cùng keyword nhưng khác yeucau hoặc content_type → vẫn enqueue (CRM1 muốn tạo nhiều bài khác nhau)
       const ct = content_type || 'blog';
@@ -300,7 +295,6 @@ async function processWebhookEvent(eventId, payload, isRetry = false) {
       //   console.log(`[crm] Event ${eventId} skip duplicate keyword="${keyword}" (yeucau="${yeucau}", ct="${ct}")`);
       //   continue;
       // }
-
       try {
         const queueId = await enqueueKeyword({
           keyword:   keyword,
@@ -319,16 +313,12 @@ async function processWebhookEvent(eventId, payload, isRetry = false) {
         console.error(`[crm] Event ${eventId} ❌ enqueue keyword="${keyword}" thất bại: ${e.message}`);
       }
     }
-
     // Debug: log tất cả queue_ids đã enqueue
     console.info(`[crm] Event ${eventId} — SUMMARY: ${queueIds.length}/${items.length} enqueued. QueueIds: ${JSON.stringify(queueIds)}`);
-
     console.log(`[crm] Event ${eventId} — vòng for xong: ${queueIds.length}/${items.length} items enqueued`);
-
     if (queueIds.length === 0) {
       throw new Error('Không enqueue được keyword nào.');
     }
-
     // Thành công: reset retry fields + đánh dấu done
     await db.execute({
       sql: `UPDATE webhook_events
@@ -337,15 +327,12 @@ async function processWebhookEvent(eventId, payload, isRetry = false) {
       args: [new Date().toISOString(), eventId],
     });
     recordWebhookEvent('done');
-
     console.log(`[crm] Event ${eventId} hoàn tất: ${queueIds.length} keyword(s) enqueued`);
   } catch (e) {
     console.error(`[crm] Event ${eventId} failed:`, e.message);
-
     // Lấy retry_count hiện tại
     const ev = await db.execute({ sql: 'SELECT retry_count FROM webhook_events WHERE id = ?', args: [eventId] });
     const currentRetry = Number(ev.rows[0]?.retry_count || 0);
-
     if (currentRetry >= WEBHOOK_MAX_RETRIES) {
       // Đã retry đủ lần → đánh dấu failed vĩnh viễn
       await db.execute({

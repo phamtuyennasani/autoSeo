@@ -37,6 +37,19 @@ function buildSystemConfig(provider) {
     };
   }
 
+  if (provider === 'claude') {
+    const apiKey = process.env.ANTHROPIC_API_KEY || '';
+    return {
+      provider:       'claude',
+      apiKey,
+      modelName:      process.env.CLAUDE_MODEL    || 'claude-sonnet-4-20250514',
+      serpApiKey:     process.env.SERPAPI_API_KEY || '',
+      usingSystemKey: true,
+      blocked:        !apiKey,
+      message:        !apiKey ? 'ANTHROPIC_API_KEY chưa được cấu hình. Vào Cài đặt → Cấu hình API để nhập key.' : undefined,
+    };
+  }
+
   // Mặc định: gemini
   const geminiKey = process.env.GEMINI_API_KEY || '';
   return {
@@ -64,7 +77,7 @@ async function getEffectiveApiConfig(userId) {
     const result = await db.execute({
       sql: `SELECT gemini_api_key, gemini_model, serpapi_api_key, openai_model,
                    use_system_key, use_manager_key, manager_id, role, ai_provider, custom_prompt,
-                   anthropic_api_key
+                   anthropic_api_key, anthropic_model
             FROM users WHERE id = ?`,
       args: [userId],
     });
@@ -146,15 +159,15 @@ async function getEffectiveApiConfig(userId) {
     return { ...effectiveSystemConfig, customPrompt };
   }
 
-  if (effectiveProvider === 'anthropic') {
+  if (effectiveProvider === 'claude') {
     const userKey = row.anthropic_api_key;
     if (userKey) {
       return {
-        provider:    'anthropic',
-        apiKey:      userKey,
-        modelName:   'claude-sonnet-4-6',
+        provider:       'claude',
+        apiKey:         userKey,
+        modelName:      row.anthropic_model || 'claude-sonnet-4-20250514',
         usingSystemKey: false,
-        blocked:     false,
+        blocked:        false,
         customPrompt,
       };
     }

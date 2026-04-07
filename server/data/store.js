@@ -306,6 +306,8 @@ async function initDb() {
     { table: 'batch_jobs',     col: 'source', ddl: "ALTER TABLE batch_jobs ADD COLUMN source TEXT" },
     { table: 'keywords',       col: 'source',        ddl: "ALTER TABLE keywords ADD COLUMN source TEXT" },
     { table: 'keywords',       col: 'content_type',  ddl: "ALTER TABLE keywords ADD COLUMN content_type TEXT DEFAULT 'blog'" },
+    // yeucau — yêu cầu từ CRM1, dùng làm hint cho AI khi viết bài
+    { table: 'title_queue',   col: 'yeucau',        ddl: 'ALTER TABLE title_queue ADD COLUMN yeucau TEXT' },
     // webhook_events — lưu email CRM1 gửi lên để tìm user
     { table: 'webhook_events', col: 'email',  ddl: 'ALTER TABLE webhook_events ADD COLUMN email TEXT' },
     // webhook_events — auto-retry sau 5 phút khi failed
@@ -344,6 +346,9 @@ async function initDb() {
     // keyword_queue + title_queue — retry_after: job lỗi → chờ đến thời điểm này rồi retry tự động
     { table: 'keyword_queue',   col: 'retry_after',     ddl: 'ALTER TABLE keyword_queue ADD COLUMN retry_after TEXT' },
     { table: 'title_queue',     col: 'retry_after',     ddl: 'ALTER TABLE title_queue ADD COLUMN retry_after TEXT' },
+    // users — Claude/Anthropic provider
+    { table: 'users', col: 'anthropic_api_key', ddl: 'ALTER TABLE users ADD COLUMN anthropic_api_key TEXT' },
+    { table: 'users', col: 'anthropic_model',    ddl: 'ALTER TABLE users ADD COLUMN anthropic_model TEXT' },
   ];
 
   // ── DLQ (Dead Letter Queue) tables ─────────────────────────────────────────

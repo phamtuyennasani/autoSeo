@@ -48,7 +48,7 @@ async function checkArticleLimit(user) {
 }
 
 // ─── Helper: gọi AI + lưu token + lưu DB ─────────────────────────────────────
-async function generateAndSave(keyword, title, companyId, company, createdBy = null, userConfig = {}, keywordId = null, writtenBy = null, chuki = null, contentType = 'blog', publishExternalId = null, customLinks = null, imageUrls = null) {
+async function generateAndSave(keyword, title, companyId, company, createdBy = null, userConfig = {}, keywordId = null, writtenBy = null, chuki = null, contentType = 'blog', publishExternalId = null, customLinks = null, imageUrls = null, articleId = null) {
   // An toàn: ép tất cả về string/null (SQLite chỉ nhận primitives)
   keyword     = keyword     == null ? null : String(keyword);
   title       = title       == null ? null : String(title);
@@ -61,8 +61,6 @@ async function generateAndSave(keyword, title, companyId, company, createdBy = n
   customLinks = customLinks == null ? null : String(customLinks);
   imageUrls   = imageUrls   == null ? null : String(imageUrls);
 
-  console.log('[generateAndSave] customLinks:', JSON.stringify(customLinks));
-  console.log('[generateAndSave] imageUrls:', JSON.stringify(imageUrls));
 
   const isFanpage = contentType === 'fanpage';
 
@@ -105,8 +103,10 @@ async function generateAndSave(keyword, title, companyId, company, createdBy = n
   if (!isFanpage) {
     content = await applyInternalLinks(content, companyId, title, company.url);
   }
-  // Nếu bài đã tồn tại (cùng keywordId + title, hoặc keyword + title nếu chưa có keywordId) → lưu version cũ rồi UPDATE
-  const existingQuery = keywordId
+  // Nếu bài đã tồn tại: ưu tiên articleId, fallback keywordId+title, cuối cùng keyword+title+companyId
+  const existingQuery = articleId
+    ? { sql: 'SELECT * FROM articles WHERE id = ?', args: [articleId] }
+    : keywordId
     ? { sql: 'SELECT * FROM articles WHERE keywordId = ? AND title = ?', args: [keywordId, title] }
     : { sql: 'SELECT * FROM articles WHERE keyword = ? AND title = ? AND companyId = ?', args: [keyword, title, companyId] };
   const existing = await db.execute(existingQuery);
@@ -115,11 +115,11 @@ async function generateAndSave(keyword, title, companyId, company, createdBy = n
     const existingPublishExternalId = existing.rows[0].publish_external_id || null;
     await saveVersion(existing.rows[0].id, existing.rows[0], createdBy);
     await db.execute({
-      sql: 'UPDATE articles SET content = ?, seo_title = ?, seo_description = ?, short_content = ?, thumbnail_prompt = ?, keywordId = ?, chuki = ?, content_type = ? WHERE id = ?',
-      args: [content, seo_title, seo_description, short_content, thumbnail_prompt, keywordId, chuki, contentType, existing.rows[0].id],
+      sql: 'UPDATE articles SET content = ?, seo_title = ?, seo_description = ?, short_content = ?, thumbnail_prompt = ?, keywordId = ?, chuki = ?, content_type = ?, publish_status = ? WHERE id = ?',
+      args: [content, seo_title, seo_description, short_content, thumbnail_prompt, keywordId, chuki, contentType, 'unpublished', existing.rows[0].id],
     });
-    const updated = { ...existing.rows[0], content, seo_title, seo_description, short_content, thumbnail_prompt, keywordId, chuki, content_type: contentType, publish_external_id: existingPublishExternalId };
-    // Auto-publish nếu hệ thống bật — truyền publish_external_id cũ để CRM2 cập nhật thay vì tạo mới
+    const updated = { ...existing.rows[0], content, seo_title, seo_description, short_content, thumbnail_prompt, keywordId, chuki, content_type: contentType, publish_status: 'unpublished', publish_external_id: existingPublishExternalId };
+    // Auto-publish: chỉ khi hệ thống bật. Không auto-publish khi viết lại — user tự bấm Post.
     if (await getSetting('auto_publish_enabled') === '1') {
       try {
         const apiUrl = await getSetting('publish_api_url');
@@ -144,7 +144,7 @@ async function generateAndSave(keyword, title, companyId, company, createdBy = n
     sql: 'INSERT INTO articles (id, keyword, title, companyId, content, seo_title, seo_description, short_content, thumbnail_prompt, createdAt, createdBy, keywordId, writtenBy, chuki, content_type, publish_external_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     args: [id, keyword, title, companyId, content, seo_title, seo_description, short_content, thumbnail_prompt, createdAt, createdBy, keywordId, writtenBy, chuki, contentType, publishExternalId],
   });
-  const newArticle = { id, keyword, title, companyId, content, seo_title, seo_description, thumbnail_prompt, createdAt, createdBy, writtenBy, keywordId, chuki, content_type: contentType, publish_status: 'unpublished', publish_external_id: publishExternalId };
+  const newArticle = { id, keyword, title, companyId, short_content, content, seo_title, seo_description, thumbnail_prompt, createdAt, createdBy, writtenBy, keywordId, chuki, content_type: contentType, publish_status: 'unpublished', publish_external_id: publishExternalId };
 
   // Auto-publish nếu hệ thống bật tính năng này
   if (await getSetting('auto_publish_enabled') === '1') {
@@ -430,7 +430,7 @@ router.post('/', async (req, res) => {
       } catch { /* giữ mặc định nếu lỗi */ }
     }
 
-    const article = await generateAndSave(keyword, title, companyId, company, effectiveCreatedBy, apiConfig, keywordId, writtenBy, null, null, null, customLinks, imageUrls);
+    const article = await generateAndSave(keyword, title, companyId, company, effectiveCreatedBy, apiConfig, keywordId, writtenBy, null, null, null, customLinks, imageUrls, req.body.articleId);
     res.json(article);
   } catch (error) {
     console.error('[single] Lỗi:', error.message);

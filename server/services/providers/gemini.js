@@ -35,7 +35,11 @@ async function generateTitles(keyword, searchContext, count = 10, config = {}) {
     const genAI = new GoogleGenerativeAI(key);
     const model = genAI.getGenerativeModel({
       model: modelName,
-      systemInstruction: 'You are an SEO expert. Return only valid JSON arrays without any explanation or markdown.',
+      tools: [{ googleSearch: {} }], 
+      systemInstruction: {
+        role: "system",
+        parts: [{ text: 'You are an SEO expert. Return only valid JSON arrays without any explanation or markdown.' }],
+      }
     });
 
     const result = await model.generateContent(prompt);
@@ -81,6 +85,9 @@ async function generateArticle(keyword, title, companyInfo, config = {}) {
   let promptByUser = '';
   if (config.customPrompt) {
     promptByUser = `\n\n## Yêu cầu phong cách viết của tác giả (bắt buộc tuân theo):\n${config.customPrompt}`;
+  }
+  if (config.yeucau) {
+    promptByUser += `\n\n## Yêu cầu bổ sung từ CRM (bắt buộc tuân theo):\n${config.yeucau}`;
   }
   const customLinks = config.customLinks || '';
   const imageUrls   = config.imageUrls   || '';
@@ -144,11 +151,18 @@ async function generateFanpageArticle(keyword, title, companyInfo, config = {}) 
   if (config.customPrompt) {
     promptByUser = `\n\n## Yêu cầu phong cách viết của tác giả (bắt buộc tuân theo):\n${config.customPrompt}`;
   }
+  if (config.yeucau) {
+    promptByUser += `\n\n## Yêu cầu bổ sung từ CRM (bắt buộc tuân theo):\n${config.yeucau}`;
+  }
   const prompt = buildFanpageArticlePrompt(keyword, title, companyInfo, promptByUser);
 
   return withKeyFallback(keysStr, async (key) => {
     const genAI = new GoogleGenerativeAI(key);
-    const model = genAI.getGenerativeModel({ model: modelName, systemInstruction: ARTICLE_SYSTEM_INSTRUCTION });
+    const model = genAI.getGenerativeModel({ model: modelName, tools: [{ googleSearch: {} }], 
+                    systemInstruction: {
+                      role: "system",
+                      parts: [{ text: ARTICLE_SYSTEM_INSTRUCTION }],
+                    } });
     const result = await model.generateContent(prompt);
     const raw    = result.response.text().trim();
 

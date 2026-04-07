@@ -231,9 +231,30 @@ const InfoField = ({ label, value, mono }) => (
 
 // ─── KeywordRow ─────────────────────────────────────────────────────────────────
 
-const DlqKeywordRow = ({ job, onReplay, onPurge, expanded, onExpand }) => {
+const DlqKeywordRow = ({ job, onReplay, onPurge, expanded, onExpand, companies = [], users = [], contracts = [] }) => {
   const [replaying, setReplaying] = useState(false);
   const [purging, setPurging] = useState(false);
+
+  const getCompanyName = (id) => companies.find(c => c.id === id)?.name || id?.slice(0, 8) + '…' || '—';
+  const getUserName    = (id) => {
+    if (!id) return '—';
+    const u = users.find(x => x.id === id);
+    if (!u) return id;
+    if (u.full_name && u.employee_code) return `${u.full_name} (${u.employee_code})`;
+    if (u.full_name) return u.full_name;
+    if (u.email) return u.email;
+    return id;
+  };
+  const getContractCode = (id) => {
+    if (!id) return '—';
+    const c = companies.find(x => x.id === id);
+    return c?.contract_code || id;
+  };
+  const getMaHd = (hopDongId) => {
+    if (!hopDongId) return '—';
+    const hd = contracts.find(h => h.id === hopDongId);
+    return hd?.ma_hd || hopDongId;
+  };
 
   const handleReplay = async (e) => {
     e.stopPropagation();
@@ -287,7 +308,7 @@ const DlqKeywordRow = ({ job, onReplay, onPurge, expanded, onExpand }) => {
         <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {job.keyword}
         </div>
-        <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{job.company_id?.slice(0, 8) || '—'}…</div>
+        <div style={{ fontSize: 12, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{getCompanyName(job.company_id)}</div>
         <div style={{ fontSize: 12, textAlign: 'center', color: 'var(--text-secondary)' }}>{job.so_tieude}</div>
         <div style={{ fontSize: 12, textAlign: 'center' }}>
           <span style={{ color: '#ef4444', fontWeight: 700 }}>{job.retries}</span>
@@ -303,10 +324,10 @@ const DlqKeywordRow = ({ job, onReplay, onPurge, expanded, onExpand }) => {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
             <InfoField label="DLQ ID" value={job.id} mono />
             <InfoField label="Original ID" value={job.original_id} mono />
-            <InfoField label="Company ID" value={job.company_id} mono />
-            <InfoField label="Hợp đồng" value={job.hop_dong_id || '—'} mono />
+            <InfoField label="Company" value={getCompanyName(job.company_id)} />
+            <InfoField label="Mã HĐ" value={getMaHd(job.hop_dong_id)} mono />
             <InfoField label="Chu kỳ" value={job.chuki || '—'} />
-            <InfoField label="Người tạo" value={job.created_by || '—'} />
+            <InfoField label="Người tạo" value={getUserName(job.created_by)} />
             <InfoField label="Số tiêu đề" value={job.so_tieude} />
             <InfoField label="Retry lần" value={job.retries} />
           </div>
@@ -340,9 +361,30 @@ const DlqKeywordRow = ({ job, onReplay, onPurge, expanded, onExpand }) => {
 
 // ─── TitleRow ──────────────────────────────────────────────────────────────────
 
-const DlqTitleRow = ({ job, onReplay, onPurge, expanded, onExpand }) => {
+const DlqTitleRow = ({ job, onReplay, onPurge, expanded, onExpand, companies = [], users = [] }) => {
   const [replaying, setReplaying] = useState(false);
   const [purging, setPurging] = useState(false);
+
+  const getCompanyName = (id) => companies.find(c => c.id === id)?.name || id || '—';
+  const getUserName    = (id) => {
+    if (!id) return '—';
+    const u = users.find(x => x.id === id);
+    if (!u) return id;
+    if (u.full_name && u.employee_code) return `${u.full_name} (${u.employee_code})`;
+    if (u.full_name) return u.full_name;
+    if (u.email) return u.email;
+    return id;
+  };
+  const getContractCode = (id) => {
+    if (!id) return '—';
+    const c = companies.find(x => x.id === id);
+    return c?.contract_code || id;
+  };
+  const getMaHd = (hopDongId) => {
+    if (!hopDongId) return '—';
+    const hd = contracts.find(h => h.id === hopDongId);
+    return hd?.ma_hd || hopDongId;
+  };
 
   const handleReplay = async (e) => {
     e.stopPropagation();
@@ -399,7 +441,7 @@ const DlqTitleRow = ({ job, onReplay, onPurge, expanded, onExpand }) => {
         <div style={{ fontSize: 12, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {job.keyword_q_id?.slice(0, 12) || '—'}…
         </div>
-        <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{job.company_id?.slice(0, 8) || '—'}…</div>
+        <div style={{ fontSize: 12, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{getCompanyName(job.company_id)}</div>
         <div style={{ fontSize: 12, textAlign: 'center' }}>
           <span style={{ color: '#ef4444', fontWeight: 700 }}>{job.retries}</span>
         </div>
@@ -415,10 +457,10 @@ const DlqTitleRow = ({ job, onReplay, onPurge, expanded, onExpand }) => {
             <InfoField label="DLQ ID" value={job.id} mono />
             <InfoField label="Original ID" value={job.original_id} mono />
             <InfoField label="Keyword Q ID" value={job.keyword_q_id} mono />
-            <InfoField label="Company ID" value={job.company_id} mono />
-            <InfoField label="Hợp đồng" value={job.hop_dong_id || '—'} mono />
+            <InfoField label="Company" value={getCompanyName(job.company_id)} />
+            <InfoField label="Mã HĐ" value={getMaHd(job.hop_dong_id)} mono />
             <InfoField label="Chu kỳ" value={job.chuki || '—'} />
-            <InfoField label="Người tạo" value={job.created_by || '—'} />
+            <InfoField label="Người tạo" value={getUserName(job.created_by)} />
             <InfoField label="Retry lần" value={job.retries} />
           </div>
           <div style={{ marginBottom: 12 }}>
@@ -485,6 +527,47 @@ const Dlq = () => {
   const [workersPaused, setWorkersPaused] = useState(false);
   const [spawningKw, setSpawningKw]       = useState(false);
   const [spawningTl, setSpawningTl]       = useState(false);
+  const [companies, setCompanies]         = useState([]);
+  const [users, setUsers]                 = useState([]);
+  const [contracts, setContracts]         = useState([]);
+
+  // ── Fetch companies + users + contracts for name lookup ──────────────────────
+  const fetchLookups = useCallback(async () => {
+    try {
+      const [compRes, userRes, contractRes] = await Promise.all([
+        apiClient.get('/api/companies'),
+        apiClient.get('/api/users'),
+        apiClient.get('/api/hop-dong'),
+      ]);
+      setCompanies(compRes.data || []);
+      setUsers(userRes.data || []);
+      setContracts(contractRes.data || []);
+    } catch { /* silent */ }
+  }, []);
+
+  useEffect(() => { fetchLookups(); }, [fetchLookups]);
+
+  // ── Lookup helpers ─────────────────────────────────────────────────────────
+  const getCompanyName = (id) => companies.find(c => c.id === id)?.name || id || '—';
+  const getUserName    = (id) => {
+    if (!id) return '—';
+    const u = users.find(x => x.id === id);
+    if (!u) return id;
+    if (u.full_name && u.employee_code) return `${u.full_name} (${u.employee_code})`;
+    if (u.full_name) return u.full_name;
+    if (u.email) return u.email;
+    return id;
+  };
+  const getContractCode = (id) => {
+    if (!id) return '—';
+    const c = companies.find(x => x.id === id);
+    return c?.contract_code || id;
+  };
+  const getMaHd = (hopDongId) => {
+    if (!hopDongId) return '—';
+    const hd = contracts.find(h => h.id === hopDongId);
+    return hd?.ma_hd || hopDongId;
+  };
 
   // ── Fetch ──────────────────────────────────────────────────────────────────
 
@@ -948,9 +1031,9 @@ const Dlq = () => {
 
         {!loading && jobs.map(job =>
           activeTab === 'keyword' ? (
-            <DlqKeywordRow key={job.id} job={job} onReplay={handleRemoveJob} onPurge={handleRemoveJob} onExpand={setExpanded} expanded={expanded} />
+            <DlqKeywordRow key={job.id} job={job} onReplay={handleRemoveJob} onPurge={handleRemoveJob} onExpand={setExpanded} expanded={expanded} companies={companies} users={users} contracts={contracts} />
           ) : (
-            <DlqTitleRow key={job.id} job={job} onReplay={handleRemoveJob} onPurge={handleRemoveJob} onExpand={setExpanded} expanded={expanded} />
+            <DlqTitleRow key={job.id} job={job} onReplay={handleRemoveJob} onPurge={handleRemoveJob} onExpand={setExpanded} expanded={expanded} companies={companies} users={users} contracts={contracts} />
           )
         )}
       </div>

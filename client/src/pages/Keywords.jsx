@@ -93,6 +93,7 @@ const Keywords = () => {
 
   // Article modal (single)
   const [writeModalTitle, setWriteModalTitle] = useState(null);
+  const [writeModalArticleId, setWriteModalArticleId] = useState(null); // bài đang viết lại
   const [isWriteModalOpen, setIsWriteModalOpen] = useState(false);
 
   // Article view
@@ -446,23 +447,21 @@ const Keywords = () => {
     }
   };
 
-  // Xóa bài viết cũ rồi viết lại
+  // Viết lại: mở modal → backend UPDATE bài cũ, giữ nguyên publish_external_id
   const handleRewrite = async (article) => {
-    try {
-      await apiClient.delete(`${API_ARTICLE}/${article.id}`);
-      handleArticleWritten();
-    } catch (err) {
-      toast.error('Xóa bài cũ thất bại!');
-    }
+    setViewingArticle(null);
     setWriteModalTitle(article.title);
+    setWriteModalArticleId(article.id); // để backend nhận biết đang viết lại
     setIsWriteModalOpen(true);
   };
 
   // Publish 1 bài lên API bên thứ 3
   const handlePublishArticle = async (article) => {
     setPublishingIds(prev => new Set([...prev, article.id]));
+    console.log('Publishing article ID:', article.id);
     try {
       const res = await apiClient.post(`${API_PUBLISH}/${article.id}/publish`);
+      console.log('Publish response:', res.data);
       setArticlesOfKeyword(prev => prev.map(a => a.id === article.id ? res.data : a));
       if (viewingArticle?.id === article.id) setViewingArticle(res.data);
       toast.success(`Đã đăng bài thành công${res.data.publish_external_id ? ' #' + res.data.publish_external_id : ''}!`);
@@ -741,12 +740,12 @@ const Keywords = () => {
               </button>
               <button
                 onClick={async () => {
-                  if (!await confirm({ title: 'Xóa và viết lại?', message: 'Bài viết hiện tại sẽ bị xóa để viết lại bằng AI.', confirmText: 'Xóa & Viết lại', danger: true })) return;
-                  await apiClient.delete(`${API_ARTICLE}/${viewingArticle.id}`);
+                  if (!await confirm({ title: 'Viết lại bài?', message: 'Bài viết hiện tại sẽ được ghi đè bằng nội dung mới từ AI. Bài đã đăng lên CRM sẽ được cập nhật thay vì tạo bài mới.', confirmText: 'Viết Lại', danger: false })) return;
                   setViewingArticle(null);
                   fetchArticlesForKeyword(selectedKeyword.keyword, selectedKeyword.companyId);
                   fetchData();
                   setWriteModalTitle(viewingArticle.title);
+                  setWriteModalArticleId(viewingArticle.id);
                   setIsWriteModalOpen(true);
                 }}
                 className="btn btn-outline"
@@ -763,6 +762,19 @@ const Keywords = () => {
             <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '14px' }}>
               SEO Meta
             </div>
+            {viewingArticle.title && (
+              <div style={{ marginBottom: '12px' }}>
+                <div style={{ display: 'flex',justifyContent: 'space-between', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)', marginBottom: '5px' }}>
+                  <div style={{ display: 'flex',alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)',  }}>
+                    <FileText size={11} /> Title <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>({viewingArticle.title.length} ký tự)</span>
+                  </div>
+                  <CopyBtn field="title" value={viewingArticle.title} />
+                </div>
+                <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-primary)', background: 'var(--bg-panel)', padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
+                  {viewingArticle.title}
+                </div>
+              </div>
+            )}
             {viewingArticle.seo_title && (
               <div style={{ marginBottom: '12px' }}>
                 <div style={{ display: 'flex',justifyContent: 'space-between', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)', marginBottom: '5px' }}>
@@ -1458,7 +1470,8 @@ const Keywords = () => {
             title={writeModalTitle}
             companyId={selectedKeyword.companyId}
             keywordId={selectedKeyword.id}
-            onClose={() => { setIsWriteModalOpen(false); setWriteModalTitle(null); }}
+            articleId={writeModalArticleId}
+            onClose={() => { setIsWriteModalOpen(false); setWriteModalTitle(null); setWriteModalArticleId(null); }}
             onSuccess={handleArticleWritten}
           />
         )}

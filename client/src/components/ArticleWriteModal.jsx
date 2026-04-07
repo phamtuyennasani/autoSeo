@@ -10,7 +10,7 @@ const API_COMPANY = API.companies;
 const API_ARTICLE = API.articles;
 
 // companyId được truyền cố định từ Keyword -> không cần chọn lại
-const ArticleWriteModal = ({ keyword, title, companyId, keywordId, onClose, onSuccess, contentType = 'blog' }) => {
+const ArticleWriteModal = ({ keyword, title, companyId, keywordId, articleId, onClose, onSuccess, contentType = 'blog' }) => {
   const [company, setCompany] = useState(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedArticle, setGeneratedArticle] = useState(null);
@@ -38,7 +38,7 @@ const ArticleWriteModal = ({ keyword, title, companyId, keywordId, onClose, onSu
     setIsGenerating(true);
     setError(null);
     try {
-      const payload = { keyword, title, companyId, keywordId, contentType };
+      const payload = { keyword, title, companyId, keywordId, contentType, articleId }; // articleId = đang viết lại bài có sẵn
       if (isBlog) {
         // Chỉ truyền customLinks/imageUrls cho blog
         if (customLinks.trim()) payload.customLinks = customLinks;

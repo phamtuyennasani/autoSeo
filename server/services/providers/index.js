@@ -16,17 +16,19 @@
  *   - Viết bài lẻ / Keyword Planner: hỗ trợ tất cả provider.
  */
 
-const gemini = require('./gemini');
+const gemini  = require('./gemini');
 const openai  = require('./openai');
+const claude  = require('./claude');
 
 const PROVIDERS = {
   gemini,
   openai,
+  claude,
 };
 
 /**
  * Lấy provider theo tên.
- * @param {string} name - tên provider ('gemini' | 'openai' | ...)
+ * @param {string} name - tên provider ('gemini' | 'openai' | 'claude' | ...)
  * @returns provider object
  */
 function getProvider(name = 'gemini') {
