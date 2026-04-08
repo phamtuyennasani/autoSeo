@@ -17,7 +17,7 @@
 const { db }                 = require('../data/store');
 const { generateTitles }     = require('./gemini');
 const { getEffectiveApiConfig } = require('./apiConfig');
-const { recordKeywordProcessed, recordTitleProcessed, recordDlqJob } = require('./metricsService');
+const { recordKeywordProcessed, recordTitleProcessed } = require('./metricsService');
 const { genId,LOG }              = require('../utils/func');
 const KEYWORD_WORKERS = parseInt(process.env.KEYWORD_QUEUE_WORKERS || '2', 10);
 const TITLE_WORKERS   = parseInt(process.env.TITLE_QUEUE_WORKERS   || '2', 10);
@@ -40,63 +40,13 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 // ─── DLQ helpers ──────────────────────────────────────────────────────────────
 
-/**
- * moveKeywordToDlq — chuyển job failed vượt MAX_RETRIES sang DLQ
- * Sau khi gọi: job được INSERT vào keyword_queue_dlq, DELETE khỏi keyword_queue
- */
-async function moveKeywordToDlq(job, finalError) {
-  const dlqId = genId();
-  const now   = new Date().toISOString();
-  // Lưu payload để có thể replay
-  const payloadJson = JSON.stringify({
-    keyword:   job.keyword,
-    so_tieude: job.so_tieude,
-    yeucau:    job.yeucau,
-    tieudecodinh_json: job.tieudecodinh_json,
-  });
-
-  await db.execute({
-    sql: `INSERT INTO keyword_queue_dlq
-            (id, original_id, keyword, so_tieude, company_id, hop_dong_id, chuki,
-             created_by, retries, error, failed_at, payload_json, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    args: [dlqId, job.id, job.keyword, job.so_tieude || 10, job.company_id,
-           job.hop_dong_id || null, job.chuki || null,
-           job.created_by || null, job.retries || 0, finalError, now, payloadJson, now],
-  });
-
-  // Xóa khỏi queue chính
-  await db.execute({ sql: `DELETE FROM keyword_queue WHERE id = ?`, args: [job.id] });
-  recordDlqJob('keyword');
-  LOG(`[CRMQueue - DLQ] keyword="${job.keyword}" moved to DLQ (retries=${job.retries || 0}): ${finalError}`);
-}
-
-/**
- * moveTitleToDlq — tương tự cho title_queue
- */
-async function moveTitleToDlq(job, finalError) {
-  const dlqId = genId();
-  const now   = new Date().toISOString();
-  const payloadJson = JSON.stringify({
-    keyword_q_id: job.keyword_q_id,
-    keyword:      job.keyword,
-    titles_json: job.titles_json,
-    chuki:       job.chuki,
-  });
-
-  await db.execute({
-    sql: `INSERT INTO title_queue_dlq
-            (id, original_id, keyword_q_id, keyword, titles_json, company_id, hop_dong_id,
-             chuki, created_by, retries, error, failed_at, payload_json, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    args: [dlqId, job.id, job.keyword_q_id, job.keyword, job.titles_json,
-           job.company_id, job.hop_dong_id || null, job.chuki || null,
-           job.created_by || null, job.retries || 0, finalError, now, payloadJson, now],
-  });
-
-  await db.execute({ sql: `DELETE FROM title_queue WHERE id = ?`, args: [job.id] });
-  recordDlqJob('title');
-  LOG(`[CRMQueue - DLQ] title job="${job.keyword}" moved to DLQ (retries=${job.retries || 0}): ${finalError}`);
+/** Tra cứu mã hợp đồng từ hop_dong_id */
+async function lookupMaHD(hopDongId) {
+  if (!hopDongId) return null;
+  try {
+    const res = await db.execute({ sql: 'SELECT ma_hd FROM hop_dong WHERE id = ?', args: [hopDongId] });
+    return res.rows[0]?.ma_hd || null;
+  } catch { return null; }
 }
 
 // Reset stuck jobs (processing quá lâu → về pending để worker khác pick up)
@@ -245,16 +195,23 @@ async function processKeywordJob(job) {
       args: [keywordId, job.keyword, titlesJson, job.company_id, new Date().toISOString(), job.created_by || 'system', job.content_type || 'blog'],
     });
 
-    // Đẩy vào title_queue
+    // Đẩy vào title_queue (kèm id_tukhoa, custom_links, image_urls từ CRM1)
     const titleQueueId = genId();
     const tqTitlesJson = JSON.stringify(titles);
     console.info(`[CRMQueue - KW-Worker] 📋 title_queue INSERT: id=${titleQueueId}, keyword_q_id=${job.id}`);
     console.info(`[CRMQueue - KW-Worker]    titles count=${titles.length}, titlesJson=${tqTitlesJson}`);
+    console.info(`[CRMQueue - KW-Worker]    id_tukhoa="${job.id_tukhoa || ''}", customLinks="${job.custom_links || ''}", imageUrls="${job.image_urls || ''}"`);
     LOG(`[CRMQueue - KW-Worker] 📋 Insert title_queue: id=${titleQueueId}, keyword_q_id=${job.id}, titles count=${titles.length}`);
     await db.execute({
-      sql: `INSERT INTO title_queue (id, keyword_q_id, keyword, titles_json, company_id, hop_dong_id, chuki, created_by, yeucau, content_type, status, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
-      args: [titleQueueId, job.id, job.keyword, tqTitlesJson, job.company_id, job.hop_dong_id || null, job.chuki || null, job.created_by || null, job.yeucau || null, job.content_type || 'blog', new Date().toISOString()],
+      sql: `INSERT INTO title_queue (id, keyword_q_id, keyword, titles_json, company_id, hop_dong_id, chuki, created_by, yeucau, content_type, id_tukhoa, custom_links, image_urls, status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
+      args: [
+        titleQueueId, job.id, job.keyword, tqTitlesJson, job.company_id,
+        job.hop_dong_id || null, job.chuki || null, job.created_by || null,
+        job.yeucau || null, job.content_type || 'blog',
+        job.id_tukhoa || null, job.custom_links || null, job.image_urls || null,
+        new Date().toISOString(),
+      ],
     });
 
     // Đánh dấu done
@@ -266,21 +223,25 @@ async function processKeywordJob(job) {
     recordKeywordProcessed((Date.now() - start) / 1000, true);
     LOG(`[CRMQueue - KW-Worker] ✅ Xong keyword="${job.keyword}" → ${titles.length} tiêu đề`);
   } catch (e) {
-    const retries = (job.retries || 0) + 1;
-
-    if (retries >= MAX_RETRIES) {
-      // Đã retry đủ lần → chuyển sang DLQ
-      await moveKeywordToDlq({ ...job, retries }, e.message);
-    } else {
-      // Chưa đủ lần → đặt retry_after và giữ job trong queue (chờ tự động retry)
-      const retryDelay = parseInt(process.env.RETRY_DELAY_MS || '300000', 10); // 5 phút mặc định
-      const retryAfter = new Date(Date.now() + retryDelay).toISOString();
-      await db.execute({
-        sql: `UPDATE keyword_queue SET status = 'pending', retries = ?, error = ?, worker_id = NULL, started_at = NULL, retry_after = ? WHERE id = ?`,
-        args: [retries, e.message, retryAfter, job.id],
-      });
-      LOG(`[CRMQueue - KW-Worker] ❌ Lỗi keyword="${job.keyword}" (retry ${retries}/${MAX_RETRIES}), tự retry lúc ${retryAfter}: ${e.message}`);
-    }
+    // Lỗi → notify CRM1 + ghi log ngay (không retry)
+    const maHD = await lookupMaHD(job.hop_dong_id);
+    const { notifyCrm1Error } = require('./crmIntegration');
+    const now = new Date().toISOString();
+    await db.execute({
+      sql: `INSERT INTO error_logs (id, phase, keyword, company_id, hop_dong_id, chuki, created_by, id_tukhoa, ma_hd, email, error_message, notified_at, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: [genId(), 'tao_tieude', job.keyword, job.company_id, job.hop_dong_id || null, job.chuki || null, job.created_by || null, job.id_tukhoa || null, maHD, job.created_by || null, e.message, now, now],
+    });
+    await notifyCrm1Error({
+      id_tukhoa:    job.id_tukhoa || null,
+      email:        job.created_by || null,
+      maHD,
+      errorPhase:   'tao_tieude',
+      errorMessage: e.message,
+    });
+    // Xóa khỏi keyword_queue
+    await db.execute({ sql: `DELETE FROM keyword_queue WHERE id = ?`, args: [job.id] });
+    LOG(`[CRMQueue - KW-Worker] ❌ Lỗi keyword="${job.keyword}" → đã ghi log + notify CRM1 và xóa khỏi queue: ${e.message}`);
     recordKeywordProcessed((Date.now() - start) / 1000, false);
   }
 }
@@ -470,7 +431,15 @@ async function processTitleJob(job) {
         ].find(([, v]) => typeof v === 'object' && v !== null);
         if (bad) LOG(`[CRMQueue - TL-Worker] ⚠️  Object detected: ${bad[0]} =`, bad[1]);
 
-        await generateAndSave(job.keyword, title, job.company_id, company, job.created_by, apiConfig, keywordId, null, job.chuki || null, job.content_type || 'blog', job.publish_external_id || null);
+        console.info(`[CRMQueue - TL-Worker]    custom_links="${job.custom_links || ''}", image_urls="${job.image_urls || ''}"`);
+        await generateAndSave(
+          job.keyword, title, job.company_id, company, job.created_by, apiConfig,
+          keywordId, null, job.chuki || null, job.content_type || 'blog',
+          job.publish_external_id || null,
+          job.custom_links || null,
+          job.image_urls  || null,
+          null  // articleId
+        );
         succeeded++;
         LOG(`[CRMQueue - TL-Worker]   ✅ "${title}"`);
       } catch (e) {
@@ -487,19 +456,41 @@ async function processTitleJob(job) {
     recordTitleProcessed((Date.now() - start) / 1000, failed === 0);
     LOG(`[CRMQueue - TL-Worker] ✅ Xong keyword="${job.keyword}" — thành công: ${succeeded}, lỗi: ${failed}`);
   } catch (e) {
-    const retries = (job.retries || 0) + 1;
+    // Lỗi → notify CRM1 + ghi log ngay (không retry)
+    const maHD = await lookupMaHD(job.hop_dong_id);
+    const { notifyCrm1Error } = require('./crmIntegration');
+    const now = new Date().toISOString();
 
-    if (retries >= MAX_RETRIES) {
-      await moveTitleToDlq({ ...job, retries }, e.message);
-    } else {
-      const retryDelay = parseInt(process.env.RETRY_DELAY_MS || '300000', 10);
-      const retryAfter = new Date(Date.now() + retryDelay).toISOString();
-      await db.execute({
-        sql: `UPDATE title_queue SET status = 'pending', retries = ?, error = ?, worker_id = NULL, started_at = NULL, retry_after = ? WHERE id = ?`,
-        args: [retries, e.message, retryAfter, job.id],
-      });
-      LOG(`[CRMQueue - TL-Worker] ❌ Lỗi keyword="${job.keyword}" (retry ${retries}/${MAX_RETRIES}), tự retry lúc ${retryAfter}: ${e.message}`);
+    // Ghi error_logs
+    await db.execute({
+      sql: `INSERT INTO error_logs (id, phase, keyword, company_id, hop_dong_id, chuki, created_by, id_tukhoa, ma_hd, email, error_message, notified_at, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: [genId(), 'viet_bai', job.keyword, job.company_id, job.hop_dong_id || null, job.chuki || null, job.created_by || null, job.id_tukhoa || null, maHD, job.created_by || null, e.message, now, now],
+    });
+    await notifyCrm1Error({
+      id_tukhoa:    job.id_tukhoa || null,
+      email:        job.created_by || null,
+      maHD,
+      errorPhase:   'viet_bai',
+      errorMessage: e.message,
+    });
+
+    // Xóa keyword_queue + keywords record đã tạo
+    if (job.keyword_q_id) {
+      let keywordRef = null;
+      try {
+        const kwq = await db.execute({ sql: 'SELECT keyword_ref FROM keyword_queue WHERE id = ?', args: [job.keyword_q_id] });
+        keywordRef = kwq.rows[0]?.keyword_ref || null;
+      } catch { /* ignore */ }
+      await db.execute({ sql: `DELETE FROM keyword_queue WHERE id = ?`, args: [job.keyword_q_id] });
+      if (keywordRef) {
+        await db.execute({ sql: `DELETE FROM keywords WHERE id = ?`, args: [keywordRef] });
+      }
     }
+
+    // Xóa luôn title_queue row
+    await db.execute({ sql: `DELETE FROM title_queue WHERE id = ?`, args: [job.id] });
+    LOG(`[CRMQueue - TL-Worker] ❌ Lỗi keyword="${job.keyword}" → đã ghi log + notify CRM1 và xóa khỏi queue: ${e.message}`);
     recordTitleProcessed((Date.now() - start) / 1000, false);
   }
 }
@@ -624,98 +615,6 @@ async function getQueueStats() {
   };
 }
 
-async function retryFailed() {
-  // retryFailed giờ chỉ còn tác dụng cho các job đang ở 'failed' (legacy — trước khi có DLQ)
-  // Jobs từ DLQ dùng replayFromDlq() thay vì retryFailed()
-  const [kw, tl] = await Promise.all([
-    db.execute(`UPDATE keyword_queue SET status = 'pending', retries = 0, error = NULL, worker_id = NULL, started_at = NULL WHERE status = 'failed'`),
-    db.execute(`UPDATE title_queue   SET status = 'pending', retries = 0, error = NULL, worker_id = NULL, started_at = NULL WHERE status = 'failed'`),
-  ]);
-  return { keyword_queue: kw.rowsAffected, title_queue: tl.rowsAffected };
-}
-
-// ─── DLQ Stats ────────────────────────────────────────────────────────────────
-async function getDlqStats() {
-  const [kwDlq, tlDlq, totalReplayed] = await Promise.all([
-    db.execute(`SELECT COUNT(*) AS cnt FROM keyword_queue_dlq`),
-    db.execute(`SELECT COUNT(*) AS cnt FROM title_queue_dlq`),
-    db.execute(`SELECT COUNT(*) AS cnt FROM keyword_queue_dlq WHERE replayed_at IS NOT NULL`),
-  ]);
-  return {
-    keyword_dlq_count: Number(kwDlq.rows[0]?.cnt || 0),
-    title_dlq_count:   Number(tlDlq.rows[0]?.cnt || 0),
-    total_replayed:    Number(totalReplayed.rows[0]?.cnt || 0),
-  };
-}
-
-/**
- * replayFromDlq — đẩy 1 job từ DLQ trở lại queue chính
- * @param {string} queueType  'keyword' | 'title'
- * @param {string} dlqId      id trong bảng DLQ
- */
-async function replayFromDlq(queueType, dlqId) {
-  if (queueType === 'keyword') {
-    const dlq = await db.execute({ sql: `SELECT * FROM keyword_queue_dlq WHERE id = ?`, args: [dlqId] });
-    if (!dlq.rows[0]) throw new Error(`DLQ job not found: ${dlqId}`);
-    const job = dlq.rows[0];
-
-    // Replay: INSERT lại vào keyword_queue
-    const newId = genId();
-    await db.execute({
-      sql: `INSERT INTO keyword_queue
-              (id, keyword, so_tieude, company_id, hop_dong_id, chuki, created_by, yeucau, tieudecodinh_json, status, retries, error, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, NULL, ?)`,
-      args: [newId, job.keyword, job.so_tieude, job.company_id, job.hop_dong_id,
-             job.chuki, job.created_by, job.payload_json ? JSON.parse(job.payload_json).yeucau : null,
-             job.payload_json ? JSON.parse(job.payload_json).tieudecodinh_json : null,
-             new Date().toISOString()],
-    });
-
-    // Đánh dấu đã replay
-    await db.execute({
-      sql: `UPDATE keyword_queue_dlq SET replayed_at = ? WHERE id = ?`,
-      args: [new Date().toISOString(), dlqId],
-    });
-
-    LOG(`[CRMQueue - DLQ] Replayed keyword="${job.keyword}" → keyword_queue id=${newId}`);
-    return newId;
-
-  } else if (queueType === 'title') {
-    const dlq = await db.execute({ sql: `SELECT * FROM title_queue_dlq WHERE id = ?`, args: [dlqId] });
-    if (!dlq.rows[0]) throw new Error(`DLQ job not found: ${dlqId}`);
-    const job = dlq.rows[0];
-
-    const newId = genId();
-    await db.execute({
-      sql: `INSERT INTO title_queue
-              (id, keyword_q_id, keyword, titles_json, company_id, hop_dong_id, chuki, created_by, status, retries, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?)`,
-      args: [newId, job.keyword_q_id, job.keyword, job.titles_json, job.company_id,
-             job.hop_dong_id, job.chuki, job.created_by, new Date().toISOString()],
-    });
-
-    await db.execute({
-      sql: `UPDATE title_queue_dlq SET replayed_at = ? WHERE id = ?`,
-      args: [new Date().toISOString(), dlqId],
-    });
-
-    LOG(`[CRMQueue - DLQ] Replayed title job="${job.keyword}" → title_queue id=${newId}`);
-    return newId;
-
-  } else {
-    throw new Error(`Unknown queue type: ${queueType}`);
-  }
-}
-
-/**
- * purgeDlq — xóa vĩnh viễn 1 job khỏi DLQ (không replay)
- */
-async function purgeFromDlq(queueType, dlqId) {
-  const table = queueType === 'keyword' ? 'keyword_queue_dlq' : 'title_queue_dlq';
-  await db.execute({ sql: `DELETE FROM ${table} WHERE id = ?`, args: [dlqId] });
-  LOG(`[CRMQueue - DLQ] Purged ${queueType} DLQ job=${dlqId}`);
-}
-
 // ─── Webhook Retry Stats ──────────────────────────────────────────────────────
 async function getWebhookRetryStats() {
   const [failed, pendingRetry, waitingRetry] = await Promise.all([
@@ -736,8 +635,7 @@ async function getWebhookRetryStats() {
 
 module.exports = {
   startQueueWorkers, stopQueueWorkers, resumeQueueWorkers,
-  getQueueStats, retryFailed,
+  getQueueStats,
   getWebhookRetryStats,
-  getDlqStats, replayFromDlq, purgeFromDlq,
   spawnKeywordWorker, spawnTitleWorker, getActiveWorkers,
 };

@@ -88,8 +88,8 @@ app.use('/api/webhook-events', requireRoot, require('./routes/webhookEvents'));
 // ── CRM Queue monitor (root-only) ─────────────────────────────────────────────
 app.use('/api/queue', requireRoot, require('./routes/queue'));
 
-// ── DLQ monitor (root-only) ────────────────────────────────────────────────────
-app.use('/api/dlq', requireRoot, require('./routes/dlq'));
+// ── Error Logs (root-only) ─────────────────────────────────────────────────────
+app.use('/api/error-logs', requireRoot, require('./routes/errorLogs'));
 
 // Articles — gắn middleware giới hạn cho các POST (viết bài tốn token)
 const articlesRouter = require('./routes/articles');

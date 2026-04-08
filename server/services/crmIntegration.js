@@ -13,6 +13,51 @@ const { decrypt } = require('../utils/crypto');
 const { decodeHtmlEntities, genId, normalizeGmailEmail,normalizeUrlWithProtocol } = require('../utils/func');
 
 
+// ─── Notify CRM1 về lỗi khi xử lý từ khóa ──────────────────────────────────────
+// Khi tạo tiêu đề hoặc viết bài thất bại → bắn webhook về CRM1 để CRM1 biết
+const CRM_NOTIFY_URL = process.env.CRM_NOTIFY_URL || '';
+
+/**
+ * Gửi thông báo lỗi về CRM1 khi xử lý từ khóa thất bại.
+ *
+ * @param {object} opts
+ * @param {string} opts.id_tukhoa    — ID từ khóa từ CRM1 (trong payload tukhoas[])
+ * @param {string} opts.email        — email tài khoản CRM1
+ * @param {string} opts.maHD        — mã hợp đồng
+ * @param {string} opts.errorPhase  — 'tao_tieude' | 'viet_bai'
+ * @param {string} opts.errorMessage — nội dung lỗi
+ */
+async function notifyCrm1Error({ id_tukhoa, email, maHD, errorPhase, errorMessage }) {
+  if (!CRM_NOTIFY_URL) {
+    console.warn(`[notifyCrm1] ⚠️  CRM_NOTIFY_URL chưa cấu hình — bỏ qua notify. id_tukhoa="${id_tukhoa}"`);
+    return;
+  }
+
+  const payload = {
+    id_tukhoa,
+    email: email || null,
+    ma_hd: maHD || null,
+    status: 'error',
+    error_phase: errorPhase,
+    error_message: errorMessage || 'Lỗi không xác định',
+    timestamp: new Date().toISOString(),
+  };
+
+  try {
+    const res = await fetch(CRM_NOTIFY_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    console.log(`[notifyCrm1] ✅ Đã bắn notify cho id_tukhoa="${id_tukhoa}" (phase="${errorPhase}"): HTTP ${res.status}`);
+    return data;
+  } catch (e) {
+    console.error(`[notifyCrm1] ❌ Gửi notify thất bại cho id_tukhoa="${id_tukhoa}": ${e.message}`);
+  }
+}
+
+
 
 // ─── Find or create user từ email webhook ──────────────────────────────────
 // Khi CRM1 gửi webhook kèm email → nếu user chưa tồn tại → tự tạo user mới
@@ -131,17 +176,17 @@ async function findOrCreateCompany(thongtincongtyvietbai, hopDongId, createdBy) 
 }
 
 // ─── enqueueKeyword — đẩy vào keyword_queue (thay thế autoGenerateTitles) ────
-async function enqueueKeyword({ keyword, soTieude, companyId, hopDongId, chuki, createdBy, yeucau, tieudecodinh, contentType }) {
+async function enqueueKeyword({ keyword, soTieude, companyId, hopDongId, chuki, createdBy, yeucau, tieudecodinh, contentType, id_tukhoa, customLinks, imageUrls }) {
   const id = genId();
   // Serialize tieudecodinh (nếu có)
   const tieudecodinhJson = tieudecodinh ? JSON.stringify(tieudecodinh) : null;
   // Log để debug soluongtieude từ CRM1
-  console.log(`[enqueueKeyword] keyword="${keyword}", soTieude=${soTieude} (yeucau="${yeucau}", ct="${contentType}")`);
+  console.log(`[enqueueKeyword] keyword="${keyword}", soTieude=${soTieude} (id_tukhoa="${id_tukhoa}", ct="${contentType}")`);
 
   await db.execute({
     sql: `INSERT INTO keyword_queue
-            (id, keyword, so_tieude, company_id, hop_dong_id, chuki, created_by, yeucau, tieudecodinh_json, content_type, status, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
+            (id, keyword, so_tieude, company_id, hop_dong_id, chuki, created_by, yeucau, tieudecodinh_json, content_type, id_tukhoa, custom_links, image_urls, status, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
     args: [
       id,
       keyword,
@@ -153,6 +198,9 @@ async function enqueueKeyword({ keyword, soTieude, companyId, hopDongId, chuki, 
       yeucau || null,
       tieudecodinhJson,
       contentType || 'blog',
+      id_tukhoa || null,
+      customLinks || null,
+      imageUrls || null,
       new Date().toISOString(),
     ],
   });
@@ -263,6 +311,8 @@ async function processWebhookEvent(eventId, payload, isRetry = false) {
   // Lấy email từ 2 vị trí: payload.email hoặc thongtincongtyvietbai.email
   // Ưu tiên root-level email, fallback về email trong thongtincongtyvietbai
   const email = payload.email || thongtincongtyvietbai?.email || null;
+  // Lấy maHD từ payload để truyền vào notifyCrm1Error khi cần
+  const maHD = thongtinHD?.MaHD || null;
 
   // Tìm hoặc tạo user từ email CRM1 gửi lên
   // → User đó sẽ là người tạo (createdBy) cho keyword_queue → title_queue → articles
@@ -281,7 +331,7 @@ async function processWebhookEvent(eventId, payload, isRetry = false) {
     const items = tukhoas || [{ tukhoa, soluongtieude }];
     const queueIds = [];
     for (const item of items) {
-      const { tukhoa: keyword, soluongtieude: count, yeucau, tieudecodinh, content_type } = item;
+      const { tukhoa: keyword, soluongtieude: count, yeucau, tieudecodinh, content_type, id_tukhoa, customLinks, imageUrls } = item;
       console.info(`[crm] Event ${eventId} — ITEM: keyword="${keyword}", count=${count}, yeucau="${yeucau}", content_type="${content_type || 'blog'}"`);
       if (!keyword) {
         console.log(`[crm] Event ${eventId} — skip item rỗng`);
@@ -306,6 +356,9 @@ async function processWebhookEvent(eventId, payload, isRetry = false) {
           yeucau:    yeucau || null,
           tieudecodinh: tieudecodinh || null,
           contentType: ct,
+          id_tukhoa: id_tukhoa || null,
+          customLinks: customLinks || null,
+          imageUrls:  imageUrls  || null,
         });
         queueIds.push(queueId);
         console.info(`[crm] Event ${eventId} ✅ enqueued: keyword="${keyword}", queueId=${queueId}, count=${count}, ct="${ct}"`);
@@ -362,4 +415,5 @@ module.exports = {
   findOrCreateCompany,
   findOrCreateUserByEmail,
   checkUserApiKey,
+  notifyCrm1Error,
 };

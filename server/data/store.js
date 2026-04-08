@@ -335,10 +335,22 @@ async function initDb() {
     { table: 'keyword_queue', col: 'yeucau',           ddl: 'ALTER TABLE keyword_queue ADD COLUMN yeucau TEXT' },
     { table: 'keyword_queue', col: 'tieudecodinh_json', ddl: 'ALTER TABLE keyword_queue ADD COLUMN tieudecodinh_json TEXT' },
     { table: 'keyword_queue', col: 'content_type',    ddl: "ALTER TABLE keyword_queue ADD COLUMN content_type TEXT NOT NULL DEFAULT 'blog'" },
+    // keyword_queue — id_tukhoa từ CRM1 (để notify lỗi kèm ID)
+    { table: 'keyword_queue', col: 'id_tukhoa',       ddl: 'ALTER TABLE keyword_queue ADD COLUMN id_tukhoa TEXT' },
+    // keyword_queue — customLinks từ webhook CRM1
+    { table: 'keyword_queue', col: 'custom_links',    ddl: 'ALTER TABLE keyword_queue ADD COLUMN custom_links TEXT' },
+    // keyword_queue — imageUrls từ webhook CRM1
+    { table: 'keyword_queue', col: 'image_urls',       ddl: 'ALTER TABLE keyword_queue ADD COLUMN image_urls TEXT' },
     // title_queue — content_type từ webhook
     { table: 'title_queue',   col: 'content_type',    ddl: "ALTER TABLE title_queue ADD COLUMN content_type TEXT NOT NULL DEFAULT 'blog'" },
     // title_queue — publish_external_id: giữ nguyên ID cũ khi viết lại (retry), truyền sang CRM2 để cập nhật
     { table: 'title_queue',   col: 'publish_external_id', ddl: 'ALTER TABLE title_queue ADD COLUMN publish_external_id TEXT' },
+    // title_queue — id_tukhoa từ CRM1 (để notify lỗi kèm ID)
+    { table: 'title_queue',   col: 'id_tukhoa',       ddl: 'ALTER TABLE title_queue ADD COLUMN id_tukhoa TEXT' },
+    // title_queue — customLinks từ webhook CRM1
+    { table: 'title_queue',   col: 'custom_links',   ddl: 'ALTER TABLE title_queue ADD COLUMN custom_links TEXT' },
+    // title_queue — imageUrls từ webhook CRM1
+    { table: 'title_queue',   col: 'image_urls',      ddl: 'ALTER TABLE title_queue ADD COLUMN image_urls TEXT' },
     // articles — content_type từ webhook CRM1
     { table: 'articles',       col: 'content_type',    ddl: "ALTER TABLE articles ADD COLUMN content_type TEXT NOT NULL DEFAULT 'blog'" },
     // batch_jobs — content_type cho batch article generation
@@ -351,41 +363,22 @@ async function initDb() {
     { table: 'users', col: 'anthropic_model',    ddl: 'ALTER TABLE users ADD COLUMN anthropic_model TEXT' },
   ];
 
-  // ── DLQ (Dead Letter Queue) tables ─────────────────────────────────────────
+  // ── Error Logs — ghi nhận từ khóa lỗi khi tạo tiêu đề hoặc viết bài ────────
   await exec(`
-    CREATE TABLE IF NOT EXISTS keyword_queue_dlq (
-      id           TEXT PRIMARY KEY,
-      original_id  TEXT NOT NULL,
-      keyword      TEXT NOT NULL,
-      so_tieude    INTEGER NOT NULL DEFAULT 10,
-      company_id   TEXT NOT NULL,
-      hop_dong_id  TEXT,
-      chuki        TEXT,
-      created_by   TEXT,
-      retries      INTEGER NOT NULL DEFAULT 0,
-      error        TEXT NOT NULL,
-      failed_at    TEXT NOT NULL,
-      payload_json TEXT,
-      replayed_at  TEXT,
-      created_at   TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS title_queue_dlq (
-      id           TEXT PRIMARY KEY,
-      original_id  TEXT NOT NULL,
-      keyword_q_id TEXT NOT NULL,
-      keyword      TEXT NOT NULL,
-      titles_json  TEXT NOT NULL,
-      company_id   TEXT NOT NULL,
-      hop_dong_id  TEXT,
-      chuki        TEXT,
-      created_by   TEXT,
-      retries      INTEGER NOT NULL DEFAULT 0,
-      error        TEXT NOT NULL,
-      failed_at    TEXT NOT NULL,
-      payload_json TEXT,
-      replayed_at  TEXT,
-      created_at   TEXT NOT NULL
+    CREATE TABLE IF NOT EXISTS error_logs (
+      id              TEXT PRIMARY KEY,
+      phase           TEXT NOT NULL,         -- 'tao_tieude' | 'viet_bai'
+      keyword         TEXT NOT NULL,
+      company_id      TEXT,
+      hop_dong_id     TEXT,
+      chuki           TEXT,
+      created_by      TEXT,
+      id_tukhoa       TEXT,                  -- ID từ CRM1
+      ma_hd           TEXT,                  -- mã hợp đồng
+      email           TEXT,                  -- email tài khoản
+      error_message   TEXT NOT NULL,
+      notified_at      TEXT,                 -- thời điểm notify CRM1
+      created_at      TEXT NOT NULL
     );
   `);
 

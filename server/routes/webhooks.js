@@ -120,4 +120,138 @@ router.post('/crm', express.json(), async (req, res) => {
   });
 });
 
+/**
+ * POST /api/webhooks/crm2/rewrite — CRM2 yêu cầu viết lại bài viết
+ *
+ * Luồng:
+ *   1. Nhận publish_external_id (ID bài viết trên CRM2) hoặc article_id (DB)
+ *   2. Tìm bài viết trong DB
+ *   3. Gọi generateAndSave để viết lại (giữ nguyên publish_external_id)
+ *   4. Post lại lên CRM2 qua publish_external_id
+ *
+ * Payload:
+ *   {
+ *     "publish_external_id": "12345",   // ID bài viết trên CRM2 (ưu tiên)
+ *     "article_id": "abc-123-def",      // ID bài viết trong DB (fallback)
+ *     "email": "user@example.com"       // email để xác định user/account
+ *   }
+ *
+ * Response:
+ *   200: { success: true, article_id, publish_external_id }
+ *   400: Thiếu thông tin
+ *   404: Không tìm thấy bài viết
+ *   500: Lỗi khi viết lại / publish
+ */
+router.post('/crm2/rewrite', express.json(), async (req, res) => {
+  const { publish_external_id, article_id, email } = req.body;
+
+  if (!publish_external_id && !article_id) {
+    return res.status(400).json({ error: 'Thiếu publish_external_id hoặc article_id.' });
+  }
+
+  try {
+    // ── 1. Tìm bài viết trong DB ────────────────────────────────────────────
+    let articleQuery, articleArgs;
+    if (publish_external_id) {
+      articleQuery = 'SELECT * FROM articles WHERE publish_external_id = ?';
+      articleArgs = [publish_external_id];
+    } else {
+      articleQuery = 'SELECT * FROM articles WHERE id = ?';
+      articleArgs = [article_id];
+    }
+
+    const artResult = await db.execute({ sql: articleQuery, args: articleArgs });
+    const existingArticle = artResult.rows[0];
+
+    if (!existingArticle) {
+      return res.status(404).json({
+        error: 'Không tìm thấy bài viết.',
+        hint: publish_external_id
+          ? `Không có bài viết nào với publish_external_id="${publish_external_id}"`
+          : `Không có bài viết nào với id="${article_id}"`,
+      });
+    }
+
+    // ── 2. Lấy thông tin công ty ───────────────────────────────────────────
+    const compResult = await db.execute({ sql: 'SELECT * FROM companies WHERE id = ?', args: [existingArticle.companyId] });
+    const company = compResult.rows[0];
+    if (!company) {
+      return res.status(404).json({ error: 'Không tìm thấy thông tin công ty của bài viết.' });
+    }
+    try { if (company.article_styles) company.article_styles = JSON.parse(company.article_styles); } catch { company.article_styles = {}; }
+
+    // ── 3. Xác định user từ email hoặc createdBy của bài viết ───────────────
+    let userId = existingArticle.createdBy || 'system';
+    if (email) {
+      const normalizedEmail = email.includes('@') ? email : `${email}@gmail.com`;
+      const userResult = await db.execute({
+        sql: `SELECT id FROM users
+              WHERE LOWER(REPLACE(SUBSTR(email, 1, INSTR(email, '@') - 1), '.', '')) || SUBSTR(email, INSTR(email, '@')) = ?
+              LIMIT 1`,
+        args: [normalizedEmail.toLowerCase()],
+      });
+      if (userResult.rows[0]?.id) userId = userResult.rows[0].id;
+    }
+
+    // ── 4. Lấy apiConfig của user ───────────────────────────────────────────
+    const { getEffectiveApiConfig } = require('../services/apiConfig');
+    const apiConfig = await getEffectiveApiConfig(userId);
+    if (apiConfig.blocked) {
+      return res.status(403).json({ error: apiConfig.message || 'User không có API key.' });
+    }
+
+    // ── 5. Gọi generateAndSave để viết lại ─────────────────────────────────
+    // Giữ nguyên publish_external_id để CRM2 cập nhật bài cũ thay vì tạo mới
+    const { generateAndSave } = require('../routes/articles');
+    const rewritten = await generateAndSave(
+      existingArticle.keyword,
+      existingArticle.title,
+      existingArticle.companyId,
+      company,
+      userId,       // createdBy
+      apiConfig,
+      existingArticle.keywordId,
+      null,         // writtenBy
+      existingArticle.chuki,
+      existingArticle.content_type || 'blog',
+      existingArticle.publish_external_id,  // giữ nguyên external ID
+      null,         // customLinks
+      null,         // imageUrls
+      existingArticle.id  // articleId → UPDATE bài cũ
+    );
+
+    // ── 6. Publish lại lên CRM2 ────────────────────────────────────────────
+    const { getSetting } = require('./settings');
+    const { publishArticle } = require('../services/publisher');
+    const apiUrl = await getSetting('publish_api_url');
+
+    let publishResult = null;
+    if (apiUrl) {
+      try {
+        const { getKeywordCreatorEmail } = require('../services/publisher');
+        const creatorEmail = await getKeywordCreatorEmail(existingArticle.keywordId, existingArticle.keyword);
+        publishResult = await publishArticle(rewritten.id, { ...rewritten, publish_external_id: existingArticle.publish_external_id }, company, apiUrl, creatorEmail);
+      } catch (pubErr) {
+        console.error('[webhook - crm2/rewrite] Publish lại thất bại:', pubErr.message);
+        // Vẫn trả 200 vì bài đã viết lại thành công, chỉ publish thất bại
+        return res.json({
+          success: true,
+          article_id: rewritten.id,
+          publish_external_id: existingArticle.publish_external_id,
+          warning: `Viết lại thành công nhưng publish thất bại: ${pubErr.message}`,
+        });
+      }
+    }
+
+    res.json({
+      success: true,
+      article_id: rewritten.id,
+      publish_external_id: publishResult?.publish_external_id || existingArticle.publish_external_id,
+    });
+  } catch (err) {
+    console.error('[webhook - crm2/rewrite] Lỗi:', err.message);
+    res.status(500).json({ error: err.message || 'Lỗi khi viết lại bài viết.' });
+  }
+});
+
 module.exports = router;
