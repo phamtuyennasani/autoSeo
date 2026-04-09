@@ -29,6 +29,23 @@ const TukhoasItemSchema = z.object({
   thongtinmau:      ThongtinHienmauSchema.optional(),
   chuki:            z.string().optional(),
   content_type:     z.string().optional().default('blog'),  // 'blog' | 'fanpage' | ...
+  id_tukhoa:   z.union([z.string(), z.number()]).optional(),  // ID từ khóa từ CRM1
+  customLinks: z.union([
+    z.string(),       // JSON string từ CRM1
+    z.array(z.string()),
+  ]).optional().transform((val) => {
+    if (!val) return undefined;
+    if (Array.isArray(val)) return val;
+    try { return JSON.parse(val); } catch { return undefined; }
+  }),
+  imageUrls: z.union([
+    z.string(),       // JSON string từ CRM1
+    z.array(z.string()),
+  ]).optional().transform((val) => {
+    if (!val) return undefined;
+    if (Array.isArray(val)) return val;
+    try { return JSON.parse(val); } catch { return undefined; }
+  }),
 }).strict();
 
 // thongtinHD
@@ -69,6 +86,9 @@ const CrmWebhookPayloadSchema = z.object({
 
   // Chu kỳ (optional)
   chuki: z.string().optional(),
+
+  // contract_id từ CRM1 — gửi kèm khi notify lỗi
+  contract_id: z.union([z.string(), z.number()]).optional(),
 }).strict();
 
 // ─── Validation helper ────────────────────────────────────────────────────────

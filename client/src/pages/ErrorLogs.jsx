@@ -197,7 +197,7 @@ const ErrorLogRow = ({ log, onDelete, expanded, onExpand, companies = [], users 
               border: '1px solid rgba(239,68,68,0.2)',
               borderRadius: 8, padding: '10px 14px',
               fontFamily: 'monospace', overflowX: 'auto',
-              maxHeight: 200, overflowY: 'auto',
+              maxHeight: 200, overflowY: 'auto',whiteSpace: 'break-spaces',
             }}>
               {log.error_message}
             </pre>

@@ -116,7 +116,7 @@ initDb()
       startBatchJobChecker();
       // Khởi động CRM Queue Workers (keyword → title → article)
       const { startQueueWorkers } = require('./services/crmQueueWorker');
-      startQueueWorkers();
+      //startQueueWorkers();
     });
   })
   .catch((err) => {

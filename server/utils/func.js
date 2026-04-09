@@ -1,6 +1,27 @@
 const crypto = require('crypto');
+const { db }                 = require('../data/store');
 const CHECK_INTERVAL_MS = 60 * 60 * 1000; // 60 phút
 const SCHEDULE_TICK_MS  =      60 * 1000; // 1 phút — kiểm tra lịch chạy
+
+
+/** Tra cứu mã hợp đồng từ hop_dong_id */
+async function lookupMaHD(hopDongId) {
+  if (!hopDongId) return null;
+  try {
+    const res = await db.execute({ sql: 'SELECT ma_hd FROM hop_dong WHERE id = ?', args: [hopDongId] });
+    return res.rows[0]?.ma_hd || null;
+  } catch { return null; }
+}
+
+/** Tra cứu email từ user ID */
+async function lookupEmail(userId) {
+  if (!userId) return null;
+  try {
+    const res = await db.execute({ sql: 'SELECT email FROM users WHERE id = ?', args: [userId] });
+    return res.rows[0]?.email || null;
+  } catch { return null; }
+}
+
 // ─── Gmail dot-insensitive normalize ──────────────────────────────────────────
 // Gmail: phamtuyennina@gmail.com === phamtuyen.nina@gmail.com === ph.a.m.t.u.y.e.n.n.i.n.a@gmail.com
 // Strip ALL dots trước @ của @gmail.com trước khi so sánh / lưu.
@@ -110,4 +131,4 @@ function stripHtmlTags(str) {
     .replace(/\s+/g, ' ')          // collapse whitespace
     .trim();
 }
-module.exports = { stripDots,stripHtmlTags,normalizeUrlWithProtocol, createNasaniToken, normalizeGmailEmail, decodeHtmlEntities, genId, slugify, maskKey,LOG,CHECK_INTERVAL_MS,SCHEDULE_TICK_MS };
+module.exports = { stripDots,stripHtmlTags,normalizeUrlWithProtocol, createNasaniToken, normalizeGmailEmail, decodeHtmlEntities, genId, slugify, maskKey,LOG,CHECK_INTERVAL_MS,SCHEDULE_TICK_MS,lookupMaHD,lookupEmail };

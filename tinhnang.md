@@ -15,6 +15,9 @@
       "soluongtieude": 1,
       "yeucau": "Chuẩn seo trên 1001 từ",
       "tieudecodinh": [],
+      "id_tukhoa":121,
+      "customLinks":[],
+      "imageUrls":[],
       "content_type": "blog"
     }
   ],

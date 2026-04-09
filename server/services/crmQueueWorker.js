@@ -18,7 +18,7 @@ const { db }                 = require('../data/store');
 const { generateTitles }     = require('./gemini');
 const { getEffectiveApiConfig } = require('./apiConfig');
 const { recordKeywordProcessed, recordTitleProcessed } = require('./metricsService');
-const { genId,LOG }              = require('../utils/func');
+const { genId,LOG,stripDots,lookupMaHD,lookupEmail }              = require('../utils/func');
 const KEYWORD_WORKERS = parseInt(process.env.KEYWORD_QUEUE_WORKERS || '2', 10);
 const TITLE_WORKERS   = parseInt(process.env.TITLE_QUEUE_WORKERS   || '2', 10);
 const POLL_MS         = parseInt(process.env.QUEUE_POLL_MS         || '2000', 10);
@@ -40,14 +40,6 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 // ─── DLQ helpers ──────────────────────────────────────────────────────────────
 
-/** Tra cứu mã hợp đồng từ hop_dong_id */
-async function lookupMaHD(hopDongId) {
-  if (!hopDongId) return null;
-  try {
-    const res = await db.execute({ sql: 'SELECT ma_hd FROM hop_dong WHERE id = ?', args: [hopDongId] });
-    return res.rows[0]?.ma_hd || null;
-  } catch { return null; }
-}
 
 // Reset stuck jobs (processing quá lâu → về pending để worker khác pick up)
 async function resetStuckJobs() {
@@ -69,16 +61,27 @@ async function resetStuckJobs() {
   }
 }
 
+/**
+ * Lấy API config cho user. KHÔNG BAO GIỜ fallback ngầm sang system key.
+ *
+ * Trả về:
+ *  - { apiKey, modelName, blocked: false }  → dùng bình thường
+ *  - { blocked: true, message }             → user không có key + không có quyền
+ *    → caller phải fail job và gọi notifyCrm1Error
+ *
+ * System key chỉ được dùng khi user THỰC SỰ có quyền (use_system_key = 1),
+ * và được chính getEffectiveApiConfig() thêm vào key pool — không fallback ở đây.
+ */
 async function getApiConfig(userId) {
   if (!userId || userId === 'system') {
-    return { apiKey: process.env.GEMINI_API_KEY || '', modelName: process.env.GEMINI_MODEL || 'gemini-2.5-flash' };
+    return {
+      blocked: true,
+      message: `userId không hợp lệ (userId="${userId}"). Không thể xác định quyền dùng system key.`
+    };
   }
-  try {
-    const cfg = await getEffectiveApiConfig(userId);
-    return cfg.blocked ? { apiKey: process.env.GEMINI_API_KEY || '', modelName: process.env.GEMINI_MODEL || 'gemini-2.5-flash' } : cfg;
-  } catch {
-    return { apiKey: process.env.GEMINI_API_KEY || '', modelName: process.env.GEMINI_MODEL || 'gemini-2.5-flash' };
-  }
+  const cfg = await getEffectiveApiConfig(userId);
+  if (cfg.blocked) return cfg; // blocked: true — không fallback
+  return cfg;
 }
 
 // ─── TẦNG 1: keyword_queue ────────────────────────────────────────────────────
@@ -141,6 +144,12 @@ async function processKeywordJob(job) {
   try {
     const apiConfig = await getApiConfig(job.created_by);
 
+    // User không có key + không có quyền dùng system key → fail ngay, không gọi AI
+    if (apiConfig.blocked) {
+      const errMsg = apiConfig.message || 'User không có Gemini API key và không có quyền dùng key hệ thống.';
+      throw new Error(errMsg);
+    }
+
     let titles = [];
 
     // ── Kiểm tra tieudecodinh (tiêu đề do CRM1 cung cấp sẵn) ──────────────────
@@ -200,16 +209,17 @@ async function processKeywordJob(job) {
     const tqTitlesJson = JSON.stringify(titles);
     console.info(`[CRMQueue - KW-Worker] 📋 title_queue INSERT: id=${titleQueueId}, keyword_q_id=${job.id}`);
     console.info(`[CRMQueue - KW-Worker]    titles count=${titles.length}, titlesJson=${tqTitlesJson}`);
-    console.info(`[CRMQueue - KW-Worker]    id_tukhoa="${job.id_tukhoa || ''}", customLinks="${job.custom_links || ''}", imageUrls="${job.image_urls || ''}"`);
+    console.info(`[CRMQueue - KW-Worker]    id_tukhoa="${job.id_tukhoa || ''}", contract_id="${job.contract_id || ''}", customLinks="${job.custom_links || ''}", imageUrls="${job.image_urls || ''}"`);
     LOG(`[CRMQueue - KW-Worker] 📋 Insert title_queue: id=${titleQueueId}, keyword_q_id=${job.id}, titles count=${titles.length}`);
     await db.execute({
-      sql: `INSERT INTO title_queue (id, keyword_q_id, keyword, titles_json, company_id, hop_dong_id, chuki, created_by, yeucau, content_type, id_tukhoa, custom_links, image_urls, status, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
+      sql: `INSERT INTO title_queue (id, keyword_q_id, keyword, titles_json, company_id, hop_dong_id, chuki, created_by, yeucau, content_type, id_tukhoa, custom_links, image_urls, contract_id, status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
       args: [
         titleQueueId, job.id, job.keyword, tqTitlesJson, job.company_id,
         job.hop_dong_id || null, job.chuki || null, job.created_by || null,
         job.yeucau || null, job.content_type || 'blog',
         job.id_tukhoa || null, job.custom_links || null, job.image_urls || null,
+        job.contract_id || null,
         new Date().toISOString(),
       ],
     });
@@ -227,14 +237,16 @@ async function processKeywordJob(job) {
     const maHD = await lookupMaHD(job.hop_dong_id);
     const { notifyCrm1Error } = require('./crmIntegration');
     const now = new Date().toISOString();
+    const creatorEmail = await lookupEmail(job.created_by);
     await db.execute({
-      sql: `INSERT INTO error_logs (id, phase, keyword, company_id, hop_dong_id, chuki, created_by, id_tukhoa, ma_hd, email, error_message, notified_at, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      args: [genId(), 'tao_tieude', job.keyword, job.company_id, job.hop_dong_id || null, job.chuki || null, job.created_by || null, job.id_tukhoa || null, maHD, job.created_by || null, e.message, now, now],
+      sql: `INSERT INTO error_logs (id, phase, keyword, company_id, hop_dong_id, chuki, created_by, id_tukhoa, contract_id, ma_hd, email, error_message, notified_at, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: [genId(), 'tao_tieude', job.keyword, job.company_id, job.hop_dong_id || null, job.chuki || null, job.created_by || null, job.id_tukhoa || null, job.contract_id || null, maHD, creatorEmail, e.message, now, now],
     });
     await notifyCrm1Error({
       id_tukhoa:    job.id_tukhoa || null,
-      email:        job.created_by || null,
+      contractId:   job.contract_id || null,
+      email:        stripDots(creatorEmail),
       maHD,
       errorPhase:   'tao_tieude',
       errorMessage: e.message,
@@ -400,6 +412,13 @@ async function processTitleJob(job) {
     try { if (company.article_styles) company.article_styles = JSON.parse(company.article_styles); } catch { company.article_styles = {}; }
 
     const apiConfig = await getApiConfig(job.created_by);
+
+    // User không có key + không có quyền dùng system key → fail ngay, không gọi AI
+    if (apiConfig.blocked) {
+      const errMsg = apiConfig.message || 'User không có Gemini API key và không có quyền dùng key hệ thống.';
+      throw new Error(errMsg);
+    }
+
     // content_type + yeucau từ webhook CRM1 → truyền vào apiConfig để generateAndSave dùng đúng prompt
     if (job.content_type) apiConfig.contentType = job.content_type;
     if (job.yeucau) apiConfig.yeucau = job.yeucau;
@@ -445,7 +464,49 @@ async function processTitleJob(job) {
       } catch (e) {
         failed++;
         LOG(`[CRMQueue - TL-Worker]   ❌ "${title}": ${e.message}`);
+
+        // Lỗi từng title — notify CRM1 + ghi error_logs ngay (không retry)
+        // Đợi đến hết vòng for mới xử lý để notify đầy đủ thông tin
       }
+    }
+
+    // Nếu có title thất bại → notify CRM1 một lần với tổng lỗi
+    if (failed > 0) {
+      const maHD = await lookupMaHD(job.hop_dong_id);
+      const creatorEmail = await lookupEmail(job.created_by);
+      const { notifyCrm1Error } = require('./crmIntegration');
+      const now = new Date().toISOString();
+      const errorMsg = `${failed}/${titles.length} title thất bại. Lỗi đầu tiên: ${e?.message || 'không rõ'}`;
+      await db.execute({
+        sql: `INSERT INTO error_logs (id, phase, keyword, company_id, hop_dong_id, chuki, created_by, id_tukhoa, contract_id, ma_hd, email, error_message, notified_at, created_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [genId(), 'viet_bai', job.keyword, job.company_id, job.hop_dong_id || null, job.chuki || null, job.created_by || null, job.id_tukhoa || null, job.contract_id || null, maHD, creatorEmail, errorMsg, now, now],
+      });
+      await notifyCrm1Error({
+        id_tukhoa:    job.id_tukhoa || null,
+        contractId:   job.contract_id || null,
+        email:        stripDots(creatorEmail),
+        maHD,
+        errorPhase:   'viet_bai',
+        errorMessage: errorMsg,
+      });
+      // Xóa keyword_queue + keywords record đã tạo
+      if (job.keyword_q_id) {
+        let keywordRef = null;
+        try {
+          const kwq = await db.execute({ sql: 'SELECT keyword_ref FROM keyword_queue WHERE id = ?', args: [job.keyword_q_id] });
+          keywordRef = kwq.rows[0]?.keyword_ref || null;
+        } catch { /* ignore */ }
+        await db.execute({ sql: `DELETE FROM keyword_queue WHERE id = ?`, args: [job.keyword_q_id] });
+        if (keywordRef) {
+          await db.execute({ sql: `DELETE FROM keywords WHERE id = ?`, args: [keywordRef] });
+        }
+      }
+      // Xóa luôn title_queue row
+      await db.execute({ sql: `DELETE FROM title_queue WHERE id = ?`, args: [job.id] });
+      LOG(`[CRMQueue - TL-Worker] ❌ ${failed}/${titles.length} title lỗi cho keyword="${job.keyword}" → đã notify CRM1 và xóa queue`);
+      recordTitleProcessed((Date.now() - start) / 1000, false);
+      return; // thoát sớm, không đánh dấu done
     }
 
     await db.execute({
@@ -462,14 +523,16 @@ async function processTitleJob(job) {
     const now = new Date().toISOString();
 
     // Ghi error_logs
+    const creatorEmailOuter = await lookupEmail(job.created_by);
     await db.execute({
-      sql: `INSERT INTO error_logs (id, phase, keyword, company_id, hop_dong_id, chuki, created_by, id_tukhoa, ma_hd, email, error_message, notified_at, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      args: [genId(), 'viet_bai', job.keyword, job.company_id, job.hop_dong_id || null, job.chuki || null, job.created_by || null, job.id_tukhoa || null, maHD, job.created_by || null, e.message, now, now],
+      sql: `INSERT INTO error_logs (id, phase, keyword, company_id, hop_dong_id, chuki, created_by, id_tukhoa, contract_id, ma_hd, email, error_message, notified_at, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: [genId(), 'viet_bai', job.keyword, job.company_id, job.hop_dong_id || null, job.chuki || null, job.created_by || null, job.id_tukhoa || null, job.contract_id || null, maHD, creatorEmailOuter, e.message, now, now],
     });
     await notifyCrm1Error({
       id_tukhoa:    job.id_tukhoa || null,
-      email:        job.created_by || null,
+      contractId:   job.contract_id || null,
+      email:        stripDots(creatorEmailOuter),
       maHD,
       errorPhase:   'viet_bai',
       errorMessage: e.message,

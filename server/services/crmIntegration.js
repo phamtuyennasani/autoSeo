@@ -22,12 +22,13 @@ const CRM_NOTIFY_URL = process.env.CRM_NOTIFY_URL || '';
  *
  * @param {object} opts
  * @param {string} opts.id_tukhoa    — ID từ khóa từ CRM1 (trong payload tukhoas[])
+ * @param {string} opts.contractId   — contract_id từ CRM1 (root-level field)
  * @param {string} opts.email        — email tài khoản CRM1
- * @param {string} opts.maHD        — mã hợp đồng
+ * @param {string} opts.maHD         — mã hợp đồng
  * @param {string} opts.errorPhase  — 'tao_tieude' | 'viet_bai'
  * @param {string} opts.errorMessage — nội dung lỗi
  */
-async function notifyCrm1Error({ id_tukhoa, email, maHD, errorPhase, errorMessage }) {
+async function notifyCrm1Error({ id_tukhoa, contractId, email, maHD, errorPhase, errorMessage }) {
   if (!CRM_NOTIFY_URL) {
     console.warn(`[notifyCrm1] ⚠️  CRM_NOTIFY_URL chưa cấu hình — bỏ qua notify. id_tukhoa="${id_tukhoa}"`);
     return;
@@ -35,6 +36,7 @@ async function notifyCrm1Error({ id_tukhoa, email, maHD, errorPhase, errorMessag
 
   const payload = {
     id_tukhoa,
+    contract_id: contractId || null,
     email: email || null,
     ma_hd: maHD || null,
     status: 'error',
@@ -176,17 +178,17 @@ async function findOrCreateCompany(thongtincongtyvietbai, hopDongId, createdBy) 
 }
 
 // ─── enqueueKeyword — đẩy vào keyword_queue (thay thế autoGenerateTitles) ────
-async function enqueueKeyword({ keyword, soTieude, companyId, hopDongId, chuki, createdBy, yeucau, tieudecodinh, contentType, id_tukhoa, customLinks, imageUrls }) {
+async function enqueueKeyword({ keyword, soTieude, companyId, hopDongId, chuki, createdBy, yeucau, tieudecodinh, contentType, id_tukhoa, customLinks, imageUrls, contractId }) {
   const id = genId();
   // Serialize tieudecodinh (nếu có)
   const tieudecodinhJson = tieudecodinh ? JSON.stringify(tieudecodinh) : null;
   // Log để debug soluongtieude từ CRM1
-  console.log(`[enqueueKeyword] keyword="${keyword}", soTieude=${soTieude} (id_tukhoa="${id_tukhoa}", ct="${contentType}")`);
+  console.log(`[enqueueKeyword] keyword="${keyword}", soTieude=${soTieude} (id_tukhoa="${id_tukhoa}", contract_id="${contractId}", ct="${contentType}")`);
 
   await db.execute({
     sql: `INSERT INTO keyword_queue
-            (id, keyword, so_tieude, company_id, hop_dong_id, chuki, created_by, yeucau, tieudecodinh_json, content_type, id_tukhoa, custom_links, image_urls, status, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
+            (id, keyword, so_tieude, company_id, hop_dong_id, chuki, created_by, yeucau, tieudecodinh_json, content_type, id_tukhoa, custom_links, image_urls, contract_id, status, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
     args: [
       id,
       keyword,
@@ -201,6 +203,7 @@ async function enqueueKeyword({ keyword, soTieude, companyId, hopDongId, chuki, 
       id_tukhoa || null,
       customLinks || null,
       imageUrls || null,
+      contractId || null,
       new Date().toISOString(),
     ],
   });
@@ -240,6 +243,20 @@ async function keywordExists(companyId, keyword, yeucau, contentType) {
 
 // ─── Kiểm tra user + API key trước khi nhận webhook ─────────────────────────
 // Gọi đồng bộ trong webhook route — CRM1 cần biết ngay có nhận được không
+async function getDbSystemGeminiKey() {
+  try {
+    const rows = await db.execute({
+      sql: "SELECT value FROM settings WHERE key = 'gemini_api_key' LIMIT 1",
+    });
+    if (rows.rows[0]?.value) {
+      return decrypt(rows.rows[0].value);
+    }
+  } catch { /* ignore */ }
+  return null;
+}
+
+// ─── Kiểm tra user + API key trước khi nhận webhook ─────────────────────────
+// Gọi đồng bộ trong webhook route — CRM1 cần biết ngay có nhận được không
 async function checkUserApiKey(email) {
   if (!email) {
     return { ok: false, code: 'NO_USER', error: 'Webhook thiếu email — không thể xác định tài khoản.' };
@@ -249,7 +266,7 @@ async function checkUserApiKey(email) {
 
   // Tìm user theo email (normalize để so sánh đúng với DB)
   const userRes = await db.execute({
-    sql: `SELECT id, gemini_api_key, use_manager_key, manager_id, use_system_key FROM users
+    sql: `SELECT id, gemini_api_key, use_manager_key, manager_id, use_system_key, role FROM users
           WHERE LOWER(REPLACE(SUBSTR(email, 1, INSTR(email, '@') - 1), '.', '')) || SUBSTR(email, INSTR(email, '@')) = ?
           LIMIT 1`,
     args: [normalizedEmail],
@@ -265,6 +282,7 @@ async function checkUserApiKey(email) {
 
   const user = userRes.rows[0];
   const keys = [];
+  const rootUser = user.role === 'root' || user.role === 'admin';
 
   // 1. Key riêng của user (giải mã trước khi dùng)
   if (user.gemini_api_key) keys.push(decrypt(user.gemini_api_key));
@@ -284,16 +302,30 @@ async function checkUserApiKey(email) {
     }
   }
 
-  // 3. Key hệ thống (nếu user được cấp quyền)
-  if (user.use_system_key && process.env.GEMINI_API_KEY) {
-    keys.push(process.env.GEMINI_API_KEY);
+  // 3. System key — CHỈ dùng settings DB cho non-root, env fallback cho root
+  if (user.use_system_key) {
+    const dbKey = await getDbSystemGeminiKey();
+    if (dbKey) {
+      keys.push(dbKey); // Non-root: DB key
+    } else if (rootUser && process.env.GEMINI_API_KEY) {
+      keys.push(process.env.GEMINI_API_KEY); // Root: env fallback
+    } else if (keys.length === 0) {
+      // Không có DB key + không có env key → lỗi
+      return {
+        ok: false,
+        code: 'NO_API_KEY',
+        error: rootUser
+          ? `Hệ thống chưa cấu hình Gemini API key (kiểm tra System Settings và .env).`
+          : `Tài khoản được cấp quyền dùng key hệ thống nhưng System Settings chưa có key.`,
+      };
+    }
   }
 
   if (keys.length === 0) {
     return {
       ok: false,
       code: 'NO_API_KEY',
-      error: `Tài khoản "${normalizedEmail}" chưa cấu hình Gemini API Key và không có quyền dùng key shared. Vui lòng nhập API Key tại trang Cài đặt.`,
+      error: `Tài khoản "${normalizedEmail}" chưa cấu hình Gemini API Key và chưa được cấp quyền dùng key hệ thống. Vui lòng nhập API Key tại trang Cài đặt.`,
     };
   }
 
@@ -306,13 +338,15 @@ const WEBHOOK_MAX_RETRIES    = parseInt(process.env.WEBHOOK_MAX_RETRIES    || '3
 
 // ─── processWebhookEvent ─────────────────────────────────────────────────────
 async function processWebhookEvent(eventId, payload, isRetry = false) {
-  const { tukhoas, tukhoa, soluongtieude, chuki, thongtinHD, thongtincongtyvietbai } = payload;
+  const { tukhoas, tukhoa, soluongtieude, chuki, thongtinHD, thongtincongtyvietbai, contract_id } = payload;
 
   // Lấy email từ 2 vị trí: payload.email hoặc thongtincongtyvietbai.email
   // Ưu tiên root-level email, fallback về email trong thongtincongtyvietbai
   const email = payload.email || thongtincongtyvietbai?.email || null;
   // Lấy maHD từ payload để truyền vào notifyCrm1Error khi cần
   const maHD = thongtinHD?.MaHD || null;
+  // contract_id từ root-level field để gửi kèm notify lỗi về CRM1
+  const contractId = contract_id || null;
 
   // Tìm hoặc tạo user từ email CRM1 gửi lên
   // → User đó sẽ là người tạo (createdBy) cho keyword_queue → title_queue → articles
@@ -359,6 +393,7 @@ async function processWebhookEvent(eventId, payload, isRetry = false) {
           id_tukhoa: id_tukhoa || null,
           customLinks: customLinks || null,
           imageUrls:  imageUrls  || null,
+          contractId,
         });
         queueIds.push(queueId);
         console.info(`[crm] Event ${eventId} ✅ enqueued: keyword="${keyword}", queueId=${queueId}, count=${count}, ct="${ct}"`);

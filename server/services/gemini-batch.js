@@ -58,7 +58,7 @@ function parseResponse(raw, titleFallback) {
  * @returns {{ geminiJobName: string, total: number }}
  */
 async function submitBatchJob(keyword, titles, companyInfo, apiKey) {
-  const keysStr = apiKey || process.env.GEMINI_API_KEY;
+  const keysStr = apiKey;
   if (!keysStr) throw new Error('GEMINI_API_KEY is not configured.');
 
   const inlinedRequests = titles.map((title) => ({
@@ -90,7 +90,7 @@ async function submitBatchJob(keyword, titles, companyInfo, apiKey) {
  * @returns {{ done: boolean, state: string, results?: Array }}
  */
 async function processBatchJob(geminiJobName, titles, apiKey) {
-  const keysStr = apiKey || process.env.GEMINI_API_KEY;
+  const keysStr = apiKey;
   if (!keysStr) throw new Error('GEMINI_API_KEY is not configured.');
 
   const job = await withKeyFallback(keysStr, async (key) => {

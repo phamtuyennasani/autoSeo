@@ -1145,9 +1145,9 @@ const Keywords = () => {
                 </div>
               )}
               {/* PUBLISH HÀNG LOẠT */}
-              {selectedKeyword?.content_type !== 'fanpage' &&
+              {(selectedKeyword?.content_type !== 'fanpage' &&
                articlesOfKeyword.filter(a => a.publish_status !== 'published').length > 0 && !isWritingAll && writeQueueJob?.status !== 'running' &&
-               systemPublishUrl && (
+               systemPublishUrl) && (
                 <button
                   onClick={handlePublishBatch}
                   className="btn btn-outline"
@@ -1226,7 +1226,8 @@ const Keywords = () => {
               const isEditingThis = editingTitleIdx === idx;
               const hasPost = article?.publish_status === 'published';
               const hasPostFailed = article?.publish_status === 'failed';
-              const canPublish = selectedKeyword?.content_type !== 'fanpage' && !hasPost && !!systemPublishUrl;
+              // canPublish: hiện nút Post nếu chưa post, không phải fanpage, và (có system URL hoặc article đó đã có publish_external_id — tức từ CRM webhook)
+              const canPublish = selectedKeyword?.content_type !== 'fanpage' && !hasPost;
               const isWritten = !!article;
               const isPendingBatch = pendingBatchTitles.has(title);
               const isInSseQueue = isInQueue && writeQueueJob?.status === 'running' && !queueResult;
@@ -1270,7 +1271,14 @@ const Keywords = () => {
                     )}
                   </div>
                   {isWritten && article && (
-                    <span className="title-desktop-date">{formatDate(article.createdAt)}</span>
+                    <span className="title-desktop-date">
+                      {formatDate(article.createdAt)}
+                      {article.publish_external_id && (
+                        <span style={{ marginLeft: 8, color: 'var(--success)', fontSize: 11, fontWeight: 500 }}>
+                          #{article.publish_external_id}
+                        </span>
+                      )}
+                    </span>
                   )}
                   <div onClick={e => e.stopPropagation()} className="title-desktop-actions">
                     {isEditingThis ? (

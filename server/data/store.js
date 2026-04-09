@@ -317,8 +317,15 @@ async function initDb() {
     { table: 'users', col: 'ai_provider',    ddl: 'ALTER TABLE users ADD COLUMN ai_provider TEXT' },
     { table: 'users', col: 'openai_api_key', ddl: 'ALTER TABLE users ADD COLUMN openai_api_key TEXT' },
     { table: 'users', col: 'openai_model',   ddl: 'ALTER TABLE users ADD COLUMN openai_model TEXT' },
+    // users — per-user API keys (Claude)
+    { table: 'users', col: 'claude_api_key',   ddl: 'ALTER TABLE users ADD COLUMN claude_api_key TEXT' },
+    { table: 'users', col: 'claude_model',      ddl: 'ALTER TABLE users ADD COLUMN claude_model TEXT' },
     // users — Nasani integration (từ API xác thực Google login)
     { table: 'users', col: 'employee_code',    ddl: 'ALTER TABLE users ADD COLUMN employee_code TEXT' },
+    // contract_id từ CRM1 — lưu để gửi kèm notify lỗi
+    { table: 'keyword_queue', col: 'contract_id', ddl: 'ALTER TABLE keyword_queue ADD COLUMN contract_id TEXT' },
+    { table: 'title_queue',   col: 'contract_id', ddl: 'ALTER TABLE title_queue ADD COLUMN contract_id TEXT' },
+    { table: 'error_logs',    col: 'contract_id',  ddl: 'ALTER TABLE error_logs ADD COLUMN contract_id TEXT' },
     { table: 'users', col: 'department_name',  ddl: 'ALTER TABLE users ADD COLUMN department_name TEXT' },
     { table: 'users', col: 'manager_name',     ddl: 'ALTER TABLE users ADD COLUMN manager_name TEXT' },
     { table: 'users', col: 'manager_email',    ddl: 'ALTER TABLE users ADD COLUMN manager_email TEXT' },

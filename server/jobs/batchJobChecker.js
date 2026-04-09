@@ -89,6 +89,14 @@ async function submitScheduledJobs() {
       if (!company) { LOG(`  Không tìm thấy công ty ${job.companyId}, bỏ qua.`); continue; }
 
       const apiConfig = await getEffectiveApiConfig(job.createdBy).catch(() => ({}));
+      if (apiConfig.blocked || !apiConfig.apiKey) {
+        LOG(`[BatchJobChecker] ❌ Job ${job.id} không có API key: ${apiConfig.message || 'blocked'}.`);
+        await db.execute({
+          sql: `UPDATE batch_jobs SET status = 'failed', completedAt = ? WHERE id = ?`,
+          args: [new Date().toISOString(), job.id],
+        });
+        continue;
+      }
       const titles = JSON.parse(job.titles || '[]');
       const { geminiJobName, total, state } = await submitBatchJob(job.keyword, titles, company, apiConfig.apiKey);
 
@@ -125,6 +133,14 @@ async function checkPendingJobs() {
 
     try {
       const apiConfig = await getEffectiveApiConfig(job.createdBy).catch(() => ({}));
+      if (apiConfig.blocked || !apiConfig.apiKey) {
+        LOG(`[BatchJobChecker] ❌ Job ${job.id} check: không có API key: ${apiConfig.message || 'blocked'}.`);
+        await db.execute({
+          sql: `UPDATE batch_jobs SET status = 'failed', completedAt = ? WHERE id = ?`,
+          args: [new Date().toISOString(), job.id],
+        });
+        continue;
+      }
       const result = await processBatchJob(job.gemini_job_name, titles, apiConfig.apiKey);
 
       // Cập nhật gemini_state

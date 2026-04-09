@@ -33,8 +33,9 @@ function buildUsage(response, modelName) {
 
 // ─── generateTitles ───────────────────────────────────────────────────────────
 async function generateTitles(keyword, searchContext, count = 10, config = {}) {
-  const keysStr = config.apiKey || process.env.ANTHROPIC_API_KEY;
+  const keysStr = config.apiKey;
   if (!keysStr) throw new Error('Anthropic API key chưa được cấu hình. Vào Cài đặt → Cấu hình API để nhập key.');
+  if (config.blocked) throw new Error(config.message || 'API key không khả dụng.');
 
   const modelName = resolveModel(config);
   const prompt = config.contentType === 'fanpage'
@@ -80,8 +81,9 @@ async function generateTitles(keyword, searchContext, count = 10, config = {}) {
 
 // ─── generateArticle ──────────────────────────────────────────────────────────
 async function generateArticle(keyword, title, companyInfo, config = {}) {
-  const keysStr = config.apiKey || process.env.ANTHROPIC_API_KEY;
+  const keysStr = config.apiKey;
   if (!keysStr) throw new Error('Anthropic API key chưa được cấu hình. Vào Cài đặt → Cấu hình API để nhập key.');
+  if (config.blocked) throw new Error(config.message || 'API key không khả dụng.');
 
   const modelName = resolveModel(config);
   let promptByUser = '';
@@ -145,8 +147,9 @@ async function generateArticle(keyword, title, companyInfo, config = {}) {
 
 // ─── generateFanpageArticle ───────────────────────────────────────────────────
 async function generateFanpageArticle(keyword, title, companyInfo, config = {}) {
-  const keysStr = config.apiKey || process.env.ANTHROPIC_API_KEY;
+  const keysStr = config.apiKey;
   if (!keysStr) throw new Error('Anthropic API key chưa được cấu hình. Vào Cài đặt → Cấu hình API để nhập key.');
+  if (config.blocked) throw new Error(config.message || 'API key không khả dụng.');
 
   const modelName = resolveModel(config);
   let promptByUser = '';
@@ -207,8 +210,9 @@ async function generateFanpageArticle(keyword, title, companyInfo, config = {}) 
 
 // ─── analyzeKeywords ──────────────────────────────────────────────────────────
 async function analyzeKeywords(keywords, config = {}) {
-  const keysStr = config.apiKey || process.env.ANTHROPIC_API_KEY;
+  const keysStr = config.apiKey;
   if (!keysStr) throw new Error('Anthropic API key chưa được cấu hình. Vào Cài đặt → Cấu hình API để nhập key.');
+  if (config.blocked) throw new Error(config.message || 'API key không khả dụng.');
 
   const modelName           = resolveModel(config);
   const estimatedClusters   = Math.max(2, Math.min(20, Math.round(keywords.length / 6)));

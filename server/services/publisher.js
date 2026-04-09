@@ -59,6 +59,7 @@ async function publishArticle(articleId, article, company, apiUrl, email = '') {
     keyword_focus:     article.keyword          || null,
     // Retry: truyền publish_external_id để CRM2 cập nhật thay vì tạo mới
     publish_external_id: article.publish_external_id || null,
+    article_id          : articleId,
   };
   console.log('[publishArticle] Payload gửi đến CRM:', JSON.stringify(payload));
   const res = await fetch(apiUrl, {

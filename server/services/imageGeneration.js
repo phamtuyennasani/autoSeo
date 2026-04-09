@@ -29,8 +29,9 @@ const COST_PER_IMAGE = 0.02; // USD
  * @returns {Promise<{ imageBase64: string, mimeType: string, cost: number }>}
  */
 async function generateThumbnail(prompt, options = {}) {
-  const keysStr = options.apiKey || process.env.GEMINI_API_KEY;
+  const keysStr = options.apiKey;
   if (!keysStr) throw new Error('Gemini API key chưa được cấu hình.');
+  if (options.blocked) throw new Error(options.message || 'API key không khả dụng.');
   if (!prompt || !prompt.trim()) throw new Error('Prompt không được để trống.');
 
   const aspectRatio   = options.aspectRatio   ?? '16:9';

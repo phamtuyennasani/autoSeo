@@ -119,20 +119,18 @@ async function generateAndSave(keyword, title, companyId, company, createdBy = n
       args: [content, seo_title, seo_description, short_content, thumbnail_prompt, keywordId, chuki, contentType, 'unpublished', existing.rows[0].id],
     });
     const updated = { ...existing.rows[0], content, seo_title, seo_description, short_content, thumbnail_prompt, keywordId, chuki, content_type: contentType, publish_status: 'unpublished', publish_external_id: existingPublishExternalId };
-    // Auto-publish: chỉ khi hệ thống bật. Không auto-publish khi viết lại — user tự bấm Post.
-    if (await getSetting('auto_publish_enabled') === '1') {
-      try {
-        const apiUrl = await getSetting('publish_api_url');
-        if (apiUrl) {
-          const email = await getKeywordCreatorEmail(keywordId, keyword);
-          const pubResult = await publishArticle(existing.rows[0].id, updated, company, apiUrl, email);
-          return { ...updated, ...pubResult };
-        }
-      } catch (e) {
-        console.warn('[articles] auto-publish thất bại:', e.message);
-        await db.execute({ sql: "UPDATE articles SET publish_status = 'failed' WHERE id = ?", args: [existing.rows[0].id] });
-        return { ...updated, publish_status: 'failed' };
+    // Viết lại (rewrite) → luôn auto-post lại qua CRM2, không phụ thuộc auto_publish_enabled
+    try {
+      const apiUrl = await getSetting('publish_api_url');
+      if (apiUrl) {
+        const email = await getKeywordCreatorEmail(keywordId, keyword);
+        const pubResult = await publishArticle(existing.rows[0].id, updated, company, apiUrl, email);
+        return { ...updated, ...pubResult };
       }
+    } catch (e) {
+      console.warn('[articles] rewrite auto-publish thất bại:', e.message);
+      await db.execute({ sql: "UPDATE articles SET publish_status = 'failed' WHERE id = ?", args: [existing.rows[0].id] });
+      return { ...updated, publish_status: 'failed' };
     }
     return updated;
   }
