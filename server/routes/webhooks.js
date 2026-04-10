@@ -151,24 +151,28 @@ router.post('/crm2/rewrite', express.json(), async (req, res) => {
 
   try {
     // ── 1. Tìm bài viết trong DB ────────────────────────────────────────────
-    let articleQuery, articleArgs;
-    if (publish_external_id) {
-      articleQuery = 'SELECT * FROM articles WHERE publish_external_id = ?';
-      articleArgs = [publish_external_id];
-    } else {
-      articleQuery = 'SELECT * FROM articles WHERE id = ?';
-      articleArgs = [article_id];
+    // Chuẩn hóa publish_external_id sang string để so sánh đúng kiểu với DB (DB lưu TEXT)
+    const normalizedExtId = publish_external_id ? String(publish_external_id) : null;
+
+    let existingArticle = null;
+
+    // Thứ tự ưu tiên: 1. article_id → 2. publish_external_id
+    if (article_id) {
+      const r = await db.execute({ sql: 'SELECT * FROM articles WHERE id = ?', args: [article_id] });
+      existingArticle = r.rows[0] || null;
     }
 
-    const artResult = await db.execute({ sql: articleQuery, args: articleArgs });
-    const existingArticle = artResult.rows[0];
+    if (!existingArticle && normalizedExtId) {
+      const r = await db.execute({ sql: 'SELECT * FROM articles WHERE publish_external_id = ?', args: [normalizedExtId] });
+      existingArticle = r.rows[0] || null;
+    }
 
     if (!existingArticle) {
       return res.status(404).json({
         error: 'Không tìm thấy bài viết.',
-        hint: publish_external_id
-          ? `Không có bài viết nào với publish_external_id="${publish_external_id}"`
-          : `Không có bài viết nào với id="${article_id}"`,
+        hint: article_id
+          ? `Không có bài viết nào với article_id="${article_id}" hoặc publish_external_id="${normalizedExtId}"`
+          : `Không có bài viết nào với publish_external_id="${normalizedExtId}"`,
       });
     }
 
@@ -199,7 +203,7 @@ router.post('/crm2/rewrite', express.json(), async (req, res) => {
     if (apiConfig.blocked) {
       return res.status(403).json({ error: apiConfig.message || 'User không có API key.' });
     }
-
+    console.log(`[webhook - crm2/rewrite] API config for user ${userId}:`, apiConfig);
     // ── 5. Gọi generateAndSave để viết lại ─────────────────────────────────
     // Giữ nguyên publish_external_id để CRM2 cập nhật bài cũ thay vì tạo mới
     const { generateAndSave } = require('../routes/articles');
@@ -233,7 +237,6 @@ router.post('/crm2/rewrite', express.json(), async (req, res) => {
         publishResult = await publishArticle(rewritten.id, { ...rewritten, publish_external_id: existingArticle.publish_external_id }, company, apiUrl, creatorEmail);
       } catch (pubErr) {
         console.error('[webhook - crm2/rewrite] Publish lại thất bại:', pubErr.message);
-        // Vẫn trả 200 vì bài đã viết lại thành công, chỉ publish thất bại
         return res.json({
           success: true,
           article_id: rewritten.id,
@@ -242,7 +245,6 @@ router.post('/crm2/rewrite', express.json(), async (req, res) => {
         });
       }
     }
-
     res.json({
       success: true,
       article_id: rewritten.id,

@@ -10,7 +10,7 @@
 const { db } = require('../data/store');
 const { recordWebhookEvent } = require('./metricsService');
 const { decrypt } = require('../utils/crypto');
-const { decodeHtmlEntities, genId, normalizeGmailEmail,normalizeUrlWithProtocol } = require('../utils/func');
+const { decodeHtmlEntities, genId, normalizeGmailEmail,normalizeUrlWithProtocol,createNasaniToken } = require('../utils/func');
 
 
 // ─── Notify CRM1 về lỗi khi xử lý từ khóa ──────────────────────────────────────
@@ -28,31 +28,29 @@ const CRM_NOTIFY_URL = process.env.CRM_NOTIFY_URL || '';
  * @param {string} opts.errorPhase  — 'tao_tieude' | 'viet_bai'
  * @param {string} opts.errorMessage — nội dung lỗi
  */
-async function notifyCrm1Error({ id_tukhoa, contractId, email, maHD, errorPhase, errorMessage }) {
+async function notifyCrm1Error({ id_tukhoa, contractId, errorPhase, errorMessage }) {
   if (!CRM_NOTIFY_URL) {
     console.warn(`[notifyCrm1] ⚠️  CRM_NOTIFY_URL chưa cấu hình — bỏ qua notify. id_tukhoa="${id_tukhoa}"`);
     return;
   }
-
-  const payload = {
+  const timestamp = Math.floor(Date.now() / 1000).toString();
+  const token = createNasaniToken(timestamp);
+  const formBody = new URLSearchParams({
     id_tukhoa,
-    contract_id: contractId || null,
-    email: email || null,
-    ma_hd: maHD || null,
-    status: 'error',
-    error_phase: errorPhase,
+    token,
+    time_post: timestamp,
+    contract_id: contractId || '',
     error_message: errorMessage || 'Lỗi không xác định',
-    timestamp: new Date().toISOString(),
-  };
-
+  });
+  console.log(`[notifyCrm1] 🚀 Gửi notify về CRM1 cho id_tukhoa="${id_tukhoa}" (phase="${errorPhase}"):`, Object.fromEntries(new URLSearchParams(formBody)));
   try {
     const res = await fetch(CRM_NOTIFY_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: formBody.toString(),
     });
     const data = await res.json().catch(() => ({}));
-    console.log(`[notifyCrm1] ✅ Đã bắn notify cho id_tukhoa="${id_tukhoa}" (phase="${errorPhase}"): HTTP ${res.status}`);
+    console.log(`[notifyCrm1] ✅ Đã bắn notify cho id_tukhoa="${id_tukhoa}" (phase="${errorPhase}"): HTTP ${res.status} - Response:`, data);
     return data;
   } catch (e) {
     console.error(`[notifyCrm1] ❌ Gửi notify thất bại cho id_tukhoa="${id_tukhoa}": ${e.message}`);
