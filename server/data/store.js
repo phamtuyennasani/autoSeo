@@ -308,6 +308,10 @@ async function initDb() {
     { table: 'keywords',       col: 'content_type',  ddl: "ALTER TABLE keywords ADD COLUMN content_type TEXT DEFAULT 'blog'" },
     // yeucau — yêu cầu từ CRM1, dùng làm hint cho AI khi viết bài
     { table: 'title_queue',   col: 'yeucau',        ddl: 'ALTER TABLE title_queue ADD COLUMN yeucau TEXT' },
+    // yeucau, custom_links, image_urls — từ CRM1, lưu vào articles để dùng khi viết lại bài
+    { table: 'articles',      col: 'yeucau',         ddl: 'ALTER TABLE articles ADD COLUMN yeucau TEXT' },
+    { table: 'articles',      col: 'custom_links',   ddl: 'ALTER TABLE articles ADD COLUMN custom_links TEXT' },
+    { table: 'articles',      col: 'image_urls',      ddl: 'ALTER TABLE articles ADD COLUMN image_urls TEXT' },
     // webhook_events — lưu email CRM1 gửi lên để tìm user
     { table: 'webhook_events', col: 'email',  ddl: 'ALTER TABLE webhook_events ADD COLUMN email TEXT' },
     // webhook_events — auto-retry sau 5 phút khi failed

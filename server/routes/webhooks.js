@@ -219,9 +219,10 @@ router.post('/crm2/rewrite', express.json(), async (req, res) => {
       existingArticle.chuki,
       existingArticle.content_type || 'blog',
       existingArticle.publish_external_id,  // giữ nguyên external ID
-      null,         // customLinks
-      null,         // imageUrls
-      existingArticle.id  // articleId → UPDATE bài cũ
+      existingArticle.custom_links || null,
+      existingArticle.image_urls || null,
+      existingArticle.id,  // articleId → UPDATE bài cũ
+      existingArticle.yeucau || null  // yeucau đã lưu từ CRM1
     );
 
     // ── 6. Publish lại lên CRM2 ────────────────────────────────────────────

@@ -48,7 +48,7 @@ async function checkArticleLimit(user) {
 }
 
 // ─── Helper: gọi AI + lưu token + lưu DB ─────────────────────────────────────
-async function generateAndSave(keyword, title, companyId, company, createdBy = null, userConfig = {}, keywordId = null, writtenBy = null, chuki = null, contentType = 'blog', publishExternalId = null, customLinks = null, imageUrls = null, articleId = null) {
+async function generateAndSave(keyword, title, companyId, company, createdBy = null, userConfig = {}, keywordId = null, writtenBy = null, chuki = null, contentType = 'blog', publishExternalId = null, customLinks = null, imageUrls = null, articleId = null, yeucau = null) {
   // An toàn: ép tất cả về string/null (SQLite chỉ nhận primitives)
   keyword     = keyword     == null ? null : String(keyword);
   title       = title       == null ? null : String(title);
@@ -60,6 +60,7 @@ async function generateAndSave(keyword, title, companyId, company, createdBy = n
   contentType = contentType == null ? 'blog' : String(contentType);
   customLinks = customLinks == null ? null : String(customLinks);
   imageUrls   = imageUrls   == null ? null : String(imageUrls);
+  yeucau      = yeucau      == null ? null : String(yeucau);
 
 
   const isFanpage = contentType === 'fanpage';
@@ -115,10 +116,10 @@ async function generateAndSave(keyword, title, companyId, company, createdBy = n
     const existingPublishExternalId = existing.rows[0].publish_external_id || null;
     await saveVersion(existing.rows[0].id, existing.rows[0], createdBy);
     await db.execute({
-      sql: 'UPDATE articles SET content = ?, seo_title = ?, seo_description = ?, short_content = ?, thumbnail_prompt = ?, keywordId = ?, chuki = ?, content_type = ?, publish_status = ? WHERE id = ?',
-      args: [content, seo_title, seo_description, short_content, thumbnail_prompt, keywordId, chuki, contentType, 'unpublished', existing.rows[0].id],
+      sql: 'UPDATE articles SET content = ?, seo_title = ?, seo_description = ?, short_content = ?, thumbnail_prompt = ?, keywordId = ?, chuki = ?, content_type = ?, publish_status = ?, yeucau = ?, custom_links = ?, image_urls = ? WHERE id = ?',
+      args: [content, seo_title, seo_description, short_content, thumbnail_prompt, keywordId, chuki, contentType, 'unpublished', yeucau, customLinks, imageUrls, existing.rows[0].id],
     });
-    const updated = { ...existing.rows[0], content, seo_title, seo_description, short_content, thumbnail_prompt, keywordId, chuki, content_type: contentType, publish_status: 'unpublished', publish_external_id: existingPublishExternalId };
+    const updated = { ...existing.rows[0], content, seo_title, seo_description, short_content, thumbnail_prompt, keywordId, chuki, content_type: contentType, publish_status: 'unpublished', publish_external_id: existingPublishExternalId, yeucau, custom_links: customLinks, image_urls: imageUrls };
     // Viết lại (rewrite) → luôn auto-post lại qua CRM2, không phụ thuộc auto_publish_enabled
     try {
       const apiUrl = await getSetting('publish_api_url');
@@ -139,10 +140,10 @@ async function generateAndSave(keyword, title, companyId, company, createdBy = n
   const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   const createdAt = new Date().toISOString();
   await db.execute({
-    sql: 'INSERT INTO articles (id, keyword, title, companyId, content, seo_title, seo_description, short_content, thumbnail_prompt, createdAt, createdBy, keywordId, writtenBy, chuki, content_type, publish_external_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    args: [id, keyword, title, companyId, content, seo_title, seo_description, short_content, thumbnail_prompt, createdAt, createdBy, keywordId, writtenBy, chuki, contentType, publishExternalId],
+    sql: 'INSERT INTO articles (id, keyword, title, companyId, content, seo_title, seo_description, short_content, thumbnail_prompt, createdAt, createdBy, keywordId, writtenBy, chuki, content_type, publish_external_id, yeucau, custom_links, image_urls) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    args: [id, keyword, title, companyId, content, seo_title, seo_description, short_content, thumbnail_prompt, createdAt, createdBy, keywordId, writtenBy, chuki, contentType, publishExternalId, yeucau, customLinks, imageUrls],
   });
-  const newArticle = { id, keyword, title, companyId, short_content, content, seo_title, seo_description, thumbnail_prompt, createdAt, createdBy, writtenBy, keywordId, chuki, content_type: contentType, publish_status: 'unpublished', publish_external_id: publishExternalId };
+  const newArticle = { id, keyword, title, companyId, short_content, content, seo_title, seo_description, thumbnail_prompt, createdAt, createdBy, writtenBy, keywordId, chuki, content_type: contentType, publish_status: 'unpublished', publish_external_id: publishExternalId, yeucau, custom_links: customLinks, image_urls: imageUrls };
 
   // Auto-publish nếu hệ thống bật tính năng này
   if (await getSetting('auto_publish_enabled') === '1') {
@@ -428,7 +429,20 @@ router.post('/', async (req, res) => {
       } catch { /* giữ mặc định nếu lỗi */ }
     }
 
-    const article = await generateAndSave(keyword, title, companyId, company, effectiveCreatedBy, apiConfig, keywordId, writtenBy, null, null, null, customLinks, imageUrls, req.body.articleId);
+    // Khi rewrite (articleId !== null): đọc yeucau/custom_links/image_urls từ article cũ
+    let yeucauForRewrite = null;
+    if (req.body.articleId) {
+      try {
+        const existingArticle = await db.execute({ sql: 'SELECT yeucau, custom_links, image_urls FROM articles WHERE id = ?', args: [req.body.articleId] });
+        if (existingArticle.rows[0]) {
+          yeucauForRewrite = existingArticle.rows[0].yeucau || null;
+          customLinks = existingArticle.rows[0].custom_links || customLinks;
+          imageUrls   = existingArticle.rows[0].image_urls   || imageUrls;
+        }
+      } catch { /* giữ giá trị hiện tại nếu lỗi */ }
+    }
+
+    const article = await generateAndSave(keyword, title, companyId, company, effectiveCreatedBy, apiConfig, keywordId, writtenBy, null, null, null, customLinks, imageUrls, req.body.articleId, yeucauForRewrite);
     res.json(article);
   } catch (error) {
     console.error('[single] Lỗi:', error.message);

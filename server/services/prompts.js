@@ -33,7 +33,7 @@ function buildArticlePrompt(keyword, title, company, optionsPromt = '', customLi
 
   // Chèn custom image URLs vào prompt nếu có
   const imageUrlsBlock = imageUrls
-    ? `\n\n**DANH SÁCH URL HÌNH ẢNH (chèn vào bài viết một cách ngẫu nhiên từ thẻ H2 thứ 2 trở đi,**Không chèn vào các vùng CTA** , dùng markdown: ![alt](url)):**\n${imageUrls}\n`
+    ? `\n\n**DANH SÁCH URL HÌNH ẢNH CỦA TÔI HÃY DÙNG NÓ ĐỂ CHÈN VÀO BÀI VIẾT (chèn vào bài viết một cách ngẫu nhiên trong các đoạn văn từ thẻ H2 thứ 2 trở đi,**Không chèn vào các vùng CTA** , dùng markdown: ![alt](url)):**\n${imageUrls}\n`
     : '';
 
   return `# VAI TRÒ

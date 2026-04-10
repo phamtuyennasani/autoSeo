@@ -224,11 +224,8 @@ async function processKeywordJob(job) {
       ],
     });
 
-    // Đánh dấu done
-    await db.execute({
-      sql: `UPDATE keyword_queue SET status = 'done', keyword_ref = ?, done_at = ?, error = NULL WHERE id = ?`,
-      args: [keywordId, new Date().toISOString(), job.id],
-    });
+    // Xóa luôn — job đã xử lý xong, không cần giữ lại để tránh phìn bảng
+    await db.execute({ sql: `DELETE FROM keyword_queue WHERE id = ?`, args: [job.id] });
 
     recordKeywordProcessed((Date.now() - start) / 1000, true);
     LOG(`[CRMQueue - KW-Worker] ✅ Xong keyword="${job.keyword}" → ${titles.length} tiêu đề`);
@@ -450,14 +447,22 @@ async function processTitleJob(job) {
         ].find(([, v]) => typeof v === 'object' && v !== null);
         if (bad) LOG(`[CRMQueue - TL-Worker] ⚠️  Object detected: ${bad[0]} =`, bad[1]);
 
-        console.info(`[CRMQueue - TL-Worker]    custom_links="${job.custom_links || ''}", image_urls="${job.image_urls || ''}"`);
+        // Khi viết lại (articleId !== null): đọc yeucau/custom_links/image_urls từ article cũ
+        // Khi tạo mới: dùng từ job (CRM1 gửi lên)
+        let yeucau     = job.yeucau     || null;
+        let customLinks = job.custom_links || null;
+        let imageUrls   = job.image_urls   || null;
+        let articleId   = null;
+
+        console.info(`[CRMQueue - TL-Worker]    custom_links="${customLinks || ''}", image_urls="${imageUrls || ''}", yeucau="${yeucau || ''}"`);
         await generateAndSave(
           job.keyword, title, job.company_id, company, job.created_by, apiConfig,
           keywordId, null, job.chuki || null, job.content_type || 'blog',
           job.publish_external_id || null,
-          job.custom_links || null,
-          job.image_urls  || null,
-          null  // articleId
+          customLinks,
+          imageUrls,
+          articleId,  // null → tạo mới
+          yeucau
         );
         succeeded++;
         LOG(`[CRMQueue - TL-Worker]   ✅ "${title}"`);
@@ -509,10 +514,8 @@ async function processTitleJob(job) {
       return; // thoát sớm, không đánh dấu done
     }
 
-    await db.execute({
-      sql: `UPDATE title_queue SET status = 'done', done_at = ?, error = NULL WHERE id = ?`,
-      args: [new Date().toISOString(), job.id],
-    });
+    // Xóa luôn — job đã xử lý xong, không cần giữ lại để tránh phìn bảng
+    await db.execute({ sql: `DELETE FROM title_queue WHERE id = ?`, args: [job.id] });
 
     recordTitleProcessed((Date.now() - start) / 1000, failed === 0);
     LOG(`[CRMQueue - TL-Worker] ✅ Xong keyword="${job.keyword}" — thành công: ${succeeded}, lỗi: ${failed}`);
