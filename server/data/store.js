@@ -244,6 +244,34 @@ async function initDb() {
       createdAt     TEXT NOT NULL,
       FOREIGN KEY (planId) REFERENCES keyword_plans(id)
     );
+
+    CREATE TABLE IF NOT EXISTS widget_customers (
+      id           TEXT PRIMARY KEY,
+      listien_key  TEXT UNIQUE NOT NULL,
+      name         TEXT,
+      api_endpoint TEXT,
+      model        TEXT NOT NULL DEFAULT 'gemini-2.5-flash',
+      is_active    INTEGER NOT NULL DEFAULT 1,
+      created_at   TEXT NOT NULL,
+      expires_at   TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS widget_contents (
+      id               TEXT PRIMARY KEY,
+      listien_key      TEXT NOT NULL,
+      content_type     TEXT NOT NULL,
+      keyword          TEXT,
+      keyword_id       TEXT,
+      title            TEXT,
+      title_id         TEXT,
+      content          TEXT,
+      seo_title        TEXT,
+      seo_description  TEXT,
+      publish_status   TEXT NOT NULL DEFAULT 'draft',
+      published_at     TEXT,
+      created_at       TEXT NOT NULL,
+      FOREIGN KEY (listien_key) REFERENCES widget_customers(listien_key)
+    );
   `);
 
   // ── Migration: Thêm cột nếu thiếu ──
@@ -372,6 +400,7 @@ async function initDb() {
     // users — Claude/Anthropic provider
     { table: 'users', col: 'anthropic_api_key', ddl: 'ALTER TABLE users ADD COLUMN anthropic_api_key TEXT' },
     { table: 'users', col: 'anthropic_model',    ddl: 'ALTER TABLE users ADD COLUMN anthropic_model TEXT' },
+
   ];
 
   // ── Error Logs — ghi nhận từ khóa lỗi khi tạo tiêu đề hoặc viết bài ────────

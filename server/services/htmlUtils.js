@@ -96,7 +96,7 @@ function applyInlineStyles(html, styles = {}) {
     h4Color:     styles.h4Color     || 'var(--text-primary)',
   };
 
-  const accent       = s.accentColor || 'var(--accent)';
+  const accent       = s.accentColor || 'blue';
   const accentSubtle = s.accentColor ? hexToRgba(s.accentColor, 0.1)  : 'var(--accent-subtle)';
   const accentCode   = s.accentColor ? hexToRgba(s.accentColor, 0.12) : 'rgba(99,102,241,0.1)';
   const accentLight  = s.accentColor ? hexToRgba(s.accentColor, 0.75) : '#a78bfa';
@@ -175,7 +175,7 @@ function applyInlineStyles(html, styles = {}) {
   });
   html = html.replace(/<a(\s[^>]*)?>/gi, (_, a = '') => {
     const attrs = (a || '').replace(/\bstyle="[^"]*"/gi, '').trim();
-    return `<a${attrs ? ' ' + attrs : ''} style="color:${accent};text-decoration:underline;text-underline-offset:3px;">`;
+    return `<a${attrs ? ' ' + attrs : ''} style="color:${accent};text-decoration:none;text-underline-offset:3px;">`;
   });
 
   // 7. HR

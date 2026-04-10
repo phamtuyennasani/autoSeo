@@ -117,6 +117,10 @@ initDb()
       // Khởi động CRM Queue Workers (keyword → title → article)
       const { startQueueWorkers } = require('./services/crmQueueWorker');
       //startQueueWorkers();
+
+      // Widget auto-cleanup (30 ngày)
+      const { startWidgetCleaner } = require('./jobs/widgetCleaner');
+      startWidgetCleaner();
     });
   })
   .catch((err) => {
