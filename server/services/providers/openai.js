@@ -35,13 +35,14 @@ function buildUsage(response, modelName) {
 
 // ─── generateTitles ───────────────────────────────────────────────────────────
 async function generateTitles(keyword, searchContext, count = 10, config = {}) {
-  const keysStr = config.apiKey || process.env.OPENAI_API_KEY;
+  const keysStr = config.apiKey;
   if (!keysStr) throw new Error('OpenAI API key chưa được cấu hình. Vào Cài đặt → Cấu hình API để nhập key.');
+  if (config.blocked) throw new Error(config.message || 'API key không khả dụng.');
 
   const modelName = resolveModel(config);
   const prompt = config.contentType === 'fanpage'
-    ? buildFanpagePostsPrompt(keyword, searchContext, count)
-    : buildTitlesPrompt(keyword, searchContext, count);
+    ? buildFanpagePostsPrompt(keyword, searchContext, count, config.keywordRequirements)
+    : buildTitlesPrompt(keyword, searchContext, count, config.keywordRequirements);
 
   return withKeyFallback(keysStr, async (key) => {
     const client = new OpenAI({ apiKey: key });
@@ -77,11 +78,21 @@ async function generateTitles(keyword, searchContext, count = 10, config = {}) {
 
 // ─── generateArticle ──────────────────────────────────────────────────────────
 async function generateArticle(keyword, title, companyInfo, config = {}) {
-  const keysStr = config.apiKey || process.env.OPENAI_API_KEY;
+  const keysStr = config.apiKey;
   if (!keysStr) throw new Error('OpenAI API key chưa được cấu hình. Vào Cài đặt → Cấu hình API để nhập key.');
+  if (config.blocked) throw new Error(config.message || 'API key không khả dụng.');
 
   const modelName = resolveModel(config);
-  const prompt    = buildArticlePrompt(keyword, title, companyInfo);
+  const customLinks = config.customLinks || '';
+  const imageUrls   = config.imageUrls   || '';
+  let promptByUser = '';
+  if (config.customPrompt) {
+    promptByUser = `\n\n## Yêu cầu phong cách viết của tác giả (bắt buộc tuân theo):\n${config.customPrompt}`;
+  }
+  if (config.yeucau) {
+    promptByUser += `\n\n## Yêu cầu bổ sung từ CRM (bắt buộc tuân theo):\n${config.yeucau}`;
+  }
+  const prompt = buildArticlePrompt(keyword, title, companyInfo, promptByUser, customLinks, imageUrls);
 
   return withKeyFallback(keysStr, async (key) => {
     const client = new OpenAI({ apiKey: key });
@@ -117,6 +128,7 @@ async function generateArticle(keyword, title, companyInfo, config = {}) {
       return {
         seo_title:        typeof parsed.seo_title === 'string'        ? parsed.seo_title                                                                 : title,
         seo_description:  typeof parsed.seo_description === 'string'  ? parsed.seo_description                                                             : '',
+        short_content:     typeof parsed.short_content === 'string'     ? parsed.short_content                                                            : '',
         thumbnail_prompt: typeof parsed.thumbnail_prompt === 'string' ? parsed.thumbnail_prompt                                                            : '',
         content:          typeof parsed.content === 'string'          ? applyInlineStyles(marked.parse(parsed.content), companyInfo?.article_styles || {}) : '',
         usage,
@@ -130,13 +142,17 @@ async function generateArticle(keyword, title, companyInfo, config = {}) {
 
 // ─── generateFanpageArticle ───────────────────────────────────────────────────
 async function generateFanpageArticle(keyword, title, companyInfo, config = {}) {
-  const keysStr = config.apiKey || process.env.OPENAI_API_KEY;
+  const keysStr = config.apiKey;
   if (!keysStr) throw new Error('OpenAI API key chưa được cấu hình. Vào Cài đặt → Cấu hình API để nhập key.');
+  if (config.blocked) throw new Error(config.message || 'API key không khả dụng.');
 
   const modelName = resolveModel(config);
   let promptByUser = '';
   if (config.customPrompt) {
     promptByUser = `\n\n## Yêu cầu phong cách viết của tác giả (bắt buộc tuân theo):\n${config.customPrompt}`;
+  }
+  if (config.yeucau) {
+    promptByUser += `\n\n## Yêu cầu bổ sung từ CRM (bắt buộc tuân theo):\n${config.yeucau}`;
   }
   const prompt = buildFanpageArticlePrompt(keyword, title, companyInfo, promptByUser);
 
@@ -187,8 +203,9 @@ async function generateFanpageArticle(keyword, title, companyInfo, config = {}) 
 
 // ─── analyzeKeywords ──────────────────────────────────────────────────────────
 async function analyzeKeywords(keywords, config = {}) {
-  const keysStr = config.apiKey || process.env.OPENAI_API_KEY;
+  const keysStr = config.apiKey;
   if (!keysStr) throw new Error('OpenAI API key chưa được cấu hình. Vào Cài đặt → Cấu hình API để nhập key.');
+  if (config.blocked) throw new Error(config.message || 'API key không khả dụng.');
 
   const modelName           = resolveModel(config);
   const estimatedClusters   = Math.max(2, Math.min(20, Math.round(keywords.length / 6)));

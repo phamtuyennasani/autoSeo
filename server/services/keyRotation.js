@@ -34,6 +34,31 @@ function pickKey(keysStr) {
  * @param {function} fn      async (key: string) => result
  * @returns {Promise<*>}     Kết quả từ key đầu tiên thành công
  */
+/**
+ * Kiểm tra lỗi có phải do rate limit không.
+ * Hỗ trợ cả: Gemini SDK Error, fetch HTTP Error, và Google API error format.
+ */
+function isRateLimitError(err) {
+  const msg = (err?.message || '').toLowerCase();
+  const status = err?.status || err?.statusCode || (err?.response?.status) || 0;
+  return (
+    status === 429 ||
+    status === 503 ||
+    msg.includes('resource_exhausted') ||
+    msg.includes('rate_limit') ||
+    msg.includes('429') ||
+    msg.includes('too many requests') ||
+    msg.includes('quota exceeded') ||
+    msg.includes('request limit')
+  );
+}
+
+/**
+ * Thực thi fn(key) với round-robin và retry thông minh khi gặp rate limit.
+ * - Key lỗi thường → thử key tiếp theo ngay
+ * - Key lỗi rate limit → chờ backoff rồi thử lại (tối đa 3 lần/key)
+ * - Tất cả key đều fail → throw
+ */
 async function withKeyFallback(keysStr, fn) {
   const keys = parseKeys(keysStr);
   if (!keys.length) throw new Error('Không có Gemini API key nào được cấu hình.');
@@ -44,19 +69,34 @@ async function withKeyFallback(keysStr, fn) {
 
   for (let attempt = 0; attempt < n; attempt++) {
     const key = keys[(startIdx + attempt) % n];
-    try {
-      const result = await fn(key);
-      // Thành công → advance counter đến sau key này
-      _index = (startIdx + attempt + 1) % 1000000;
-      return result;
-    } catch (err) {
-      lastError = err;
-      console.warn(`[keyRotation] Key #${(startIdx + attempt) % n + 1}/${n} lỗi: ${err.message?.slice(0, 120)}`);
+    const keyNum = (startIdx + attempt) % n + 1;
+
+    for (let retry = 0; retry < 3; retry++) {
+      try {
+        const result = await fn(key);
+        _index = (startIdx + attempt + 1) % 1000000;
+        return result;
+      } catch (err) {
+        lastError = err;
+
+        if (isRateLimitError(err)) {
+          // Rate limit → backoff + retry
+          const backoffMs = (retry + 1) * 2000;
+          console.warn(`[keyRotation] ⏳ Key #${keyNum}/${n} rate-limited (retry ${retry + 1}/3) — chờ ${backoffMs}ms: ${err.message?.slice(0, 80)}`);
+          await new Promise(r => setTimeout(r, backoffMs));
+          continue; // thử lại với cùng key
+        }
+
+        // Lỗi khác (AI parse fail, network, etc.) → thử key tiếp theo
+        console.warn(`[keyRotation] ❌ Key #${keyNum}/${n} lỗi: ${err.message?.slice(0, 120)}`);
+        break; // break inner retry loop → thử key tiếp theo
+      }
     }
   }
 
   // Tất cả key đều thất bại
   _index = (startIdx + n) % 1000000;
+  console.error(`[keyRotation] 🚫 Tất cả ${n} key đều thất bại: ${lastError?.message?.slice(0, 200)}`);
   throw lastError;
 }
 

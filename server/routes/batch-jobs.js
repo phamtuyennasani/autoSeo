@@ -200,6 +200,9 @@ router.post('/:id/check', async (req, res) => {
   const titles = JSON.parse(job.titles || '[]');
   try {
     const creatorApiConfig = await getEffectiveApiConfig(job.createdBy).catch(() => ({}));
+    if (creatorApiConfig.blocked || !creatorApiConfig.apiKey) {
+      return res.status(403).json({ error: creatorApiConfig.message || 'User không có API key.', type: 'no_api_key' });
+    }
     const checkResult = await processBatchJob(job.gemini_job_name, titles, creatorApiConfig.apiKey);
 
     await db.execute({
@@ -219,7 +222,7 @@ router.post('/:id/check', async (req, res) => {
 
     for (const result of checkResult.results) {
       try {
-        const outcome = await saveArticleFromBatch(job.keyword, job.companyId, result, job.createdBy, job.keywordId, job.chuki || null, job.writtenBy || null);
+        const outcome = await saveArticleFromBatch(job.keyword, job.companyId, result, job.createdBy, job.keywordId, job.chuki || null, job.writtenBy || null, job.content_type || 'blog');
         if (outcome.saved || outcome.skipped) {
           succeededCount++;
           savedArticles.push({ id: outcome.id, title: result.title, seo_title: outcome.seo_title });
@@ -258,6 +261,9 @@ router.post('/:id/submit-now', async (req, res) => {
 
   try {
     const apiConfig = await getEffectiveApiConfig(job.createdBy).catch(() => ({}));
+    if (apiConfig.blocked || !apiConfig.apiKey) {
+      return res.status(403).json({ error: apiConfig.message || 'User không có API key.', type: 'no_api_key' });
+    }
     const titles = JSON.parse(job.titles || '[]');
     const { geminiJobName, total, state } = await submitBatchJob(job.keyword, titles, company, apiConfig.apiKey);
 

@@ -51,22 +51,36 @@ router.get('/', async (req, res) => {
       );
       rows = result.rows;
     } else {
-      // Senior manager / manager: chỉ xem cấp dưới của mình
+      // Senior manager / manager: xem cấp dưới + BẢN THÂN mình
       const ids = await getManageableUserIds(me.id, me.role);
-      if (ids.length === 0) {
-        return res.json([]);
-      }
-      const placeholders = ids.map(() => '?').join(',');
-      const result = await db.execute({
+
+      // Fetch thông tin đầy đủ của chính mình (req.user thiếu vài trường)
+      const [meRow] = (await db.execute({
         sql: `SELECT id, username, full_name, email, phone, role, manager_id, is_active,
-                     daily_token_limit, daily_article_limit,
-                     use_system_key, use_manager_key,
-                     gemini_api_key IS NOT NULL AND gemini_api_key != '' AS has_own_key,
-                     createdAt, lastLoginAt
-              FROM users WHERE id IN (${placeholders}) ORDER BY createdAt DESC`,
-        args: ids,
-      });
-      rows = result.rows;
+                      daily_token_limit, daily_article_limit,
+                      use_system_key, use_manager_key,
+                      gemini_api_key IS NOT NULL AND gemini_api_key != '' AS has_own_key,
+                      createdAt, lastLoginAt
+               FROM users WHERE id = ?`,
+        args: [me.id],
+      })).rows;
+
+      if (!ids || ids.length === 0) {
+        // Không quản lý ai → chỉ trả bản thân
+        rows = [meRow];
+      } else {
+        const placeholders = ids.map(() => '?').join(',');
+        const result = await db.execute({
+          sql: `SELECT id, username, full_name, email, phone, role, manager_id, is_active,
+                       daily_token_limit, daily_article_limit,
+                       use_system_key, use_manager_key,
+                       gemini_api_key IS NOT NULL AND gemini_api_key != '' AS has_own_key,
+                       createdAt, lastLoginAt
+                FROM users WHERE id IN (${placeholders}) ORDER BY createdAt DESC`,
+          args: ids,
+        });
+        rows = [meRow, ...result.rows];
+      }
     }
 
     res.json(rows.map(normalizeUser));

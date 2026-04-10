@@ -8,18 +8,19 @@ router.get('/', async (req, res) => {
   try {
     const user = req.user || { id: 'admin', role: 'root' };
 
-    let sql  = 'SELECT * FROM companies';
+    let sql  = `SELECT c.*, u.email AS creatorEmail FROM companies c
+                LEFT JOIN users u ON u.id = c.createdBy`;
     const args = [];
 
     // Filter theo userId (chỉ cho manager trở lên)
     if (req.query.userId && canManageUsers(user)) {
-      sql += ' WHERE createdBy = ?';
+      sql += ' WHERE c.createdBy = ?';
       args.push(req.query.userId);
     } else {
       const visibleIds = await getVisibleUserIds(user.id, user.role);
       if (visibleIds !== null) {
         const placeholders = visibleIds.map(() => '?').join(',');
-        sql += ` WHERE createdBy IN (${placeholders})`;
+        sql += ` WHERE c.createdBy IN (${placeholders})`;
         args.push(...visibleIds);
       }
     }
@@ -42,7 +43,7 @@ router.get('/', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     const user = req.user || { id: 'admin', role: 'admin' };
-    const { name, url, info, contract_code, industry, publish_api_url, auto_publish, internal_links_enabled, internal_links_max, article_styles } = req.body;
+    const { name, url, info, contract_code, industry, internal_links_enabled, internal_links_max, article_styles } = req.body;
     if (!name || !url) return res.status(400).json({ error: 'Name and url are required' });
 
     const id           = Date.now().toString();
@@ -52,11 +53,11 @@ router.post('/', async (req, res) => {
     const stylesJson   = article_styles ? JSON.stringify(article_styles) : null;
 
     await db.execute({
-      sql:  'INSERT INTO companies (id, name, url, info, contract_code, industry, publish_api_url, auto_publish, internal_links_enabled, internal_links_max, article_styles, createdAt, createdBy) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      args: [id, name, url, info || '', contract_code || '', industry || '', publish_api_url || '', auto_publish ? 1 : 0, internal_links_enabled ? 1 : 0, ilMax, stylesJson, createdAt, createdBy],
+      sql:  'INSERT INTO companies (id, name, url, info, contract_code, industry, internal_links_enabled, internal_links_max, article_styles, createdAt, createdBy) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      args: [id, name, url, info || '', contract_code || '', industry || '', internal_links_enabled ? 1 : 0, ilMax, stylesJson, createdAt, createdBy],
     });
 
-    res.json({ id, name, url, info, contract_code, industry, publish_api_url, auto_publish: auto_publish ? 1 : 0, internal_links_enabled: internal_links_enabled ? 1 : 0, internal_links_max: ilMax, article_styles, createdAt, createdBy });
+    res.json({ id, name, url, info, contract_code, industry, internal_links_enabled: internal_links_enabled ? 1 : 0, internal_links_max: ilMax, article_styles, createdAt, createdBy });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Internal server error' });
@@ -68,7 +69,7 @@ router.put('/:id', async (req, res) => {
   try {
     const user = req.user || { id: 'admin', role: 'admin' };
     const { id } = req.params;
-    const { name, url, info, contract_code, industry, publish_api_url, auto_publish, internal_links_enabled, internal_links_max, article_styles } = req.body;
+    const { name, url, info, contract_code, industry, internal_links_enabled, internal_links_max, article_styles } = req.body;
     if (!name || !url) return res.status(400).json({ error: 'Name and url are required' });
 
     // Kiểm tra ownership (admin bypass)
@@ -89,11 +90,11 @@ router.put('/:id', async (req, res) => {
     const stylesJson = article_styles ? JSON.stringify(article_styles) : null;
 
     await db.execute({
-      sql:  'UPDATE companies SET name = ?, url = ?, info = ?, contract_code = ?, industry = ?, publish_api_url = ?, auto_publish = ?, internal_links_enabled = ?, internal_links_max = ?, article_styles = ? WHERE id = ?',
-      args: [name, url, info || '', contract_code || '', industry || '', publish_api_url || '', auto_publish ? 1 : 0, internal_links_enabled ? 1 : 0, ilMax, stylesJson, id],
+      sql:  'UPDATE companies SET name = ?, url = ?, info = ?, contract_code = ?, industry = ?, internal_links_enabled = ?, internal_links_max = ?, article_styles = ? WHERE id = ?',
+      args: [name, url, info || '', contract_code || '', industry || '', internal_links_enabled ? 1 : 0, ilMax, stylesJson, id],
     });
 
-    res.json({ id, name, url, info, contract_code, industry, publish_api_url, auto_publish: auto_publish ? 1 : 0, internal_links_enabled: internal_links_enabled ? 1 : 0, internal_links_max: ilMax, article_styles });
+    res.json({ id, name, url, info, contract_code, industry, internal_links_enabled: internal_links_enabled ? 1 : 0, internal_links_max: ilMax, article_styles });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Internal server error' });

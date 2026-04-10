@@ -3,6 +3,35 @@ const router = express.Router();
 const { db } = require('../data/store');
 const { analyzeKeywords } = require('../services/keywordPlanner');
 const { isRoot, getVisibleUserIds } = require('../services/permissions');
+const { getSetting } = require('./settings');
+
+// ─── Helper: kiểm tra giới hạn bài/ngày ────────────────────────────────────
+async function checkArticleLimit(user) {
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+
+    let userArticleLimit = 0;
+    if (process.env.AUTH_ENABLED === 'true') {
+      const r = await db.execute({ sql: 'SELECT daily_article_limit FROM users WHERE id = ?', args: [user.id] });
+      userArticleLimit = Number(r.rows[0]?.daily_article_limit || 0);
+    }
+
+    const globalArticleLimit = Number(await getSetting('daily_article_limit')) || 0;
+    const articleLimit = userArticleLimit > 0 ? userArticleLimit : globalArticleLimit;
+    if (articleLimit <= 0) return null;
+
+    const usageResult = await db.execute({
+      sql: `SELECT COUNT(*) AS cnt FROM token_usage WHERE (type = 'article' OR type = 'article-batch') AND createdAt LIKE ? AND createdBy = ?`,
+      args: [`${today}%`, user.id],
+    });
+    const used = Number(usageResult.rows[0]?.cnt || 0);
+
+    if (used >= articleLimit) {
+      return { error: `Đã đạt giới hạn ${articleLimit} bài viết hôm nay. Vui lòng thử lại vào ngày mai.`, limit: articleLimit, used, remaining: 0, type: 'article_limit' };
+    }
+    return null;
+  } catch { return null; }
+}
 
 // ─── Helper: tạo ID ngắn ────────────────────────────────────────────────────
 const makeId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -289,6 +318,12 @@ router.post('/:id/items/:itemId/create-article', async (req, res) => {
     const apiConfig = await getEffectiveApiConfig(user.id);
     if (apiConfig.blocked) return res.status(403).json({ error: apiConfig.message, type: 'no_api_key' });
 
+    // Giới hạn bài/ngày — chỉ áp dụng khi dùng key hệ thống
+    if (apiConfig.usingSystemKey && !isRoot(user)) {
+      const limitErr = await checkArticleLimit(user);
+      if (limitErr) return res.status(429).json(limitErr);
+    }
+
     const article = await generateAndSave(item.keyword, title, companyId, company, user.id, apiConfig, null, null);
 
     // Cập nhật item: liên kết với article
@@ -333,6 +368,32 @@ router.post('/:id/batch-create', async (req, res) => {
       if (r.rows[0]) validItems.push(r.rows[0]);
     }
     if (validItems.length === 0) return res.status(400).json({ error: 'Không có keyword nào ở trạng thái draft' });
+
+    // Giới hạn bài/ngày — chỉ áp dụng khi dùng key hệ thống
+    if (apiConfig.usingSystemKey && !isRoot(user)) {
+      const globalArticleLimit = Number(await getSetting('daily_article_limit')) || 0;
+      if (globalArticleLimit > 0) {
+        const today = new Date().toISOString().slice(0, 10);
+        const r = await db.execute({
+          sql: `SELECT COUNT(*) AS cnt FROM token_usage WHERE (type = 'article' OR type = 'article-batch') AND createdAt LIKE ? AND createdBy = ?`,
+          args: [`${today}%`, user.id],
+        });
+        const used = Number(r.rows[0]?.cnt || 0);
+        const remaining = globalArticleLimit - used;
+        if (remaining <= 0) {
+          return res.status(429).json({
+            error: `Đã đạt giới hạn ${globalArticleLimit} bài viết hôm nay. Vui lòng thử lại vào ngày mai.`,
+            limit: globalArticleLimit, used, remaining: 0, type: 'article_limit',
+          });
+        }
+        if (validItems.length > remaining) {
+          return res.status(429).json({
+            error: `Chỉ còn ${remaining} bài trong hạn mức hôm nay, không thể tạo ${validItems.length} bài.`,
+            limit: globalArticleLimit, used, remaining, type: 'article_limit',
+          });
+        }
+      }
+    }
 
     // Đánh dấu in_queue ngay, trả về cho client
     for (const item of validItems) {

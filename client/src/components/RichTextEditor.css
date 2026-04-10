@@ -164,11 +164,10 @@
   font-family: 'Plus Jakarta Sans', sans-serif;
   font-weight: 700;
   color: var(--text-primary);
-  margin-top: 1.6em;
   margin-bottom: 0.5em;
   line-height: 1.4;
 }
-.rte-content .ProseMirror h1 { font-size: 26px; border-bottom: 2px solid var(--border); padding-bottom: 8px; }
+.rte-content .ProseMirror h1 { font-size: 26px; padding-bottom: 8px; }
 .rte-content .ProseMirror h2 { font-size: 20px; }
 .rte-content .ProseMirror h3 { font-size: 17px; }
 .rte-content .ProseMirror h4 { font-size: 15px; }

@@ -13,6 +13,7 @@
 
 require('dotenv').config();
 const { createClient } = require('@libsql/client');
+const { decrypt } = require('../utils/crypto');
 
 const db = createClient({
   url:       process.env.TURSO_DATABASE_URL,
@@ -60,6 +61,7 @@ async function initDb() {
       content TEXT NOT NULL,
       seo_title TEXT,
       seo_description TEXT,
+      short_content TEXT,
       image_prompts TEXT,
       createdAt TEXT NOT NULL,
       FOREIGN KEY (companyId) REFERENCES companies(id)
@@ -96,6 +98,7 @@ async function initDb() {
       content TEXT,
       seo_title TEXT,
       seo_description TEXT,
+      short_content TEXT,
       savedAt TEXT NOT NULL,
       savedBy TEXT
     );
@@ -254,6 +257,8 @@ async function initDb() {
     { table: 'articles',   col: 'image_prompts',   ddl: 'ALTER TABLE articles ADD COLUMN image_prompts TEXT' },
     { table: 'articles',   col: 'createdBy',       ddl: 'ALTER TABLE articles ADD COLUMN createdBy TEXT' },
     { table: 'articles',   col: 'keywordId',       ddl: 'ALTER TABLE articles ADD COLUMN keywordId TEXT' },
+    { table: 'articles',   col: 'short_content',   ddl: 'ALTER TABLE articles ADD COLUMN short_content TEXT' },
+    {table: 'articles',   col: 'slug',         ddl: 'ALTER TABLE articles ADD COLUMN slug TEXT' },
     { table: 'batch_jobs', col: 'keywordId',       ddl: 'ALTER TABLE batch_jobs ADD COLUMN keywordId TEXT' },
     // companies
     { table: 'companies',  col: 'contract_code',   ddl: 'ALTER TABLE companies ADD COLUMN contract_code TEXT' },
@@ -296,18 +301,31 @@ async function initDb() {
     // chuki — chu kỳ từ CRM1, dùng để gửi lại CRM2 khi publish
     { table: 'batch_jobs', col: 'chuki', ddl: 'ALTER TABLE batch_jobs ADD COLUMN chuki TEXT' },
     { table: 'articles',   col: 'chuki', ddl: 'ALTER TABLE articles ADD COLUMN chuki TEXT' },
+    { table: 'article_versions', col: 'short_content', ddl: 'ALTER TABLE article_versions ADD COLUMN short_content TEXT' },
     // source — 'webhook' nếu tạo từ CRM1, null nếu tạo thủ công
     { table: 'batch_jobs',     col: 'source', ddl: "ALTER TABLE batch_jobs ADD COLUMN source TEXT" },
     { table: 'keywords',       col: 'source',        ddl: "ALTER TABLE keywords ADD COLUMN source TEXT" },
     { table: 'keywords',       col: 'content_type',  ddl: "ALTER TABLE keywords ADD COLUMN content_type TEXT DEFAULT 'blog'" },
+    // yeucau — yêu cầu từ CRM1, dùng làm hint cho AI khi viết bài
+    { table: 'title_queue',   col: 'yeucau',        ddl: 'ALTER TABLE title_queue ADD COLUMN yeucau TEXT' },
     // webhook_events — lưu email CRM1 gửi lên để tìm user
     { table: 'webhook_events', col: 'email',  ddl: 'ALTER TABLE webhook_events ADD COLUMN email TEXT' },
+    // webhook_events — auto-retry sau 5 phút khi failed
+    { table: 'webhook_events', col: 'retry_count',  ddl: 'ALTER TABLE webhook_events ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0' },
+    { table: 'webhook_events', col: 'retry_at',    ddl: 'ALTER TABLE webhook_events ADD COLUMN retry_at TEXT' },
     // AI provider — hỗ trợ multi-provider (openai, gemini, ...)
     { table: 'users', col: 'ai_provider',    ddl: 'ALTER TABLE users ADD COLUMN ai_provider TEXT' },
     { table: 'users', col: 'openai_api_key', ddl: 'ALTER TABLE users ADD COLUMN openai_api_key TEXT' },
     { table: 'users', col: 'openai_model',   ddl: 'ALTER TABLE users ADD COLUMN openai_model TEXT' },
+    // users — per-user API keys (Claude)
+    { table: 'users', col: 'claude_api_key',   ddl: 'ALTER TABLE users ADD COLUMN claude_api_key TEXT' },
+    { table: 'users', col: 'claude_model',      ddl: 'ALTER TABLE users ADD COLUMN claude_model TEXT' },
     // users — Nasani integration (từ API xác thực Google login)
     { table: 'users', col: 'employee_code',    ddl: 'ALTER TABLE users ADD COLUMN employee_code TEXT' },
+    // contract_id từ CRM1 — lưu để gửi kèm notify lỗi
+    { table: 'keyword_queue', col: 'contract_id', ddl: 'ALTER TABLE keyword_queue ADD COLUMN contract_id TEXT' },
+    { table: 'title_queue',   col: 'contract_id', ddl: 'ALTER TABLE title_queue ADD COLUMN contract_id TEXT' },
+    { table: 'error_logs',    col: 'contract_id',  ddl: 'ALTER TABLE error_logs ADD COLUMN contract_id TEXT' },
     { table: 'users', col: 'department_name',  ddl: 'ALTER TABLE users ADD COLUMN department_name TEXT' },
     { table: 'users', col: 'manager_name',     ddl: 'ALTER TABLE users ADD COLUMN manager_name TEXT' },
     { table: 'users', col: 'manager_email',    ddl: 'ALTER TABLE users ADD COLUMN manager_email TEXT' },
@@ -320,7 +338,56 @@ async function initDb() {
     { table: 'keyword_plan_items', col: 'recommended_word_count', ddl: 'ALTER TABLE keyword_plan_items ADD COLUMN recommended_word_count INTEGER NOT NULL DEFAULT 0' },
     { table: 'articles',          col: 'thumbnail_prompt', ddl: 'ALTER TABLE articles ADD COLUMN thumbnail_prompt TEXT' },
     { table: 'website_analyses', col: 'progress_log',     ddl: 'ALTER TABLE website_analyses ADD COLUMN progress_log TEXT' },
+    // keyword_queue — batch webhook (nhiều từ khóa 1 lần)
+    { table: 'keyword_queue', col: 'yeucau',           ddl: 'ALTER TABLE keyword_queue ADD COLUMN yeucau TEXT' },
+    { table: 'keyword_queue', col: 'tieudecodinh_json', ddl: 'ALTER TABLE keyword_queue ADD COLUMN tieudecodinh_json TEXT' },
+    { table: 'keyword_queue', col: 'content_type',    ddl: "ALTER TABLE keyword_queue ADD COLUMN content_type TEXT NOT NULL DEFAULT 'blog'" },
+    // keyword_queue — id_tukhoa từ CRM1 (để notify lỗi kèm ID)
+    { table: 'keyword_queue', col: 'id_tukhoa',       ddl: 'ALTER TABLE keyword_queue ADD COLUMN id_tukhoa TEXT' },
+    // keyword_queue — customLinks từ webhook CRM1
+    { table: 'keyword_queue', col: 'custom_links',    ddl: 'ALTER TABLE keyword_queue ADD COLUMN custom_links TEXT' },
+    // keyword_queue — imageUrls từ webhook CRM1
+    { table: 'keyword_queue', col: 'image_urls',       ddl: 'ALTER TABLE keyword_queue ADD COLUMN image_urls TEXT' },
+    // title_queue — content_type từ webhook
+    { table: 'title_queue',   col: 'content_type',    ddl: "ALTER TABLE title_queue ADD COLUMN content_type TEXT NOT NULL DEFAULT 'blog'" },
+    // title_queue — publish_external_id: giữ nguyên ID cũ khi viết lại (retry), truyền sang CRM2 để cập nhật
+    { table: 'title_queue',   col: 'publish_external_id', ddl: 'ALTER TABLE title_queue ADD COLUMN publish_external_id TEXT' },
+    // title_queue — id_tukhoa từ CRM1 (để notify lỗi kèm ID)
+    { table: 'title_queue',   col: 'id_tukhoa',       ddl: 'ALTER TABLE title_queue ADD COLUMN id_tukhoa TEXT' },
+    // title_queue — customLinks từ webhook CRM1
+    { table: 'title_queue',   col: 'custom_links',   ddl: 'ALTER TABLE title_queue ADD COLUMN custom_links TEXT' },
+    // title_queue — imageUrls từ webhook CRM1
+    { table: 'title_queue',   col: 'image_urls',      ddl: 'ALTER TABLE title_queue ADD COLUMN image_urls TEXT' },
+    // articles — content_type từ webhook CRM1
+    { table: 'articles',       col: 'content_type',    ddl: "ALTER TABLE articles ADD COLUMN content_type TEXT NOT NULL DEFAULT 'blog'" },
+    // batch_jobs — content_type cho batch article generation
+    { table: 'batch_jobs',     col: 'content_type',    ddl: "ALTER TABLE batch_jobs ADD COLUMN content_type TEXT NOT NULL DEFAULT 'blog'" },
+    // keyword_queue + title_queue — retry_after: job lỗi → chờ đến thời điểm này rồi retry tự động
+    { table: 'keyword_queue',   col: 'retry_after',     ddl: 'ALTER TABLE keyword_queue ADD COLUMN retry_after TEXT' },
+    { table: 'title_queue',     col: 'retry_after',     ddl: 'ALTER TABLE title_queue ADD COLUMN retry_after TEXT' },
+    // users — Claude/Anthropic provider
+    { table: 'users', col: 'anthropic_api_key', ddl: 'ALTER TABLE users ADD COLUMN anthropic_api_key TEXT' },
+    { table: 'users', col: 'anthropic_model',    ddl: 'ALTER TABLE users ADD COLUMN anthropic_model TEXT' },
   ];
+
+  // ── Error Logs — ghi nhận từ khóa lỗi khi tạo tiêu đề hoặc viết bài ────────
+  await exec(`
+    CREATE TABLE IF NOT EXISTS error_logs (
+      id              TEXT PRIMARY KEY,
+      phase           TEXT NOT NULL,         -- 'tao_tieude' | 'viet_bai'
+      keyword         TEXT NOT NULL,
+      company_id      TEXT,
+      hop_dong_id     TEXT,
+      chuki           TEXT,
+      created_by      TEXT,
+      id_tukhoa       TEXT,                  -- ID từ CRM1
+      ma_hd           TEXT,                  -- mã hợp đồng
+      email           TEXT,                  -- email tài khoản
+      error_message   TEXT NOT NULL,
+      notified_at      TEXT,                 -- thời điểm notify CRM1
+      created_at      TEXT NOT NULL
+    );
+  `);
 
   for (const m of migrations) {
     try {
@@ -365,6 +432,9 @@ async function initDb() {
     { key: 'publish_api_url',           value: '', label: 'URL API đăng bài mặc định (bên thứ 3)' },
     // AI Provider
     { key: 'default_ai_provider', value: process.env.DEFAULT_AI_PROVIDER || 'gemini', label: 'AI Provider mặc định (gemini | openai)' },
+    { key: 'claude_api_key',      value: process.env.ANTHROPIC_API_KEY || '', label: 'Claude API Key' },
+    { key: 'claude_model',        value: process.env.CLAUDE_MODEL     || 'claude-sonnet-4-6', label: 'Claude Model' },
+    { key: 'claude_base_url',      value: process.env.CLAUDE_BASE_URL || '', label: 'Claude Base URL proxy (để trống = dùng API chính thức)' },
     { key: 'openai_api_key',      value: process.env.OPENAI_API_KEY      || '',       label: 'OpenAI API Key' },
     { key: 'openai_model',        value: process.env.OPENAI_MODEL        || 'gpt-4o-mini', label: 'OpenAI Model' },
     { key: 'open_key_mode',       value: '0',                                          label: 'Chế độ Open Key — gom key toàn user và xoay vòng' },
@@ -378,7 +448,7 @@ async function initDb() {
 
   // Sync API config từ DB → process.env (DB là nguồn sự thật sau lần đầu cấu hình)
   const apiCfg = await db.execute(
-    `SELECT key, value FROM settings WHERE key IN ('gemini_api_key', 'gemini_model', 'serpapi_api_key', 'openai_api_key', 'openai_model', 'default_ai_provider')`
+    `SELECT key, value FROM settings WHERE key IN ('gemini_api_key', 'gemini_model', 'serpapi_api_key', 'openai_api_key', 'openai_model', 'default_ai_provider', 'claude_api_key', 'claude_model', 'claude_base_url')`
   );
   const envMap = {
     gemini_api_key:      'GEMINI_API_KEY',
@@ -387,9 +457,15 @@ async function initDb() {
     openai_api_key:      'OPENAI_API_KEY',
     openai_model:        'OPENAI_MODEL',
     default_ai_provider: 'DEFAULT_AI_PROVIDER',
+    claude_api_key:      'ANTHROPIC_API_KEY',
+    claude_model:        'CLAUDE_MODEL',
+    claude_base_url:     'CLAUDE_BASE_URL',
   };
   for (const row of apiCfg.rows) {
-    if (row.value) process.env[envMap[row.key]] = row.value;
+    if (!row.value) continue;
+    // Decrypt API keys before loading into process.env for AI providers
+    const isApiKey = ['gemini_api_key', 'serpapi_api_key', 'openai_api_key', 'claude_api_key'].includes(row.key);
+    process.env[envMap[row.key]] = isApiKey ? decrypt(row.value) : row.value;
   }
   console.log('[store] DB initialized ✅');
 }

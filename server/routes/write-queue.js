@@ -20,10 +20,9 @@ router.post('/', async (req, res) => {
   }
 
   // Kiểm tra giới hạn bài/ngày — chỉ áp dụng khi dùng key hệ thống
-  if (apiConfig.usingSystemKey && user.role !== 'admin') {
+  if (apiConfig.usingSystemKey && !isRoot(user)) {
     try {
       const today = new Date().toISOString().slice(0, 10);
-      const isAdmin = user.role === 'admin';
 
       let userArticleLimit = 0;
       if (process.env.AUTH_ENABLED === 'true') {
@@ -34,17 +33,12 @@ router.post('/', async (req, res) => {
         userArticleLimit = Number(userResult.rows[0]?.daily_article_limit || 0);
       }
 
-      const globalArticleLimit = await getSetting('daily_article_limit');
-      const articleLimit = userArticleLimit > 0 ? userArticleLimit : Number(globalArticleLimit || 0);
+      const globalArticleLimit = Number(await getSetting('daily_article_limit')) || 0;
+      const articleLimit = userArticleLimit > 0 ? userArticleLimit : globalArticleLimit;
 
       if (articleLimit > 0) {
-        let countSql = `SELECT COUNT(*) AS cnt FROM token_usage WHERE (type = 'article' OR type = 'article-batch') AND createdAt LIKE ?`;
-        const countArgs = [`${today}%`];
-        if (userArticleLimit > 0 && !isAdmin) {
-          countSql += ' AND createdBy = ?';
-          countArgs.push(user.id);
-        }
-        const usageResult = await db.execute({ sql: countSql, args: countArgs });
+        let countSql = `SELECT COUNT(*) AS cnt FROM token_usage WHERE (type = 'article' OR type = 'article-batch') AND createdAt LIKE ? AND createdBy = ?`;
+        const usageResult = await db.execute({ sql: countSql, args: [`${today}%`, user.id] });
         const used = Number(usageResult.rows[0]?.cnt || 0);
         const remaining = articleLimit - used;
         if (remaining <= 0) {

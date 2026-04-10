@@ -24,19 +24,23 @@ function resolveModel(config) {
 
 // ─── generateTitles ───────────────────────────────────────────────────────────
 async function generateTitles(keyword, searchContext, count = 10, config = {}) {
-  const keysStr = config.apiKey || process.env.GEMINI_API_KEY;
+  const keysStr = config.apiKey;
   if (!keysStr) throw new Error('Gemini API key chưa được cấu hình. Vào Cài đặt → Cấu hình API để nhập key.');
+  if (config.blocked) throw new Error(config.message || 'API key không khả dụng.');
 
   const modelName = resolveModel(config);
   const prompt = config.contentType === 'fanpage'
-    ? buildFanpagePostsPrompt(keyword, searchContext, count)
-    : buildTitlesPrompt(keyword, searchContext, count);
-
+    ? buildFanpagePostsPrompt(keyword, searchContext, count, config.keywordRequirements)
+    : buildTitlesPrompt(keyword, searchContext, count, config.keywordRequirements);
   return withKeyFallback(keysStr, async (key) => {
     const genAI = new GoogleGenerativeAI(key);
     const model = genAI.getGenerativeModel({
       model: modelName,
-      systemInstruction: 'You are an SEO expert. Return only valid JSON arrays without any explanation or markdown.',
+      tools: [{ googleSearch: {} }], 
+      systemInstruction: {
+        role: "system",
+        parts: [{ text: 'You are an SEO expert. Return only valid JSON arrays without any explanation or markdown.' }],
+      }
     });
 
     const result = await model.generateContent(prompt);
@@ -48,17 +52,23 @@ async function generateTitles(keyword, searchContext, count = 10, config = {}) {
       total_tokens:  result.response.usageMetadata?.totalTokenCount      || 0,
       model: modelName,
     };
-
     const startIdx = responseText.indexOf('[');
     const endIdx   = responseText.lastIndexOf(']') + 1;
     let jsonStr = responseText;
     if (startIdx !== -1 && endIdx > startIdx) jsonStr = responseText.substring(startIdx, endIdx);
 
     try {
-      const raw = JSON.parse(jsonStr);
-      const titles = raw.map(t =>
+      // Dùng jsonrepair để fix JSON bị lỗi do AI trả title chứa dấu " chưa escape
+      const raw = JSON.parse(jsonrepair(jsonStr));
+      const allTitles = raw.map(t =>
         typeof t === 'string' ? { title: t, topic: '' } : { title: t.title || '', topic: t.topic || '' }
       );
+      // Giới hạn đúng count — AI có thể trả nhiều hơn yêu cầu
+      const titles = allTitles.slice(0, count);
+      if (allTitles.length > count) {
+        console.log(`[gemini] AI trả ${allTitles.length} titles → cắt còn ${count} (keyword="${keyword}")`);
+      }
+      console.log(`[TITLES] ${titles.map(t => t.title).join(' | ')}`);
       return { titles, usage };
     } catch (err) {
       console.error('[gemini] Lỗi parse JSON titles:', err, responseText);
@@ -69,18 +79,31 @@ async function generateTitles(keyword, searchContext, count = 10, config = {}) {
 
 // ─── generateArticle ──────────────────────────────────────────────────────────
 async function generateArticle(keyword, title, companyInfo, config = {}) {
-  const keysStr = config.apiKey || process.env.GEMINI_API_KEY;
+  const keysStr = config.apiKey;
   if (!keysStr) throw new Error('Gemini API key chưa được cấu hình. Vào Cài đặt → Cấu hình API để nhập key.');
+  if (config.blocked) throw new Error(config.message || 'API key không khả dụng.');
 
   const modelName = resolveModel(config);
   let promptByUser = '';
   if (config.customPrompt) {
     promptByUser = `\n\n## Yêu cầu phong cách viết của tác giả (bắt buộc tuân theo):\n${config.customPrompt}`;
   }
-  let prompt = buildArticlePrompt(keyword, title, companyInfo, promptByUser);
+  if (config.yeucau) {
+    promptByUser += `\n\n## Yêu cầu bổ sung từ CRM (bắt buộc tuân theo):\n${config.yeucau}`;
+  }
+  const customLinks = config.customLinks || '';
+  const imageUrls   = config.imageUrls   || '';
+  let prompt = buildArticlePrompt(keyword, title, companyInfo, promptByUser, customLinks, imageUrls);
   return withKeyFallback(keysStr, async (key) => {
     const genAI = new GoogleGenerativeAI(key);
-    const model = genAI.getGenerativeModel({ model: modelName, systemInstruction: ARTICLE_SYSTEM_INSTRUCTION });
+    const model = genAI.getGenerativeModel({ 
+                    model: modelName,
+                    tools: [{ googleSearch: {} }], 
+                    systemInstruction: {
+                      role: "system",
+                      parts: [{ text: ARTICLE_SYSTEM_INSTRUCTION }],
+                    }
+                  });
     const result = await model.generateContent(prompt);
     const raw    = result.response.text().trim();
 
@@ -108,6 +131,7 @@ async function generateArticle(keyword, title, companyInfo, config = {}) {
       return {
         seo_title:        typeof parsed.seo_title === 'string'        ? parsed.seo_title                                                                 : title,
         seo_description:  typeof parsed.seo_description === 'string'  ? parsed.seo_description                                                             : '',
+        short_content:     typeof parsed.short_content === 'string'     ? parsed.short_content                                                            : '',
         thumbnail_prompt: typeof parsed.thumbnail_prompt === 'string' ? parsed.thumbnail_prompt                                                            : '',
         content:          typeof parsed.content === 'string'          ? applyInlineStyles(marked.parse(parsed.content), companyInfo?.article_styles || {}) : '',
         usage,
@@ -121,19 +145,27 @@ async function generateArticle(keyword, title, companyInfo, config = {}) {
 
 // ─── generateFanpageArticle ───────────────────────────────────────────────────
 async function generateFanpageArticle(keyword, title, companyInfo, config = {}) {
-  const keysStr = config.apiKey || process.env.GEMINI_API_KEY;
+  const keysStr = config.apiKey;
   if (!keysStr) throw new Error('Gemini API key chưa được cấu hình. Vào Cài đặt → Cấu hình API để nhập key.');
+  if (config.blocked) throw new Error(config.message || 'API key không khả dụng.');
 
   const modelName = resolveModel(config);
   let promptByUser = '';
   if (config.customPrompt) {
     promptByUser = `\n\n## Yêu cầu phong cách viết của tác giả (bắt buộc tuân theo):\n${config.customPrompt}`;
   }
+  if (config.yeucau) {
+    promptByUser += `\n\n## Yêu cầu bổ sung từ CRM (bắt buộc tuân theo):\n${config.yeucau}`;
+  }
   const prompt = buildFanpageArticlePrompt(keyword, title, companyInfo, promptByUser);
 
   return withKeyFallback(keysStr, async (key) => {
     const genAI = new GoogleGenerativeAI(key);
-    const model = genAI.getGenerativeModel({ model: modelName, systemInstruction: ARTICLE_SYSTEM_INSTRUCTION });
+    const model = genAI.getGenerativeModel({ model: modelName, tools: [{ googleSearch: {} }], 
+                    systemInstruction: {
+                      role: "system",
+                      parts: [{ text: ARTICLE_SYSTEM_INSTRUCTION }],
+                    } });
     const result = await model.generateContent(prompt);
     const raw    = result.response.text().trim();
 
@@ -177,8 +209,9 @@ async function generateFanpageArticle(keyword, title, companyInfo, config = {}) 
 
 // ─── analyzeKeywords ──────────────────────────────────────────────────────────
 async function analyzeKeywords(keywords, config = {}) {
-  const keysStr = config.apiKey || process.env.GEMINI_API_KEY;
+  const keysStr = config.apiKey;
   if (!keysStr) throw new Error('Gemini API key chưa được cấu hình. Vào Cài đặt → Cấu hình API để nhập key.');
+  if (config.blocked) throw new Error(config.message || 'API key không khả dụng.');
 
   const modelName = resolveModel(config);
 

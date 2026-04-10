@@ -33,7 +33,7 @@ function applyInlineStyles(html, styles = {}) {
   const accentCode   = s.accentColor ? hexToRgba(s.accentColor, 0.12) : 'rgba(99,102,241,0.1)';
   const accentLight  = s.accentColor ? hexToRgba(s.accentColor, 0.75) : '#a78bfa';
 
-  const hBase = `font-family:${s.fontFamily};font-weight:700;margin-top:2em;margin-bottom:0.6em;line-height:${s.lineHeight};`;
+  const hBase = `font-family:${s.fontFamily};font-weight:700;margin-bottom:0.6em;line-height:${s.lineHeight};`;
 
   // 1. Xử lý <pre><code> trước để tránh xung đột với inline code
   html = html.replace(/<pre(\s[^>]*)?>[\s\S]*?<\/pre>/gi, (match, preAttrs = '') => {

@@ -204,6 +204,7 @@
   border-radius: 4px;
   font-size: 12px;
   font-family: monospace;
+  word-break: break-all;
 }
 .chatbot-msg-bubble h1,
 .chatbot-msg-bubble h2,
@@ -305,6 +306,170 @@
 .chatbot-send-btn:disabled {
   opacity: 0.35;
   cursor: not-allowed;
+}
+
+/* ── Agent Tool Cards ─────────────────────────────────────────────────────── */
+.agent-tool-results {
+  margin-bottom: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.agent-tool-card {
+  background: var(--bg-elevated, #1a1d2e);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 6px;
+}
+
+.agent-tool-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.agent-tool-icon {
+  font-size: 14px;
+}
+
+.agent-tool-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.agent-tool-result-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.agent-tool-result-item svg {
+  color: #10b981;
+  margin-top: 3px;
+  flex-shrink: 0;
+}
+
+.agent-tool-list-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.agent-tool-list-item svg {
+  color: #10b981;
+  margin-top: 3px;
+  flex-shrink: 0;
+}
+
+.agent-tool-meta {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.agent-tool-titles {
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.agent-tool-title-chip {
+  font-size: 11px;
+  color: var(--text-secondary);
+  padding-left: 4px;
+}
+
+.agent-tool-error-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 12px;
+  color: #ef4444;
+  margin-bottom: 3px;
+}
+
+.agent-tool-error-item svg {
+  margin-top: 3px;
+  flex-shrink: 0;
+}
+
+.agent-tool-success-note {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #10b981;
+  margin-top: 6px;
+}
+
+.agent-tool-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin: 4px 0 0;
+}
+
+/* ── Stats Grid ────────────────────────────────────────────────────────────── */
+.agent-stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.agent-stat-item {
+  background: var(--bg-modal);
+  border-radius: 8px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.agent-stat-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.agent-stat-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+/* ── Quick Actions ─────────────────────────────────────────────────────────── */
+.agent-quick-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 4px 0;
+}
+
+.agent-quick-btn {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s;
+  font-family: inherit;
+}
+
+.agent-quick-btn:hover {
+  background: var(--bg-panel-hover);
+  border-color: var(--accent, #6366f1);
+  color: var(--accent, #6366f1);
 }
 
 /* ── Responsive ────────────────────────────────────────────────────────────── */

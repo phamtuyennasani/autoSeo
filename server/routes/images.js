@@ -24,7 +24,10 @@ router.post('/thumbnail', async (req, res) => {
   try {
     const userId = req.user?.id;
     const config = await getEffectiveApiConfig(userId);
-    const apiKey = config?.apiKey || process.env.GEMINI_API_KEY;
+    if (config.blocked) {
+      return res.status(403).json({ error: config.message || 'Bạn chưa có API key.', type: 'no_api_key' });
+    }
+    const apiKey = config.apiKey;
 
     const { dataUrl, cost } = await generateThumbnailDataUrl(prompt, { apiKey, aspectRatio });
 

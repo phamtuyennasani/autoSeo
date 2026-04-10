@@ -17,9 +17,28 @@ import { useConfirm } from '../context/ConfirmContext';
 
 import { API } from '../config/api';
 
-const API_KEYWORD    = API.keywords;
+const API_KEYWORD = API.keywords;
+
+/* ── Copyable ID cell ── */
+function IdCell({ id }) {
+  const [copied, setCopied] = React.useState(false);
+  const copy = () => {
+    navigator.clipboard.writeText(id);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1200);
+  };
+  return (
+    <div className="id-cell-wrap" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+      <span style={{ fontFamily: 'monospace', fontSize: '11px', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis' }}>{id}</span>
+      <button onClick={copy} title="Copy ID" style={{ background: 'none', border: 'none', padding: '2px', cursor: 'pointer', color: copied ? 'var(--success)' : 'var(--text-primary)', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+        {copied ? <Check size={11} /> : <Copy size={11} />}
+      </button>
+    </div>
+  );
+}
 const API_COMPANY    = API.companies;
 const API_ARTICLE    = API.articles;
+const API_PUBLISH    = API.publish;
 const API_BATCH_JOBS = API.batchJobs;
 const API_WRITE_QUEUE = API.writeQueue;
 const API_SETTINGS   = API.settings;
@@ -69,10 +88,12 @@ const Keywords = () => {
   const [selectedCompanyId, setSelectedCompanyId] = useState('');
   const [titleCount, setTitleCount] = useState(10);
   const [manualTitlesInput, setManualTitlesInput] = useState('');
+  const [keywordRequirements, setKeywordRequirements] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
 
   // Article modal (single)
   const [writeModalTitle, setWriteModalTitle] = useState(null);
+  const [writeModalArticleId, setWriteModalArticleId] = useState(null); // bài đang viết lại
   const [isWriteModalOpen, setIsWriteModalOpen] = useState(false);
 
   // Article view
@@ -82,7 +103,7 @@ const Keywords = () => {
   // Edit article modal
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingArticle, setEditingArticle] = useState(null);
-  const [editForm, setEditForm] = useState({ content: '', seo_title: '', seo_description: '' });
+  const [editForm, setEditForm] = useState({ content: '', seo_title: '', seo_description: '', short_content: '' });
   const [isSavingEdit, setIsSavingEdit] = useState(false);
 
   // Version history modal
@@ -101,6 +122,7 @@ const Keywords = () => {
   // Publish
   const [publishingIds, setPublishingIds] = useState(new Set()); // IDs đang được publish
   const [isBatchPublishing, setIsBatchPublishing] = useState(false);
+  const [systemPublishUrl, setSystemPublishUrl] = useState(''); // URL mặc định hệ thống
 
   // Write Queue (SSE background)
   const [writeQueueJob, setWriteQueueJob] = useState(null); // { jobId, status, total, done, succeeded, failed, currentTitle, results }
@@ -108,6 +130,10 @@ const Keywords = () => {
   const [checkedTitles, setCheckedTitles] = useState(new Set()); // titles được check để viết bằng hàng đợi SSE
   const sseRef = useRef(null); // giữ EventSource để có thể đóng khi cần
   const articleContentRef = useRef(null);
+
+  // Chỉnh sửa tiêu đề inline
+  const [editingTitleIdx, setEditingTitleIdx] = useState(null);
+  const [editingTitleValue, setEditingTitleValue] = useState('');
 
   // Áp dụng inline styles vào các thẻ HTML sau khi markdown được render
   useEffect(() => {
@@ -146,7 +172,7 @@ const Keywords = () => {
   }, [showMultiUser]);
 
   useEffect(() => { fetchData(); }, []);
-  useEffect(() => { setCheckedTitles(new Set()); }, [selectedKeyword?.id]);
+  useEffect(() => { setCheckedTitles(new Set()); setEditingTitleIdx(null); }, [selectedKeyword?.id]);
 
   const fetchData = async (userId = filterUserId, page = kwPage, search = searchText, companyId = filterCompanyId) => {
     try {
@@ -155,12 +181,16 @@ const Keywords = () => {
       if (search) params.search = search;
       if (companyId) params.companyId = companyId;
       const comParams = (showMultiUser && userId) ? { userId } : {};
-      const [kwRes, comRes, cfgRes] = await Promise.all([
+      const [kwRes, comRes, cfgRes, settingsRes] = await Promise.all([
         apiClient.get(API_KEYWORD, { params }),
         apiClient.get(API_COMPANY, { params: comParams }),
         apiClient.get(`${API_SETTINGS}/api-config`).catch(() => ({ data: {} })),
+        apiClient.get(API_SETTINGS).catch(() => ({ data: { settings: [] } })),
       ]);
       setCurrentProvider(cfgRes.data?.default_ai_provider || 'gemini');
+      // Lấy publish_api_url từ system settings
+      const sysPublishUrl = settingsRes.data.settings?.find(s => s.key === 'publish_api_url')?.value || '';
+      setSystemPublishUrl(sysPublishUrl);
       const kwPayload = kwRes.data;
       setKeywords(kwPayload.data ?? kwPayload);
       setKwTotal(kwPayload.pagination?.total ?? (kwPayload.data ?? kwPayload).length);
@@ -379,10 +409,12 @@ const Keywords = () => {
         companyId: selectedCompanyId,
         contentType,
         ...(parsedManual ? { manualTitles: parsedManual } : { titleCount }),
+        ...(keywordRequirements.trim() ? { keywordRequirements: keywordRequirements.trim() } : {}),
       });
       setKeywordInput('');
       setTitleCount(10);
       setManualTitlesInput('');
+      setKeywordRequirements('');
       setContentType('blog');
       setIsAddModalOpen(false);
       refreshStats(); // cập nhật token stats trên topbar
@@ -415,23 +447,21 @@ const Keywords = () => {
     }
   };
 
-  // Xóa bài viết cũ rồi viết lại
+  // Viết lại: mở modal → backend UPDATE bài cũ, giữ nguyên publish_external_id
   const handleRewrite = async (article) => {
-    try {
-      await apiClient.delete(`${API_ARTICLE}/${article.id}`);
-      handleArticleWritten();
-    } catch (err) {
-      toast.error('Xóa bài cũ thất bại!');
-    }
+    setViewingArticle(null);
     setWriteModalTitle(article.title);
+    setWriteModalArticleId(article.id); // để backend nhận biết đang viết lại
     setIsWriteModalOpen(true);
   };
 
   // Publish 1 bài lên API bên thứ 3
   const handlePublishArticle = async (article) => {
     setPublishingIds(prev => new Set([...prev, article.id]));
+    console.log('Publishing article ID:', article.id);
     try {
-      const res = await apiClient.post(`${API_ARTICLE}/${article.id}/publish`);
+      const res = await apiClient.post(`${API_PUBLISH}/${article.id}/publish`);
+      console.log('Publish response:', res.data);
       setArticlesOfKeyword(prev => prev.map(a => a.id === article.id ? res.data : a));
       if (viewingArticle?.id === article.id) setViewingArticle(res.data);
       toast.success(`Đã đăng bài thành công${res.data.publish_external_id ? ' #' + res.data.publish_external_id : ''}!`);
@@ -451,13 +481,31 @@ const Keywords = () => {
     if (unpublished.length === 0) return;
     setIsBatchPublishing(true);
     try {
-      const res = await apiClient.post(`${API_ARTICLE}/publish-batch`, { ids: unpublished.map(a => a.id) });
+      const res = await apiClient.post(`${API_PUBLISH}/publish-batch`, { ids: unpublished.map(a => a.id) });
       toast.success(`Đã đăng ${res.data.succeeded}/${res.data.total} bài thành công`);
       fetchArticlesForKeyword(selectedKeyword.keyword, selectedKeyword.companyId);
     } catch (err) {
       toast.error(err.response?.data?.error || 'Publish hàng loạt thất bại');
     } finally {
       setIsBatchPublishing(false);
+    }
+  };
+
+  // Lưu chỉnh sửa tiêu đề inline
+  const handleSaveTitleEdit = async (idx, oldTitle) => {
+    const newTitle = editingTitleValue.trim();
+    setEditingTitleIdx(null);
+    if (!newTitle || newTitle === oldTitle) return;
+    try {
+      const res = await apiClient.patch(`${API_KEYWORD}/${selectedKeyword.id}/title`, { titleIndex: idx, newTitle });
+      setSelectedKeyword(prev => ({ ...prev, titles: res.data.titles }));
+      // Nếu title cũ đang được check → đổi sang title mới
+      if (checkedTitles.has(oldTitle)) {
+        setCheckedTitles(prev => { const next = new Set(prev); next.delete(oldTitle); next.add(newTitle); return next; });
+      }
+      toast.success('Đã cập nhật tiêu đề');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Cập nhật tiêu đề thất bại');
     }
   };
 
@@ -468,6 +516,7 @@ const Keywords = () => {
       content: article.content || '',
       seo_title: article.seo_title || '',
       seo_description: article.seo_description || '',
+      short_content: article.short_content || '',
     });
     setIsEditModalOpen(true);
   };
@@ -691,12 +740,12 @@ const Keywords = () => {
               </button>
               <button
                 onClick={async () => {
-                  if (!await confirm({ title: 'Xóa và viết lại?', message: 'Bài viết hiện tại sẽ bị xóa để viết lại bằng AI.', confirmText: 'Xóa & Viết lại', danger: true })) return;
-                  await apiClient.delete(`${API_ARTICLE}/${viewingArticle.id}`);
+                  if (!await confirm({ title: 'Viết lại bài?', message: 'Bài viết hiện tại sẽ được ghi đè bằng nội dung mới từ AI. Bài đã đăng lên CRM sẽ được cập nhật thay vì tạo bài mới.', confirmText: 'Viết Lại', danger: false })) return;
                   setViewingArticle(null);
                   fetchArticlesForKeyword(selectedKeyword.keyword, selectedKeyword.companyId);
                   fetchData();
                   setWriteModalTitle(viewingArticle.title);
+                  setWriteModalArticleId(viewingArticle.id);
                   setIsWriteModalOpen(true);
                 }}
                 className="btn btn-outline"
@@ -713,6 +762,19 @@ const Keywords = () => {
             <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '14px' }}>
               SEO Meta
             </div>
+            {viewingArticle.title && (
+              <div style={{ marginBottom: '12px' }}>
+                <div style={{ display: 'flex',justifyContent: 'space-between', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)', marginBottom: '5px' }}>
+                  <div style={{ display: 'flex',alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)',  }}>
+                    <FileText size={11} /> Title <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>({viewingArticle.title.length} ký tự)</span>
+                  </div>
+                  <CopyBtn field="title" value={viewingArticle.title} />
+                </div>
+                <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-primary)', background: 'var(--bg-panel)', padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
+                  {viewingArticle.title}
+                </div>
+              </div>
+            )}
             {viewingArticle.seo_title && (
               <div style={{ marginBottom: '12px' }}>
                 <div style={{ display: 'flex',justifyContent: 'space-between', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)', marginBottom: '5px' }}>
@@ -762,6 +824,19 @@ const Keywords = () => {
                 </div>
                 <div id='seo-link' style={{ fontSize: '13px', color: 'var(--accent)', background: 'var(--accent-subtle)', padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(99,102,241,0.25)', wordBreak: 'break-all', fontFamily: 'monospace' }}>
                   {suggestedUrl}
+                </div>
+              </div>
+            )}
+            {viewingArticle.short_content && (
+              <div style={{ marginTop: '12px' }}>
+                <div style={{ display: 'flex',justifyContent: 'space-between', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)', marginBottom: '5px' }}>
+                  <div style={{ display: 'flex',alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)',  }}>
+                    <AlignLeft size={11} /> Short Content <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>({viewingArticle.short_content.length} ký tự)</span>
+                  </div>
+                  <CopyBtn field="short_content" />
+                </div>
+                <div id="short-content" style={{ fontSize: '13px', color: 'var(--text-secondary)', background: 'var(--bg-panel)', padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', lineHeight: '1.6' }}>
+                  {viewingArticle.short_content}
                 </div>
               </div>
             )}
@@ -876,6 +951,18 @@ const Keywords = () => {
                   />
                   <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
                     {editForm.seo_description.length} ký tự (khuyến nghị ≤ 160)
+                  </div>
+                </div>
+                <div className="input-group">
+                  <label className="input-label">Short Content</label>
+                  <textarea
+                    className="input-field" rows={3}
+                    value={editForm.short_content}
+                    onChange={e => setEditForm(f => ({ ...f, short_content: e.target.value }))}
+                    disabled={isSavingEdit}
+                  />
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                    {editForm.short_content.length} ký tự (khuyến nghị 200–250)
                   </div>
                 </div>
                 <div className="input-group">
@@ -1058,9 +1145,9 @@ const Keywords = () => {
                 </div>
               )}
               {/* PUBLISH HÀNG LOẠT */}
-              {selectedKeyword?.content_type !== 'fanpage' &&
+              {(selectedKeyword?.content_type !== 'fanpage' &&
                articlesOfKeyword.filter(a => a.publish_status !== 'published').length > 0 && !isWritingAll && writeQueueJob?.status !== 'running' &&
-               (isRoot || currentUser?.publish_api_url || articlesOfKeyword.some(a => a.company_publish_api_url)) && (
+               systemPublishUrl) && (
                 <button
                   onClick={handlePublishBatch}
                   className="btn btn-outline"
@@ -1131,190 +1218,86 @@ const Keywords = () => {
               const topic = item.topic || '';
               const article = getArticleForTitle(title);
               const isThisWriting = isWritingAll && !article;
-              const isInQueue = writeQueueTitles.has(title); // title này đã được submit vào SSE queue
+              const isInQueue = writeQueueTitles.has(title);
               const queueResult = writeQueueJob?.results?.find(r => r?.title === title);
               const isQueueWritingThis = writeQueueJob?.status === 'running' && writeQueueJob?.currentTitle === title;
-
               const isChecked = checkedTitles.has(title);
-              // Checkable: chưa có bài + không có queue đang chạy + không trong batch + không trong SSE queue hiện tại
               const isCheckable = !article && !writeQueueJob && !pendingBatchTitles.has(title) && !isInQueue;
+              const isEditingThis = editingTitleIdx === idx;
+              const hasPost = article?.publish_status === 'published';
+              const hasPostFailed = article?.publish_status === 'failed';
+              // canPublish: hiện nút Post nếu chưa post, không phải fanpage, và (có system URL hoặc article đó đã có publish_external_id — tức từ CRM webhook)
+              const canPublish = selectedKeyword?.content_type !== 'fanpage' && !hasPost;
+              const isWritten = !!article;
+              const isPendingBatch = pendingBatchTitles.has(title);
+              const isInSseQueue = isInQueue && writeQueueJob?.status === 'running' && !queueResult;
+              const isQueueError = queueResult?.status === 'error';
+              const isQueueSuccess = queueResult?.status === 'done';
+              const numStr = String(idx + 1).padStart(2, '0');
+
+              const StatusIcon = isWritten || isQueueSuccess
+                ? <CheckCircle2 size={16} color="var(--success)" />
+                : isQueueWritingThis ? <Loader2 size={16} className="animate-spin" color="var(--accent)" />
+                : isQueueError ? <XCircle size={16} color="var(--danger)" />
+                : isPendingBatch ? <Layers size={16} color="var(--info)" />
+                : isInSseQueue ? <Zap size={16} color="var(--accent)" />
+                : <Clock size={16} color="var(--text-muted)" />;
+
+              const rowClass = isWritten
+                ? 'title-desktop-item--written'
+                : isQueueError ? 'title-desktop-item--error'
+                : isPendingBatch ? 'title-desktop-item--pending'
+                : isChecked ? 'title-desktop-item--checked'
+                : 'title-desktop-item--default';
+
               return (
                 <div
                   key={idx}
-                  onClick={isCheckable ? () => setCheckedTitles(prev => { const next = new Set(prev); isChecked ? next.delete(title) : next.add(title); return next; }) : undefined}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    padding: '12px 16px',
-                    background: article
-                      ? 'rgba(34,197,94,0.04)'
-                      : isChecked
-                        ? 'rgba(99,102,241,0.05)'
-                        : 'var(--bg-panel)',
-                    border: `1px solid ${article
-                      ? 'rgba(34,197,94,0.2)'
-                      : isChecked
-                        ? 'rgba(99,102,241,0.35)'
-                        : 'var(--border)'}`,
-                    borderRadius: 'var(--radius-md)',
-                    transition: 'all 0.15s',
-                    cursor: isCheckable ? 'pointer' : 'default',
-                  }}>
-                  {/* Custom Checkbox - chỉ hiện cho tiêu đề chưa viết và khi không có queue */}
-                  {isCheckable && (
-                    <div
-                      onClick={e => e.stopPropagation()}
-                      style={{ flexShrink: 0 }}
-                    >
-                      <div
-                        onClick={() => setCheckedTitles(prev => { const next = new Set(prev); isChecked ? next.delete(title) : next.add(title); return next; })}
-                        style={{
-                          width: 18, height: 18, borderRadius: 5, cursor: 'pointer',
-                          border: `2px solid ${isChecked ? 'var(--accent)' : 'var(--border)'}`,
-                          background: isChecked ? 'var(--accent)' : 'transparent',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          transition: 'all 0.15s', flexShrink: 0,
-                        }}
-                      >
-                        {isChecked && <Check size={11} color="#fff" strokeWidth={3} />}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Index */}
-                  <span style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-muted)', width: '20px', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
-                    {String(idx + 1).padStart(2, '0')}
-                  </span>
-
-                  {/* Status Icon */}
-                  {article
-                    ? <CheckCircle2 size={16} color="var(--success)" style={{ flexShrink: 0 }} />
-                    : isQueueWritingThis
-                      ? <Loader2 size={16} className="animate-spin" color="var(--accent)" style={{ flexShrink: 0 }} />
-                      : queueResult?.status === 'done'
-                        ? <CheckCircle2 size={16} color="var(--success)" style={{ flexShrink: 0 }} />
-                        : queueResult?.status === 'error'
-                          ? <XCircle size={16} color="var(--danger)" style={{ flexShrink: 0 }} />
-                          : pendingBatchTitles.has(title)
-                            ? <Layers size={16} color="var(--accent)" style={{ flexShrink: 0 }} />
-                            : isInQueue && writeQueueJob?.status === 'running'
-                              ? <Zap size={16} color="var(--accent)" style={{ flexShrink: 0 }} />
-                              : <Clock size={16} color="var(--text-muted)" style={{ flexShrink: 0 }} />
-                  }
-
-                  {/* Title + Topic tag */}
-                  <span style={{ fontSize: '14px', lineHeight: '1.5', color: 'var(--text-primary)', flex: 1, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                    {title}
-                    {topic && (
-                      <span style={{
-                        fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 20,
-                        background: 'var(--accent-subtle)', color: 'var(--accent)',
-                        border: '1px solid rgba(99,102,241,0.2)', whiteSpace: 'nowrap', flexShrink: 0,
-                      }}>
-                        {topic}
-                      </span>
-                    )}
-                  </span>
-
-                  {/* Date written */}
-                  {article && (
-                    <span style={{ fontSize: '11px', color: 'var(--text-secondary)', flexShrink: 0 }}>
-                      {formatDate(article.createdAt)}
-                    </span>
-                  )}
-
-                  {/* Publish status badge */}
-                  {article?.publish_status === 'published' && (
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: '11px', fontWeight: 600, color: 'var(--success)', background: 'rgba(34,197,94,0.08)', padding: '2px 8px', borderRadius: 20, border: '1px solid rgba(34,197,94,0.2)', flexShrink: 0, whiteSpace: 'nowrap' }}>
-                      <Upload size={10} /> Đã post{article.publish_external_id ? ` #${article.publish_external_id}` : ''}
-                    </span>
-                  )}
-                  {article?.publish_status === 'failed' && (
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: '11px', fontWeight: 600, color: 'var(--danger)', background: 'rgba(239,68,68,0.08)', padding: '2px 8px', borderRadius: 20, border: '1px solid rgba(239,68,68,0.2)', flexShrink: 0 }}>
-                      Lỗi post
-                    </span>
-                  )}
-
-                  {/* Actions */}
-                  <div onClick={e => e.stopPropagation()} style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
-                    {article ? (
-                      <>
-                        <button
-                          onClick={() => setViewingArticle(article)}
-                          className="btn btn-sm btn-highlight"
-                          style={{ gap: '5px' }}
-                        >
-                          <Eye size={13} /> Xem bài
-                        </button>
-                        <button
-                          onClick={() => handleEditArticle(article)}
-                          className="btn btn-sm btn-outline"
-                          style={{ gap: '5px' }}
-                        >
-                          <Edit3 size={13} /> Sửa
-                        </button>
-                        {selectedKeyword?.content_type !== 'fanpage' &&
-                         article.publish_status !== 'published' &&
-                         (isRoot || article.company_publish_api_url || currentUser?.publish_api_url) && (
-                          <button
-                            onClick={() => handlePublishArticle(article)}
-                            className="btn btn-sm btn-outline"
-                            style={{ gap: '5px', color: 'var(--success)', borderColor: 'rgba(34,197,94,0.3)' }}
-                            disabled={publishingIds.has(article.id)}
-                            title={article.publish_status === 'failed' ? 'Thử lại đăng bài' : 'Đăng bài lên API'}
-                          >
-                            {publishingIds.has(article.id)
-                              ? <><Loader2 size={13} className="animate-spin" /> Đang post...</>
-                              : <><Upload size={13} /> {article.publish_status === 'failed' ? 'Thử lại' : 'Post'}</>
-                            }
-                          </button>
-                        )}
-                        <button
-                          onClick={() => {
-                            setViewingArticle(null);
-                            handleRewrite(article);
-                          }}
-                          className="btn btn-sm btn-outline"
-                          style={{ gap: '5px', color: 'var(--warning)', borderColor: 'rgba(245,158,11,0.3)' }}
-                          disabled={isWritingAll}
-                        >
-                          <RefreshCw size={13} /> Viết lại
-                        </button>
-                      </>
-                    ) : isQueueWritingThis ? (
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '11px', fontWeight: '600', color: 'var(--accent)', background: 'var(--accent-subtle)', padding: '3px 9px', borderRadius: 20 }}>
-                        <Loader2 className="animate-spin" size={11} /> Đang viết...
-                      </span>
-                    ) : isInQueue && writeQueueJob?.status === 'running' && queueResult === undefined ? (
-                      // Title này đã submit vào queue, đang chờ lượt viết
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '11px', fontWeight: '600', color: 'var(--text-muted)', background: 'var(--bg-panel)', padding: '3px 9px', borderRadius: 20, border: '1px solid var(--border)' }}>
-                        <Clock size={11} /> Chờ viết
-                      </span>
-                    ) : queueResult?.status === 'error' ? (
-                      <button
-                        onClick={() => { setWriteModalTitle(title); setIsWriteModalOpen(true); }}
-                        className="btn btn-primary btn-sm"
-                        title={queueResult.error}
-                      >
-                        <RefreshCw size={13} /> Thử lại
-                      </button>
-                    ) : pendingBatchTitles.has(title) ? (
-                      // Tiêu đề này đang nằm trong batch job đang chờ
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '11px', fontWeight: '600', color: 'var(--accent)', background: 'var(--accent-subtle)', padding: '3px 9px', borderRadius: 20 }}>
-                        <Layers size={11} /> Đã gửi Batch
-                      </span>
+                  onClick={isCheckable && !isEditingThis ? () => setCheckedTitles(prev => { const n = new Set(prev); isChecked ? n.delete(title) : n.add(title); return n; }) : undefined}
+                  className={`title-desktop-item ${rowClass}`}
+                >
+                  <span className="title-desktop-num">{numStr}</span>
+                  {StatusIcon}
+                  <div className="title-desktop-title">
+                    {isEditingThis ? (
+                      <input autoFocus value={editingTitleValue}
+                        onChange={e => setEditingTitleValue(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') handleSaveTitleEdit(idx, title); if (e.key === 'Escape') setEditingTitleIdx(null); }}
+                        onClick={e => e.stopPropagation()}
+                        style={{ flex: 1, fontSize: '14px', padding: '3px 8px', border: '1.5px solid var(--accent)', borderRadius: 6, background: 'var(--bg-panel)', color: 'var(--text-primary)', outline: 'none', minWidth: 0 }}
+                      />
                     ) : (
-                      <button
-                        onClick={() => { setWriteModalTitle(title); setIsWriteModalOpen(true); }}
-                        className="btn btn-primary btn-sm"
-                        disabled={isWritingAll}
-                      >
-                        {isThisWriting
-                          ? <><Loader2 className="animate-spin" size={13} /> Đang viết...</>
-                          : <><PenTool size={13} /> Viết bài</>
-                        }
-                      </button>
+                      <span className="title-desktop-title-text">{title}</span>
+                    )}
+                  </div>
+                  {isWritten && article && (
+                    <span className="title-desktop-date">
+                      {formatDate(article.createdAt)}
+                      {article.publish_external_id && (
+                        <span style={{ marginLeft: 8, color: 'var(--success)', fontSize: 11, fontWeight: 500 }}>
+                          #{article.publish_external_id}
+                        </span>
+                      )}
+                    </span>
+                  )}
+                  <div onClick={e => e.stopPropagation()} className="title-desktop-actions">
+                    {isEditingThis ? (
+                      <><button onClick={() => handleSaveTitleEdit(idx, title)} className="btn btn-sm btn-primary" title="Lưu"><Check size={13} /></button><button onClick={() => setEditingTitleIdx(null)} className="btn btn-sm btn-outline" title="Hủy"><X size={13} /></button></>
+                    ) : isWritten ? (
+                      <><button onClick={() => setViewingArticle(article)} className="btn btn-sm btn-highlight" style={{ gap: 5 }}><Eye size={13} /> Xem bài</button><button onClick={() => handleEditArticle(article)} className="btn btn-sm btn-outline" style={{ gap: 5 }}><Edit3 size={13} /> Sửa</button>{canPublish && <button onClick={() => handlePublishArticle(article)} className="btn btn-sm btn-outline" style={{ gap: 5, color: 'var(--success)', borderColor: 'rgba(34,197,94,0.3)' }} disabled={publishingIds.has(article.id)}>{publishingIds.has(article.id) ? <><Loader2 className="animate-spin" size={13} />...</> : <><Upload size={13} /> Post</>}</button>}<button onClick={() => { setViewingArticle(null); handleRewrite(article); }} className="btn btn-sm btn-outline" style={{ gap: 5, color: 'var(--warning)', borderColor: 'rgba(245,158,11,0.3)' }} disabled={isWritingAll}><RefreshCw size={13} /> Viết lại</button></>
+                    ) : isQueueWritingThis ? (
+                      <span className="btn btn-sm btn-outline" style={{ gap: 5, color: 'var(--accent)', borderColor: 'rgba(99,102,241,0.3)', cursor: 'default' }}><Loader2 className="animate-spin" size={13} /> Đang viết...</span>
+                    ) : isInSseQueue && !queueResult ? (
+                      <span className="btn btn-sm btn-outline" style={{ gap: 5, color: 'var(--text-muted)', cursor: 'default' }}><Clock size={13} /> Chờ viết</span>
+                    ) : isQueueError ? (
+                      <button onClick={() => { setWriteModalTitle(title); setIsWriteModalOpen(true); }} className="btn btn-sm btn-primary"><RefreshCw size={13} /> Thử lại</button>
+                    ) : isPendingBatch ? (
+                      <span className="btn btn-sm btn-outline" style={{ gap: 5, color: 'var(--info)', borderColor: 'rgba(6,182,212,0.3)', cursor: 'default' }}><Layers size={13} /> Đã gửi Batch</span>
+                    ) : (
+                      <button onClick={() => { setWriteModalTitle(title); setIsWriteModalOpen(true); }} className="btn btn-sm btn-primary" disabled={isWritingAll}><PenTool size={13} /> Viết bài</button>
+                    )}
+                    {!isEditingThis && !article && !isQueueWritingThis && !isInQueue && !pendingBatchTitles.has(title) && (
+                      <button onClick={() => { setEditingTitleIdx(idx); setEditingTitleValue(title); }} className="btn btn-sm btn-outline" title="Chỉnh sửa" style={{ color: 'var(--text-muted)' }}><Edit3 size={12} /></button>
                     )}
                   </div>
                 </div>
@@ -1334,7 +1317,8 @@ const Keywords = () => {
             title={writeModalTitle}
             companyId={selectedKeyword.companyId}
             keywordId={selectedKeyword.id}
-            onClose={() => { setIsWriteModalOpen(false); setWriteModalTitle(null); }}
+            articleId={writeModalArticleId}
+            onClose={() => { setIsWriteModalOpen(false); setWriteModalTitle(null); setWriteModalArticleId(null); }}
             onSuccess={handleArticleWritten}
           />
         )}
@@ -1373,6 +1357,18 @@ const Keywords = () => {
                     />
                     <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
                       {editForm.seo_description.length} ký tự (khuyến nghị ≤ 160)
+                    </div>
+                  </div>
+                  <div className="input-group">
+                    <label className="input-label">Short Content</label>
+                    <textarea
+                      className="input-field" rows={3}
+                      value={editForm.short_content}
+                      onChange={e => setEditForm(f => ({ ...f, short_content: e.target.value }))}
+                      disabled={isSavingEdit}
+                    />
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                      {editForm.short_content.length} ký tự (khuyến nghị 200–250)
                     </div>
                   </div>
                   <div className="input-group">
@@ -1691,11 +1687,11 @@ const Keywords = () => {
       </div>
 
       {/* FILTER BAR */}
-      <div className="panel" style={{ padding: '10px 14px', marginBottom: 16 }}>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-
-          {/* Ô tìm kiếm */}
-          <div style={{ position: 'relative', flex: '1 1 200px', minWidth: 160 }}>
+      <div className="panel kw-filter-bar" style={{ padding: '10px 14px', marginBottom: 16 }}>
+        {/* Single row: search + selects + result count — all in one line on desktop */}
+        <div className="kw-filter-row">
+          {/* Search */}
+          <div style={{ position: 'relative', flex: '1 1 0', minWidth: 0 }}>
             <Search size={14} style={{
               position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)',
               color: 'var(--text-muted)', pointerEvents: 'none',
@@ -1727,50 +1723,46 @@ const Keywords = () => {
             )}
           </div>
 
-          {/* Lọc theo user — chỉ admin và khi AUTH bật */}
+          {/* Lọc theo user */}
           {showMultiUser && userList.length > 0 && (
-            <div style={{ flex: '1 1 160px', minWidth: 140 }}>
-              <AppSelect
-                value={filterUserId}
-                onChange={uid => {
-                  setFilterUserId(uid);
-                  setFilterCompanyId('');
-                  setKwPage(1);
-                  fetchData(uid, 1, searchText, '');
-                }}
-                icon={<UsersIcon size={13} />}
-                active={!!filterUserId}
-                options={[
-                  { value: '', label: 'Tất cả Tài Khoản' },
-                  ...userList.map(u => ({
-                    value: String(u.id),
-                    label: `${u.full_name || u.username}${u.role === 'root' || u.role === 'admin' ? ' (root)' : u.role === 'senior_manager' ? ' (QL Cấp Cao)' : u.role === 'manager' ? ' (Quản Lý)' : ''}`,
-                  })),
-                ]}
-              />
-            </div>
-          )}
-
-          {/* Lọc theo công ty — hiển thị theo user đang filter */}
-          <div style={{ flex: '1 1 160px', minWidth: 140 }}>
             <AppSelect
-              value={filterCompanyId}
-              onChange={cid => {
-                setFilterCompanyId(cid);
+              value={filterUserId}
+              onChange={uid => {
+                setFilterUserId(uid);
+                setFilterCompanyId('');
                 setKwPage(1);
-                fetchData(filterUserId, 1, searchText, cid);
+                fetchData(uid, 1, searchText, '');
               }}
-              icon={<Building2 size={13} />}
-              active={!!filterCompanyId}
+              icon={<UsersIcon size={13} />}
+              active={!!filterUserId}
               options={[
-                { value: '', label: 'Danh sách Website/Công ty' },
-                ...filterCompanies.map(c => ({ value: String(c.id), label: c.name })),
+                { value: '', label: 'Tất cả Tài Khoản' },
+                ...userList.map(u => ({
+                  value: String(u.id),
+                  label: `${u.full_name || u.username}${u.role === 'root' || u.role === 'admin' ? ' (root)' : u.role === 'senior_manager' ? ' (QL Cấp Cao)' : u.role === 'manager' ? ' (Quản Lý)' : ''}`,
+                })),
               ]}
             />
-          </div>
+          )}
+
+          {/* Lọc theo công ty */}
+          <AppSelect
+            value={filterCompanyId}
+            onChange={cid => {
+              setFilterCompanyId(cid);
+              setKwPage(1);
+              fetchData(filterUserId, 1, searchText, cid);
+            }}
+            icon={<Building2 size={13} />}
+            active={!!filterCompanyId}
+            options={[
+              { value: '', label: 'Danh sách Website/Công ty' },
+              ...filterCompanies.map(c => ({ value: String(c.id), label: c.name })),
+            ]}
+          />
 
           {/* Số kết quả + nút xóa filter */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto', flexShrink: 0 }}>
+          <div className="kw-filter-right">
             {(searchText || filterCompanyId || filterUserId) && (
               <button
                 onClick={() => {
@@ -1847,99 +1839,151 @@ const Keywords = () => {
 
       {/* TABLE */}
       {loading ? (
-        <div className="table-container">
+        <div className="kw-card-list">
           {[1, 2, 3, 4].map(i => (
-            <div key={i} style={{ padding: '18px 20px', borderBottom: '1px solid var(--border)', display: 'flex', gap: '16px', alignItems: 'center' }}>
-              <div className="skeleton" style={{ height: 14, width: '20%', borderRadius: 4 }}></div>
-              <div className="skeleton" style={{ height: 14, width: '15%', borderRadius: 4 }}></div>
+            <div key={i} className="kw-card-skeleton">
+              <div className="skeleton" style={{ height: 14, width: '60%', borderRadius: 4 }}></div>
+              <div className="skeleton" style={{ height: 11, width: '40%', borderRadius: 4, marginTop: 4 }}></div>
+              <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+                <div className="skeleton" style={{ height: 20, width: 80, borderRadius: 20 }}></div>
+                <div className="skeleton" style={{ height: 20, width: 60, borderRadius: 20 }}></div>
+              </div>
             </div>
           ))}
         </div>
         ) : filteredKeywords.length === 0 ? (
-          <div className="table-container">
-            <div className="table-empty">
-              <div className="table-empty-icon"><Search size={24} /></div>
-              <div className="table-empty-text">{keywords.length === 0 ? 'Chưa có từ khóa nào' : 'Không tìm thấy kết quả'}</div>
-              <div className="table-empty-hint">{keywords.length === 0 ? 'Nhấn "Thêm Từ Khóa" để bắt đầu' : 'Thử thay đổi bộ lọc'}</div>
+          <div className="kw-card-list">
+            <div className="kw-empty">
+              <div className="kw-empty-icon"><Search size={28} /></div>
+              <div className="kw-empty-title">{keywords.length === 0 ? 'Chưa có từ khóa nào' : 'Không tìm thấy kết quả'}</div>
+              <div className="kw-empty-hint">{keywords.length === 0 ? 'Nhấn "Thêm Từ Khóa" để bắt đầu' : 'Thử thay đổi bộ lọc'}</div>
             </div>
           </div>
         ) : (
-          <div className="table-container">
-            <div className="table-header" style={{ gridTemplateColumns: showMultiUser ? '1fr 130px 110px 130px 110px' : '1fr 130px 110px 110px' }}>
-              <div>Từ Khóa</div>
-              <div>Thống Kê</div>
-              <div>Ngày Tạo</div>
-              {showMultiUser && <div>Người Tạo</div>}
-              <div></div>
+          <>
+            {/* Desktop table */}
+            <div className="table-container kw-desktop-table">
+              <div className="table-header" style={{ gridTemplateColumns: showMultiUser ? '170px 1fr 130px 110px 160px 130px' : '200px 1fr 130px 110px 130px' }}>
+                <div>ID</div>
+                <div>Từ Khóa</div>
+                <div>Thống Kê</div>
+                <div>Ngày Tạo</div>
+                {showMultiUser && <div>Người Tạo</div>}
+                <div></div>
+              </div>
+              {filteredKeywords.map(item => {
+                const company = getCompany(item.companyId);
+                const creator = showMultiUser ? userList.find(u => u.id === item.createdBy) : null;
+                return (
+                  <div key={item.id} className="table-row" style={{ gridTemplateColumns: showMultiUser ? '170px 1fr 130px 110px 160px 130px' : '200px 1fr 130px 110px 130px' }}>
+                    <IdCell id={item.id} />
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: '4px' }}>
+                        <span style={{ fontWeight: '600', fontSize: '14px', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.keyword}</span>
+                        {item.content_type === 'fanpage' && <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 10, background: 'rgba(236,72,153,0.1)', color: '#ec4899', border: '1px solid rgba(236,72,153,0.25)', flexShrink: 0 }}>📱 Fanpage</span>}
+                      </div>
+                      {company ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                          <div style={{ width: 16, height: 16, borderRadius: 3, background: 'var(--accent-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '9px', fontWeight: '700', color: 'var(--accent)', flexShrink: 0 }}>{(company.name || 'C')[0].toUpperCase()}</div>
+                          <span style={{ fontSize: '12px', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{company.name}</span>
+                        </div>
+                      ) : (
+                        <div className="badge badge-purple" style={{ fontSize: '10px', padding: '1px 6px', width: 'fit-content' }}>SEO Keyword</div>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <div className="badge badge-blue" style={{ width: 'fit-content' }}><Hash size={10} /> {item.titleCount || 0} tiêu đề</div>
+                      <div className="badge badge-green" style={{ width: 'fit-content' }}><FileText size={10} /> {item.articleCount || 0} bài</div>
+                    </div>
+                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{formatDate(item.createdAt)}</div>
+                    {showMultiUser && (
+                      <div>
+                        {creator ? (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 99, fontSize: 11, fontWeight: 600, background: 'var(--bg-hover)', border: '1px solid var(--border)', color: 'var(--text-secondary)', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{creator.full_name || creator.username}</span>
+                        ) : <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>—</span>}
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+                      <button onClick={() => handleSelectKeyword(item)} className="btn btn-highlight btn-sm"><Eye size={14} /> Chi tiết</button>
+                      <button onClick={(e) => handleDeleteKeyword(item.id, e)} className="btn btn-danger-ghost btn-icon" title="Xóa"><Trash2 size={14} /></button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
+
+            {/* Mobile cards */}
+            <div className="kw-card-list">
             {filteredKeywords.map(item => {
               const company = getCompany(item.companyId);
               const creator = showMultiUser ? userList.find(u => u.id === item.createdBy) : null;
+              const isFanpage = item.content_type === 'fanpage';
               return (
-                <div key={item.id} className="table-row" style={{ gridTemplateColumns: showMultiUser ? '1fr 130px 110px 130px 110px' : '1fr 130px 110px 110px' }}>
-                  {/* Từ khóa + công ty */}
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: '4px' }}>
-                      <span style={{ fontWeight: '600', fontSize: '14px', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {item.keyword}
-                      </span>
-                      {item.content_type === 'fanpage' && (
-                        <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 10, background: 'rgba(236,72,153,0.1)', color: '#ec4899', border: '1px solid rgba(236,72,153,0.25)', flexShrink: 0 }}>
-                          📱 Fanpage
-                        </span>
-                      )}
+                <div key={item.id} className="kw-card">
+                  {/* ── Row 1: keyword ── */}
+                  <div className="kw-card-top">
+                    <div className="kw-card-info">
+                      <span className="kw-card-title">{item.keyword}</span>
                     </div>
-                    {company ? (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                        <div style={{ width: 16, height: 16, borderRadius: 3, background: 'var(--accent-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '9px', fontWeight: '700', color: 'var(--accent)', flexShrink: 0 }}>
+                  </div>
+
+                  {/* ── Row 2: company + date ── */}
+                  <div className="kw-card-meta">
+                    {company && (
+                      <span className="kw-card-company">
+                        <span className="kw-card-company-avatar">
                           {(company.name || 'C')[0].toUpperCase()}
-                        </div>
-                        <span style={{ fontSize: '12px', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {company.name}
                         </span>
-                      </div>
-                    ) : (
-                      <div className="badge badge-purple" style={{ fontSize: '10px', padding: '1px 6px', width: 'fit-content' }}>SEO Keyword</div>
+                        {company.name}
+                      </span>
+                    )}
+                    {!company && (
+                      <span className="badge badge-purple kw-card-seo-badge">SEO Keyword</span>
+                    )}
+                    <span className="kw-card-date">
+                      <Calendar size={11} /> {formatDate(item.createdAt)}
+                    </span>
+                  </div>
+
+                  {/* ── Row 3: stats ── */}
+                  <div className="kw-card-stats">
+                    <span className="badge badge-blue">
+                      <Hash size={10} /> {item.titleCount || 0} tiêu đề
+                    </span>
+                    <span className="badge badge-green">
+                      <FileText size={10} /> {item.articleCount || 0} bài
+                    </span>
+                    {showMultiUser && creator && (
+                      <span className="kw-card-creator">
+                        <UsersIcon size={11} /> {creator.full_name || creator.username}
+                      </span>
                     )}
                   </div>
 
-                  {/* Thống kê */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <div className="badge badge-blue" style={{ width: 'fit-content' }}><Hash size={10} /> {item.titleCount || 0} tiêu đề</div>
-                    <div className="badge badge-green" style={{ width: 'fit-content' }}><FileText size={10} /> {item.articleCount || 0} bài</div>
-                  </div>
-
-                  {/* Ngày tạo */}
-                  <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{formatDate(item.createdAt)}</div>
-
-                  {/* Người tạo */}
-                  {showMultiUser && (
-                    <div>
-                      {creator ? (
-                        <span style={{
-                          display: 'inline-flex', alignItems: 'center', gap: 4,
-                          padding: '2px 8px', borderRadius: 99, fontSize: 11, fontWeight: 600,
-                          background: 'var(--bg-hover)', border: '1px solid var(--border)',
-                          color: 'var(--text-secondary)', maxWidth: '100%',
-                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                        }}>
-                          {creator.full_name || creator.username}
-                        </span>
-                      ) : (
-                        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>—</span>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Hành động */}
-                  <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
-                    <button onClick={() => handleSelectKeyword(item)} className="btn btn-highlight btn-sm"><Eye size={14} /> Chi tiết</button>
-                    <button onClick={(e) => handleDeleteKeyword(item.id, e)} className="btn btn-danger-ghost btn-icon" title="Xóa"><Trash2 size={14} /></button>
+                  {/* ── Row 4: action buttons ── */}
+                  <div className={`kw-card-actions-row${isFanpage ? ' has-fanpage' : ''}`}>
+                    {isFanpage && (
+                      <span className="badge badge-pink kw-fanpage-badge-cell">📱 Fanpage</span>
+                    )}
+                    <button
+                      onClick={() => handleSelectKeyword(item)}
+                      className="btn btn-highlight kw-btn-mobile-action"
+                    >
+                      <Eye size={13} /> Chi tiết
+                    </button>
+                    <button
+                      onClick={(e) => handleDeleteKeyword(item.id, e)}
+                      className="btn btn-danger-ghost kw-btn-mobile-action"
+                      title="Xóa"
+                    >
+                      <Trash2 size={13} /> Xóa
+                    </button>
                   </div>
                 </div>
               );
             })}
           </div>
+          </>
         )}
 
       {/* PAGINATION */}
@@ -1986,6 +2030,18 @@ const Keywords = () => {
                   />
                   <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
                     {editForm.seo_description.length} ký tự (khuyến nghị ≤ 160)
+                  </div>
+                </div>
+                <div className="input-group">
+                  <label className="input-label">Short Content</label>
+                  <textarea
+                    className="input-field" rows={3}
+                    value={editForm.short_content}
+                    onChange={e => setEditForm(f => ({ ...f, short_content: e.target.value }))}
+                    disabled={isSavingEdit}
+                  />
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                    {editForm.short_content.length} ký tự (khuyến nghị 200–250)
                   </div>
                 </div>
                 <div className="input-group">
@@ -2088,7 +2144,10 @@ const Keywords = () => {
                       ? 'Nhập caption/ý tưởng bài đăng, mỗi dòng 1 bài.\nNếu để trống, AI sẽ tự sinh ý tưởng.'
                       : 'Nhập tiêu đề thủ công, mỗi dòng 1 tiêu đề.\nNếu để trống, AI sẽ tự sinh tiêu đề.'}
                     value={manualTitlesInput}
-                    onChange={e => setManualTitlesInput(e.target.value)}
+                    onChange={e => {
+                      setManualTitlesInput(e.target.value);
+                      if (e.target.value.trim()) setKeywordRequirements('');
+                    }}
                     disabled={isGenerating}
                   />
                   {manualTitlesInput.trim() && (
@@ -2097,6 +2156,22 @@ const Keywords = () => {
                     </div>
                   )}
                 </div>
+
+                {!manualTitlesInput.trim() && (
+                  <div className="input-group">
+                    <label className="input-label">Yêu cầu thêm khi tạo tiêu đề <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text-muted)' }}>(Tùy chọn)</span></label>
+                    <input
+                      type="text"
+                      className="input-field"
+                      placeholder={contentType === 'fanpage'
+                        ? 'VD: viết hài hước, có emoji, dưới 2000 ký tự'
+                        : 'VD: hướng dẫn chi tiết từ A-Z, có số thứ tự, dạng list'}
+                      value={keywordRequirements}
+                      onChange={e => setKeywordRequirements(e.target.value)}
+                      disabled={isGenerating}
+                    />
+                  </div>
+                )}
 
                 {!manualTitlesInput.trim() && (
                   <div className="input-group">

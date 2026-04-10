@@ -6,7 +6,7 @@ import {
   Save, RefreshCw, Loader2, CheckCircle2,
   Zap, FileText, AlertTriangle, Info, BarChart3,
   Shield, TrendingUp, Calendar, KeyRound, Eye, EyeOff, Cpu,
-  Calculator, DollarSign, ChevronDown, ChevronUp, Upload, User, Globe, Shuffle
+  Calculator, DollarSign, ChevronDown, ChevronUp, Upload, User, Globe, Shuffle, MessageCircle
 } from 'lucide-react';
 
 import { API } from '../config/api';
@@ -199,10 +199,27 @@ function LimitInput({ id, label, description, icon, color, value, onChange, pres
 
 // ── API Config Tab ─────────────────────────────────────────────────────────────
 const GEMINI_MODELS = [
+  'gemini-3.1-pro-preview',
+  'gemini-3.1-flash-lite-preview',
+  'gemini-3.1-flash-lite',
+  'gemini-3-flash-preview',
+  'gemini-2.5-pro',
   'gemini-2.5-flash',
   'gemini-2.5-flash-lite',
-  'gemini-2.5-pro',
-  'gemini-2.0-flash',
+];
+
+const CLAUDE_MODELS = [
+  'claude-opus-4-6',
+  'claude-sonnet-4-6',
+];
+
+const OPENAI_MODELS = [
+  'gpt-4o',
+  'gpt-4o-mini',
+  'gpt-4-turbo',
+  'gpt-3.5-turbo',
+  'o1-preview',
+  'o1-mini',
 ];
 
 function KeyField({ label, sub, color = 'var(--accent)', value, onChange, show, onToggleShow, placeholder }) {
@@ -238,9 +255,9 @@ function KeyField({ label, sub, color = 'var(--accent)', value, onChange, show, 
   );
 }
 
-// Component đặc biệt cho Gemini API Key — hỗ trợ nhiều key cách nhau dấu phẩy
+// Component đặc biệt cho Gemini API Key — hỗ trợ nhiều key cách nhau bằng ||
 function GeminiKeyField({ value, onChange, show, onToggleShow }) {
-  const keys = value ? value.split(',').map(k => k.trim()).filter(Boolean) : [];
+  const keys = value ? value.split('||').map(k => k.trim()).filter(Boolean) : [];
   const keyCount = keys.length;
 
   return (
@@ -253,7 +270,7 @@ function GeminiKeyField({ value, onChange, show, onToggleShow }) {
         <div style={{ flex: 1 }}>
           <div style={{ fontWeight: 700, fontSize: 14 }}>Gemini API Key</div>
           <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-            Lấy tại <strong>aistudio.google.com</strong> → Get API Key — nhập nhiều key cách nhau dấu <strong>,</strong> để xoay vòng
+            Lấy tại <strong>aistudio.google.com</strong> → Get API Key — nhập nhiều key cách nhau bằng dấu <strong>Enter</strong> để xoay vòng
           </div>
         </div>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -276,7 +293,7 @@ function GeminiKeyField({ value, onChange, show, onToggleShow }) {
           rows={keyCount > 1 ? Math.min(keyCount + 1, 5) : 2}
           value={value}
           onChange={e => onChange(e.target.value)}
-          placeholder={'AIza... (1 key)\nhoặc: AIza..., AIza..., AIza... (nhiều key xoay vòng)'}
+          placeholder={'AIza... (1 key)\nhoặc: mỗi dòng 1 key (nhiều key xoay vòng)'}
           style={{
             resize: 'vertical',
             fontFamily: 'monospace',
@@ -311,8 +328,81 @@ function GeminiKeyField({ value, onChange, show, onToggleShow }) {
   );
 }
 
+// Component multi-key dùng chung cho Claude & OpenAI
+function MultiKeyField({ label, description, getLink, color, value, onChange, show, onToggleShow, placeholder }) {
+  const keys = value ? value.split('||').map(k => k.trim()).filter(Boolean) : [];
+  const keyCount = keys.length;
+
+  return (
+    <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 18px', borderBottom: '1px solid var(--border)', background: 'var(--bg-panel)' }}>
+        <div style={{ width: 34, height: 34, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', background: `${color}18`, flexShrink: 0 }}>
+          <KeyRound size={16} color={color} />
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontWeight: 700, fontSize: 14 }}>{label}</div>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+            Lấy tại <strong>{getLink}</strong> — nhập nhiều key cách nhau bằng dấu <strong>,</strong> để xoay vòng
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          {keyCount > 1 && (
+            <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: `${color}18`, color }}>
+              {keyCount} keys
+            </span>
+          )}
+          {keyCount > 0
+            ? <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: 'var(--success-subtle)', color: 'var(--success)' }}>Đã cấu hình</span>
+            : <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: 'var(--bg-panel)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>Chưa cấu hình</span>
+          }
+        </div>
+      </div>
+
+      {/* Input */}
+      <div style={{ padding: '14px 18px', position: 'relative' }}>
+        <textarea
+          className="input-field"
+          rows={keyCount > 1 ? Math.min(keyCount + 1, 5) : 2}
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          placeholder={placeholder}
+          style={{
+            resize: 'vertical',
+            fontFamily: 'monospace',
+            fontSize: 13,
+            paddingRight: 42,
+            filter: show ? 'none' : 'blur(4px)',
+            transition: 'filter 0.2s',
+            userSelect: show ? 'auto' : 'none',
+          }}
+        />
+        <button
+          onClick={onToggleShow}
+          style={{ position: 'absolute', right: 28, top: 24, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex' }}
+          title={show ? 'Ẩn key' : 'Hiện key'}
+        >
+          {show ? <EyeOff size={16} /> : <Eye size={16} />}
+        </button>
+      </div>
+
+      {/* Key list preview khi show */}
+      {show && keyCount > 1 && (
+        <div style={{ padding: '0 18px 14px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {keys.map((k, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-secondary)' }}>
+              <span style={{ width: 18, height: 18, borderRadius: '50%', background: `${color}18`, color, fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{i + 1}</span>
+              <span style={{ fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{k.slice(0, 12)}...{k.slice(-4)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SerpKeyField({ value, onChange, show, onToggleShow }) {
-  const keys = value ? value.split(',').map(k => k.trim()).filter(Boolean) : [];
+  const keys = value ? value.split('||').map(k => k.trim()).filter(Boolean) : [];
   const keyCount = keys.length;
 
   return (
@@ -328,7 +418,7 @@ function SerpKeyField({ value, onChange, show, onToggleShow }) {
             <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text-muted)' }}>(Tùy chọn)</span>
           </div>
           <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-            Lấy tại <strong>serpapi.com</strong> — Nhập nhiều key cách nhau dấu <strong>,</strong> để xoay vòng. Để trống nếu không dùng.
+            Lấy tại <strong>serpapi.com</strong> — Nhập nhiều key, mỗi dòng 1 key để xoay vòng. Để trống nếu không dùng.
           </div>
         </div>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -351,7 +441,7 @@ function SerpKeyField({ value, onChange, show, onToggleShow }) {
           rows={keyCount > 1 ? Math.min(keyCount + 1, 5) : 2}
           value={value}
           onChange={e => onChange(e.target.value)}
-          placeholder={'sk-... (1 key)\nhoặc: sk-..., sk-..., sk-... (nhiều key xoay vòng)'}
+          placeholder={'d4cb1a47... (1 key)\nMỗi dòng 1 key (nhiều key xoay vòng)'}
           style={{
             resize: 'vertical',
             fontFamily: 'monospace',
@@ -386,21 +476,41 @@ function SerpKeyField({ value, onChange, show, onToggleShow }) {
   );
 }
 
+
 function ApiConfigTab() {
   const { user, authEnabled, updateUser, isRoot } = useAuth();
   const isUserScope = authEnabled && !isRoot; // user thường khi AUTH bật
 
-  const [form, setForm] = useState({ gemini_api_key: '', gemini_model: 'gemini-2.5-flash', serpapi_api_key: '', publish_api_url: '', open_key_mode: false });
+  const [form, setForm] = useState({
+    gemini_api_key: '', gemini_model: 'gemini-2.5-flash-lite',
+    openai_api_key: '', openai_model: 'gpt-4o-mini',
+    claude_api_key: '', claude_model: 'claude-sonnet-4-6', claude_base_url: '',
+    serpapi_api_key: '', open_key_mode: false,
+    default_ai_provider: 'gemini',
+  });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
   const [showGemini, setShowGemini] = useState(false);
+  const [showOpenAI, setShowOpenAI] = useState(false);
+  const [showClaude, setShowClaude] = useState(false);
   const [showSerp, setShowSerp] = useState(false);
+
+  /* Lưu key gốc trước khi load (để không gửi masked value lên server) */
+  const prevKeysRef = React.useRef({});
 
   useEffect(() => {
     apiClient.get(`${ENDPOINT}/api-config`)
-      .then(res => setForm(res.data))
+      .then(res => {
+        prevKeysRef.current = {
+          gemini_api_key:  res.data.gemini_api_key,
+          openai_api_key: res.data.openai_api_key,
+          claude_api_key: res.data.claude_api_key,
+          serpapi_api_key: res.data.serpapi_api_key,
+        };
+        setForm(res.data);
+      })
       .catch(err => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
@@ -408,6 +518,7 @@ function ApiConfigTab() {
   const handleSave = async () => {
     setSaving(true); setSaved(false); setError('');
     try {
+      /* Gửi masked value → server sẽ giữ nguyên key cũ (bỏ qua) */
       await apiClient.put(`${ENDPOINT}/api-config`, form);
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
@@ -444,39 +555,144 @@ function ApiConfigTab() {
         </div>
       )}
 
-      {/* Gemini API Key — hỗ trợ nhiều key xoay vòng */}
-      <GeminiKeyField
-        value={form.gemini_api_key}
-        onChange={v => setForm({ ...form, gemini_api_key: v })}
-        show={showGemini}
-        onToggleShow={() => setShowGemini(v => !v)}
-      />
-
-      {/* Gemini Model */}
+      {/* Chọn AI Provider */}
       <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 18px', borderBottom: '1px solid var(--border)', background: 'var(--bg-panel)' }}>
-          <div style={{ width: 34, height: 34, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(99,102,241,0.12)', flexShrink: 0 }}>
-            <Cpu size={16} color="var(--accent)" />
+          <div style={{ width: 34, height: 34, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(34,197,94,0.12)', flexShrink: 0 }}>
+            <Cpu size={16} color="var(--success)" />
           </div>
           <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: 700, fontSize: 14 }}>Gemini Model</div>
+            <div style={{ fontWeight: 700, fontSize: 14 }}>AI Provider Mặc Định</div>
             <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-              {isUserScope ? 'Model riêng cho tài khoản của bạn. Để trống để dùng model hệ thống.' : 'Model mặc định toàn hệ thống. Flash = nhanh + rẻ, Pro = chất lượng cao hơn.'}
+              Chọn provider mặc định cho toàn hệ thống. User riêng có thể override ở cấp tài khoản.
             </div>
           </div>
-          <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: 'var(--accent-subtle)', color: 'var(--accent)' }}>{form.gemini_model || 'mặc định hệ thống'}</span>
+          <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: 'var(--success-subtle)', color: 'var(--success)' }}>
+            {form.default_ai_provider === 'claude' ? 'Claude' : form.default_ai_provider === 'openai' ? 'OpenAI' : 'Gemini'}
+          </span>
         </div>
         <div style={{ padding: '14px 18px' }}>
           <AppSelect
-            value={form.gemini_model}
-            onChange={v => setForm({ ...form, gemini_model: v })}
+            value={form.default_ai_provider || 'gemini'}
+            onChange={v => setForm({ ...form, default_ai_provider: v })}
             options={[
-              ...(isUserScope ? [{ value: '', label: '— Dùng model hệ thống —' }] : []),
-              ...GEMINI_MODELS.map(m => ({ value: m, label: m })),
+              { value: 'gemini',  label: 'Google Gemini' },
+              { value: 'openai', label: 'OpenAI (GPT)' },
+              { value: 'claude', label: 'Claude (Anthropic)' },
             ]}
           />
         </div>
       </div>
+
+      {/* Gemini API Key — hỗ trợ nhiều key xoay vòng */}
+      {form.default_ai_provider === 'gemini' && (
+        <>
+          <GeminiKeyField
+            value={form.gemini_api_key}
+            onChange={v => setForm({ ...form, gemini_api_key: v })}
+            show={showGemini}
+            onToggleShow={() => setShowGemini(v => !v)}
+          />
+
+          {/* Gemini Model */}
+          <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 18px', borderBottom: '1px solid var(--border)', background: 'var(--bg-panel)' }}>
+              <div style={{ width: 34, height: 34, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(99,102,241,0.12)', flexShrink: 0 }}>
+                <Cpu size={16} color="var(--accent)" />
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 700, fontSize: 14 }}>Gemini Model</div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                  {isUserScope ? 'Model riêng cho tài khoản của bạn. Để trống để dùng model hệ thống.' : 'Model mặc định toàn hệ thống. Flash = nhanh + rẻ, Pro = chất lượng cao hơn.'}
+                </div>
+              </div>
+              <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: 'var(--accent-subtle)', color: 'var(--accent)' }}>{form.gemini_model || 'mặc định hệ thống'}</span>
+            </div>
+            <div style={{ padding: '14px 18px' }}>
+              <AppSelect
+                value={form.gemini_model}
+                onChange={v => setForm({ ...form, gemini_model: v })}
+                options={[
+                  ...(isUserScope ? [{ value: '', label: '— Dùng model hệ thống —' }] : []),
+                  ...GEMINI_MODELS.map(m => ({ value: m, label: m })),
+                ]}
+              />
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Claude API Key */}
+      {form.default_ai_provider === 'claude' && (
+        <>
+          <MultiKeyField
+            label="Claude API Key"
+            description="Lấy tại console.anthropic.com → API Keys"
+            getLink="console.anthropic.com"
+            color="#D35D42"
+            value={form.claude_api_key}
+            onChange={v => setForm({ ...form, claude_api_key: v })}
+            show={showClaude}
+            onToggleShow={() => setShowClaude(v => !v)}
+            placeholder={'sk-ant-api03-... (1 key)\nhoặc: sk-ant..., sk-ant..., sk-ant... (nhiều key xoay vòng)'}
+          />
+
+          {/* Claude Model */}
+          <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 18px', borderBottom: '1px solid var(--border)', background: 'var(--bg-panel)' }}>
+              <div style={{ width: 34, height: 34, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(211,93,66,0.12)', flexShrink: 0 }}>
+                <Cpu size={16} color="#D35D42" />
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 700, fontSize: 14 }}>Claude Model</div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                  {isUserScope ? 'Model riêng cho tài khoản của bạn. Để trống để dùng model hệ thống.' : 'Model mặc định toàn hệ thống. Sonnet = cân bằng, Opus = chất lượng cao.'}
+                </div>
+              </div>
+              <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: 'rgba(211,93,66,0.12)', color: '#D35D42' }}>{form.claude_model || 'mặc định hệ thống'}</span>
+            </div>
+            <div style={{ padding: '14px 18px' }}>
+              <AppSelect
+                value={form.claude_model}
+                onChange={v => setForm({ ...form, claude_model: v })}
+                options={[
+                  ...(isUserScope ? [{ value: '', label: '— Dùng model hệ thống —' }] : []),
+                  ...CLAUDE_MODELS.map(m => ({ value: m, label: m })),
+                ]}
+              />
+            </div>
+          </div>
+
+          {/* Claude Base URL */}
+          <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 18px', borderBottom: '1px solid var(--border)', background: 'var(--bg-panel)' }}>
+              <div style={{ width: 34, height: 34, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(211,93,66,0.12)', flexShrink: 0 }}>
+                <Globe size={16} color="#D35D42" />
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 700, fontSize: 14 }}>Claude Base URL</div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                  Proxy/custom endpoint (để trống = dùng API chính thức của Anthropic)
+                </div>
+              </div>
+              {form.claude_base_url
+                ? <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: 'var(--success-subtle)', color: 'var(--success)' }}>Đã cấu hình</span>
+                : <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: 'var(--bg-panel)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>Mặc định</span>
+              }
+            </div>
+            <div style={{ padding: '14px 18px' }}>
+              <input
+                type="text"
+                className="input-field"
+                value={form.claude_base_url}
+                onChange={e => setForm({ ...form, claude_base_url: e.target.value })}
+                placeholder="https://api.example.com/v1 (để trống = API chính thức)"
+                style={{ fontFamily: 'monospace', fontSize: 13 }}
+              />
+            </div>
+          </div>
+        </>
+      )}
 
       {/* SerpAPI Key */}
       <SerpKeyField
@@ -485,6 +701,49 @@ function ApiConfigTab() {
         show={showSerp}
         onToggleShow={() => setShowSerp(v => !v)}
       />
+
+      {/* OpenAI API Key */}
+      {form.default_ai_provider === 'openai' && (
+        <>
+          <MultiKeyField
+            label="OpenAI API Key"
+            description="Lấy tại platform.openai.com → API Keys"
+            getLink="platform.openai.com"
+            color="#10B981"
+            value={form.openai_api_key}
+            onChange={v => setForm({ ...form, openai_api_key: v })}
+            show={showOpenAI}
+            onToggleShow={() => setShowOpenAI(v => !v)}
+            placeholder={'sk-proj-... (1 key)\nhoặc: sk-proj..., sk-proj..., sk-proj... (nhiều key xoay vòng)'}
+          />
+
+          {/* OpenAI Model */}
+          <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 18px', borderBottom: '1px solid var(--border)', background: 'var(--bg-panel)' }}>
+              <div style={{ width: 34, height: 34, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(16,185,129,0.12)', flexShrink: 0 }}>
+                <Cpu size={16} color="#10B981" />
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 700, fontSize: 14 }}>OpenAI Model</div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                  {isUserScope ? 'Model riêng cho tài khoản của bạn. Để trống để dùng model hệ thống.' : 'Model mặc định toàn hệ thống. GPT-4o = mới nhất, GPT-4o-mini = nhanh + rẻ.'}
+                </div>
+              </div>
+              <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: 'rgba(16,185,129,0.12)', color: '#10B981' }}>{form.openai_model || 'mặc định hệ thống'}</span>
+            </div>
+            <div style={{ padding: '14px 18px' }}>
+              <AppSelect
+                value={form.openai_model}
+                onChange={v => setForm({ ...form, openai_model: v })}
+                options={[
+                  ...(isUserScope ? [{ value: '', label: '— Dùng model hệ thống —' }] : []),
+                  ...OPENAI_MODELS.map(m => ({ value: m, label: m })),
+                ]}
+              />
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Open Key Mode — chỉ root */}
       {!isUserScope && (
@@ -529,37 +788,6 @@ function ApiConfigTab() {
               </span>
             </div>
           )}
-        </div>
-      )}
-
-      {/* Publish API URL — chỉ cho user scope */}
-      {isUserScope && (
-        <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 18px', borderBottom: '1px solid var(--border)', background: 'var(--bg-panel)' }}>
-            <div style={{ width: 34, height: 34, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(99,102,241,0.12)', flexShrink: 0 }}>
-              <Globe size={16} color="var(--accent)" />
-            </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 700, fontSize: 14 }}>URL API Đăng Bài (Bên Thứ 3)</div>
-              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                URL mặc định của bạn để publish bài viết. Thấp hơn URL riêng của từng công ty.
-              </div>
-            </div>
-          </div>
-          <div style={{ padding: '14px 18px' }}>
-            <input
-              type="url"
-              value={form.publish_api_url}
-              onChange={e => setForm({ ...form, publish_api_url: e.target.value })}
-              placeholder="https://your-site.com/api/publish"
-              style={{
-                width: '100%', padding: '10px 14px', borderRadius: 8,
-                border: '1px solid var(--border)', background: 'var(--bg-input)',
-                color: 'var(--text-primary)', fontSize: 13,
-                fontFamily: 'monospace', boxSizing: 'border-box',
-              }}
-            />
-          </div>
         </div>
       )}
 
@@ -661,7 +889,7 @@ function CostCalculatorTab() {
           <span style={{ fontWeight: 700, fontSize: 14 }}>Thông số tính toán</span>
         </div>
 
-        <div style={{ padding: '16px 18px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14 }}>
+        <div className="calc-grid-row" style={{ padding: '16px 18px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14 }}>
           {[
             { label: 'Số bài viết', value: articles, set: setArticles, min: 1, hint: 'bài' },
             { label: 'Input tokens / bài', value: inputTok, set: setInputTok, min: 100, hint: 'tokens', sub: 'Prompt + ngữ cảnh công ty' },
@@ -753,7 +981,7 @@ function CostCalculatorTab() {
                 </div>
 
                 {/* Standard vs Batch */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div className="calc-result-col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                   {[
                     { label: 'Standard (Realtime)', price: p.standard, cost: stdCost, isCheapest: isCheapestStd },
                     { label: 'Batch API (−50%)', price: p.batch, cost: batchCost, isCheapest: isCheapestBatch, isBatch: true },
@@ -828,6 +1056,8 @@ export default function SettingsPage() {
   const [tokenLimit, setTokenLimit] = useState('0');
   const [articleLimit, setArticleLimit] = useState('0');
   const [publishApiUrl, setPublishApiUrl] = useState('');
+  const [autoPublishEnabled, setAutoPublishEnabled] = useState(false);
+  const [chatEnabled, setChatEnabled] = useState(true);
   // Đổi mật khẩu
   const [isChangePwOpen, setIsChangePwOpen] = useState(false);
   const [pwForm, setPwForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
@@ -902,6 +1132,8 @@ export default function SettingsPage() {
       setTokenLimit(s.find(r => r.key === 'daily_token_limit')?.value ?? '0');
       setArticleLimit(s.find(r => r.key === 'daily_article_limit')?.value ?? '0');
       setPublishApiUrl(s.find(r => r.key === 'publish_api_url')?.value ?? '');
+      setAutoPublishEnabled(s.find(r => r.key === 'auto_publish_enabled')?.value === '1');
+      setChatEnabled(s.find(r => r.key === 'chat_enabled')?.value !== '0');
     } catch (err) {
       setError('Không thể tải cài đặt: ' + err.message);
     } finally {
@@ -918,6 +1150,8 @@ export default function SettingsPage() {
         daily_token_limit:    parseInt(tokenLimit, 10) || 0,
         daily_article_limit:  parseInt(articleLimit, 10) || 0,
         publish_api_url:      publishApiUrl.trim(),
+        auto_publish_enabled: autoPublishEnabled,
+        chat_enabled: chatEnabled,
       });
       setSaved(true);
       await fetchSettings();
@@ -972,7 +1206,7 @@ export default function SettingsPage() {
         </div>
 
         {/* Tabs */}
-        <div style={{ display: 'flex', gap: 4, marginBottom: 24, borderBottom: '1px solid var(--border)', paddingBottom: 0 }}>
+        <div className="settings-tab-bar" style={{ display: 'flex', gap: 4, marginBottom: 24, borderBottom: '1px solid var(--border)', paddingBottom: 0 }}>
           {tabs.map(tab => (
             <button
               key={tab.id}
@@ -1012,7 +1246,7 @@ export default function SettingsPage() {
                       <Calendar size={9} style={{ display: 'inline', marginRight: 3 }} />{data?.today.date}
                     </span>
                   </div>
-                  <div style={{ display: 'flex', gap: 12 }}>
+                  <div className="statcard-mobile-stack" style={{ display: 'flex', gap: 12 }}>
                     <StatCard icon={<Zap />} label="Tokens đã dùng" value={tokensToday} limit={tLimit} color="var(--accent)" />
                     <StatCard icon={<FileText />} label="Bài viết đã tạo" value={articlesToday} limit={aLimit} color="var(--success)" unit="bài" />
                   </div>
@@ -1077,6 +1311,64 @@ export default function SettingsPage() {
                       onChange={e => setPublishApiUrl(e.target.value)}
                       placeholder="https://api.example.com/posts"
                     />
+                  </div>
+                </div>
+
+                {/* Auto Publish Toggle */}
+                <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 18px', borderBottom: '1px solid var(--border)', background: 'var(--bg-panel)' }}>
+                    <div style={{ width: 34, height: 34, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(99,102,241,0.12)', flexShrink: 0 }}>
+                      <Zap size={16} color="var(--accent)" />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text)' }}>Tự Động Đăng Bài</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 1 }}>
+                        Sau khi viết xong, bài viết sẽ tự động đăng lên CRM2.
+                      </div>
+                    </div>
+                    <div
+                      onClick={() => setAutoPublishEnabled(v => !v)}
+                      style={{
+                        width: 36, height: 20, borderRadius: 99, flexShrink: 0,
+                        background: autoPublishEnabled ? 'var(--success)' : 'var(--border)',
+                        position: 'relative', transition: 'background 0.2s', cursor: 'pointer',
+                      }}
+                    >
+                      <div style={{
+                        position: 'absolute', top: 3, left: autoPublishEnabled ? 18 : 3,
+                        width: 14, height: 14, borderRadius: '50%', background: '#fff',
+                        transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                      }} />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Chatbot Toggle */}
+                <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 18px', borderBottom: '1px solid var(--border)', background: 'var(--bg-panel)' }}>
+                    <div style={{ width: 34, height: 34, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(6,182,212,0.12)', flexShrink: 0 }}>
+                      <MessageCircle size={16} color="#06b6d4" />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text)' }}>Trợ Lý AI Chatbot</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 1 }}>
+                        Hiển thị icon chatbot ở góc dưới bên phải màn hình.
+                      </div>
+                    </div>
+                    <div
+                      onClick={() => setChatEnabled(v => !v)}
+                      style={{
+                        width: 36, height: 20, borderRadius: 99, flexShrink: 0,
+                        background: chatEnabled ? 'var(--success)' : 'var(--border)',
+                        position: 'relative', transition: 'background 0.2s', cursor: 'pointer',
+                      }}
+                    >
+                      <div style={{
+                        position: 'absolute', top: 3, left: chatEnabled ? 18 : 3,
+                        width: 14, height: 14, borderRadius: '50%', background: '#fff',
+                        transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                      }} />
+                    </div>
                   </div>
                 </div>
 

@@ -68,11 +68,13 @@ router.get('/', async (req, res) => {
   const conditions = [];
   if (companyId) { conditions.push('wa.companyId = ?'); args.push(companyId); }
 
-  // Non-root chỉ thấy của mình
-  const { isRoot } = require('../services/permissions');
-  if (!(await isRoot(userId))) {
-    conditions.push('wa.createdBy = ?');
-    args.push(userId);
+  // Lọc theo visibility
+  const { getVisibleUserIds } = require('../services/permissions');
+  const visibleIds = await getVisibleUserIds(userId, req.user?.role);
+  if (visibleIds !== null) {
+    if (visibleIds.length === 0) return res.json([]);
+    conditions.push(`wa.createdBy IN (${visibleIds.map(() => '?').join(',')})`);
+    args.push(...visibleIds);
   }
 
   if (conditions.length) sql += ' WHERE ' + conditions.join(' AND ');

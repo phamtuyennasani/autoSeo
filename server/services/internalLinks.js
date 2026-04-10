@@ -9,27 +9,7 @@
  */
 
 const { db } = require('../data/store');
-
-// ─── Slugify (tiếng Việt) ─────────────────────────────────────────────────────
-function slugify(text) {
-  const map = {
-    'à':'a','á':'a','ả':'a','ã':'a','ạ':'a',
-    'ă':'a','ắ':'a','ặ':'a','ằ':'a','ẳ':'a','ẵ':'a',
-    'â':'a','ấ':'a','ầ':'a','ẩ':'a','ẫ':'a','ậ':'a',
-    'è':'e','é':'e','ẻ':'e','ẽ':'e','ẹ':'e',
-    'ê':'e','ế':'e','ề':'e','ể':'e','ễ':'e','ệ':'e',
-    'ì':'i','í':'i','ỉ':'i','ĩ':'i','ị':'i',
-    'ò':'o','ó':'o','ỏ':'o','õ':'o','ọ':'o',
-    'ô':'o','ố':'o','ồ':'o','ổ':'o','ỗ':'o','ộ':'o',
-    'ơ':'o','ớ':'o','ờ':'o','ở':'o','ỡ':'o','ợ':'o',
-    'ù':'u','ú':'u','ủ':'u','ũ':'u','ụ':'u',
-    'ư':'u','ứ':'u','ừ':'u','ử':'u','ữ':'u','ự':'u',
-    'ỳ':'y','ý':'y','ỷ':'y','ỹ':'y','ỵ':'y',
-    'đ':'d',
-  };
-  return text.toLowerCase().split('').map(c => map[c] || c).join('')
-    .replace(/[^a-z0-9\s-]/g, '').trim().replace(/\s+/g, '-').replace(/-+/g, '-');
-}
+const { slugify } = require('../utils/func');
 
 function escapeRegex(str) {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -88,6 +68,11 @@ async function buildLinkMap(companyId, excludeTitle, companyUrl) {
 // ─── Inject internal links vào HTML ──────────────────────────────────────────
 function injectLinks(html, linkMap, maxLinks) {
   if (!html || linkMap.size === 0) return html;
+  // Đảm bảo html là string — nếu là object thì stringify an toàn
+  if (typeof html !== 'string') {
+    console.warn('[internalLinks] html không phải string, ép sang string:', typeof html);
+    html = String(html);
+  }
 
   // Sắp xếp phrase dài nhất trước để tránh conflict
   const phrases = Array.from(linkMap.keys()).sort((a, b) => b.length - a.length);
@@ -138,6 +123,11 @@ function injectLinks(html, linkMap, maxLinks) {
 // ─── Entry point ──────────────────────────────────────────────────────────────
 async function applyInternalLinks(html, companyId, currentTitle, companyUrl) {
   try {
+    // Guard: đảm bảo html là string trước khi xử lý
+    if (typeof html !== 'string') {
+      console.warn('[internalLinks] html không phải string, bỏ qua:', typeof html);
+      return String(html);
+    }
     const { enabled, maxLinks } = await getCompanyLinkConfig(companyId);
     if (!enabled) return html;
 

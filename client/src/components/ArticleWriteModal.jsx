@@ -10,7 +10,7 @@ const API_COMPANY = API.companies;
 const API_ARTICLE = API.articles;
 
 // companyId được truyền cố định từ Keyword -> không cần chọn lại
-const ArticleWriteModal = ({ keyword, title, companyId, keywordId, onClose, onSuccess }) => {
+const ArticleWriteModal = ({ keyword, title, companyId, keywordId, articleId, onClose, onSuccess, contentType = 'blog' }) => {
   const [company, setCompany] = useState(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedArticle, setGeneratedArticle] = useState(null);
@@ -19,7 +19,11 @@ const ArticleWriteModal = ({ keyword, title, companyId, keywordId, onClose, onSu
   const [isSaving, setIsSaving] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
   const [error, setError] = useState(null);
+  const [customLinks, setCustomLinks] = useState('');    // URL liên kết (mỗi dòng 1 URL)
+  const [imageUrls, setImageUrls] = useState('');         // URL ảnh (mỗi dòng 1 URL)
   const { refreshStats } = useToken();
+
+  const isBlog = contentType !== 'fanpage';
 
   useEffect(() => {
     if (companyId) {
@@ -34,25 +38,21 @@ const ArticleWriteModal = ({ keyword, title, companyId, keywordId, onClose, onSu
     setIsGenerating(true);
     setError(null);
     try {
-      const res = await apiClient.post(API_ARTICLE, { keyword, title, companyId, keywordId });
+      const payload = { keyword, title, companyId, keywordId, contentType, articleId }; // articleId = đang viết lại bài có sẵn
+      if (isBlog) {
+        // Chỉ truyền customLinks/imageUrls cho blog
+        if (customLinks.trim()) payload.customLinks = customLinks;
+        if (imageUrls.trim())   payload.imageUrls   = imageUrls;
+      }
+      console.log('[ArticleWriteModal] customLinks:', JSON.stringify(customLinks));
+      console.log('[ArticleWriteModal] imageUrls:', JSON.stringify(imageUrls));
+      console.log('[ArticleWriteModal] payload:', JSON.stringify(payload));
+      const res = await apiClient.post(API_ARTICLE, payload);
       setGeneratedArticle(res.data);
       setEditedContent(res.data.content || '');
       refreshStats(); // Cập nhật token stats trên topbar
       if (onSuccess) onSuccess(res.data); // Notify parent to refresh article list
 
-      // Auto-publish nếu công ty bật (server đã xử lý, nhưng nếu status vẫn chưa published thì thử publish)
-      if (company?.auto_publish && res.data.publish_status !== 'published') {
-        setIsPublishing(true);
-        try {
-          const pubRes = await apiClient.post(`${API_ARTICLE}/${res.data.id}/publish`);
-          setGeneratedArticle(pubRes.data);
-          if (onSuccess) onSuccess(pubRes.data);
-        } catch (pubErr) {
-          console.warn('[ArticleWriteModal] auto-publish failed:', pubErr.message);
-        } finally {
-          setIsPublishing(false);
-        }
-      }
     } catch (err) {
       console.error(err);
       setError(err.response?.data?.details || 'Lỗi khi viết bài. Vui lòng kiểm tra lại cấu hình API hoặc thử lại sau.');
@@ -131,6 +131,47 @@ const ArticleWriteModal = ({ keyword, title, companyId, keywordId, onClose, onSu
                   ⚠️ {error}
                 </div>
               )}
+
+              {/* Custom Links & Image URLs — chỉ hiện cho blog */}
+              {isBlog && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '16px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '5px' }}>
+                      🔗 URL Liên kết
+                    </label>
+                    <textarea
+                      rows={4}
+                      value={customLinks}
+                      onChange={e => setCustomLinks(e.target.value)}
+                      placeholder={"https://example.com/tu-khoa-1\nhttps://example.com/tu-khoa-2\nhttps://example.com/tu-khoa-3"}
+                      style={{
+                        width: '100%', padding: '8px 12px', background: 'var(--bg-secondary)', border: '1px solid var(--border)',
+                        borderRadius: 'var(--radius-md)', color: 'var(--text-primary)', fontSize: '13px',
+                        resize: 'vertical', fontFamily: 'inherit', lineHeight: '1.5',
+                      }}
+                    />
+                    <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)', marginTop: '3px' }}>AI sẽ chèn link tự nhiên vào bài viết</div>
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '5px' }}>
+                      🖼️ URL Hình ảnh
+                    </label>
+                    <textarea
+                      rows={4}
+                      value={imageUrls}
+                      onChange={e => setImageUrls(e.target.value)}
+                      placeholder={"https://example.com/hinh-1.jpg\nhttps://example.com/hinh-2.png\nhttps://example.com/hinh-3.webp"}
+                      style={{
+                        width: '100%', padding: '8px 12px', background: 'var(--bg-secondary)', border: '1px solid var(--border)',
+                        borderRadius: 'var(--radius-md)', color: 'var(--text-primary)', fontSize: '13px',
+                        resize: 'vertical', fontFamily: 'inherit', lineHeight: '1.5',
+                      }}
+                    />
+                    <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)', marginTop: '3px' }}>AI sẽ chèn ảnh tự nhiên vào bài viết</div>
+                  </div>
+                </div>
+              )}
+
               <button
                 className="btn btn-primary"
                 style={{ width: '100%', padding: '14px', fontSize: '15px', justifyContent: 'center' }}

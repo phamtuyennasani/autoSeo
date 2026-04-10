@@ -71,10 +71,12 @@ Chỉ trả về DUY NHẤT JSON array. KHÔNG markdown. KHÔNG giải thích.
 
 // ─── Gọi AI lấy keyword suggestions ──────────────────────────────────────
 async function getKeywordSuggestions(siteUrl, pages, companyInfo, config = {}) {
-  const keysStr = config.apiKey || process.env.GEMINI_API_KEY;
-  if (!keysStr) throw new Error('Gemini API key chưa được cấu hình.');
+  if (!config.apiKey) throw new Error('Gemini API key chưa được cấu hình.');
+  if (config.blocked) throw new Error(config.message || 'API key không khả dụng.');
 
-  const modelName = config.modelName || process.env.DEFAULT_GEMINI_MODEL || 'gemini-2.5-flash';
+  const keysStr = config.apiKey;
+
+  const modelName = config.modelName || 'gemini-2.5-flash';
   const prompt    = buildAnalysisPrompt(siteUrl, pages, companyInfo);
 
   return withKeyFallback(keysStr, async (key) => {

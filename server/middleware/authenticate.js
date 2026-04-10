@@ -11,7 +11,7 @@
 const { verifyToken } = require('../services/auth');
 
 // Các path không cần xác thực (public)
-const PUBLIC_PATHS = ['/api/auth/login', '/api/auth/logout', '/api/auth/status', '/api/auth/google'];
+const PUBLIC_PATHS = ['/api/auth/login', '/api/auth/logout', '/api/auth/status', '/api/auth/google', '/api/chat/status'];
 // Webhook từ CRM1 — bảo mật bằng HMAC, không cần JWT
 const PUBLIC_PREFIXES = ['/api/webhooks/'];
 

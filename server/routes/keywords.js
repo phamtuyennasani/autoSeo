@@ -92,7 +92,7 @@ router.get('/', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     const user = req.user || { id: 'admin', role: 'admin' };
-    const { keyword, companyId, titleCount, manualTitles, contentType } = req.body;
+    const { keyword, companyId, titleCount, manualTitles, contentType, keywordRequirements } = req.body;
     if (!keyword || !companyId) return res.status(400).json({ error: 'Keyword và Company ID là bắt buộc' });
     const resolvedContentType = contentType === 'fanpage' ? 'fanpage' : 'blog';
 
@@ -115,7 +115,7 @@ router.post('/', async (req, res) => {
 
       try {
         console.log(`Đang dùng AI tạo ${count} titles...`);
-        const result = await generateTitles(keyword, searchContext, count, { ...apiConfig, contentType: resolvedContentType });
+        const result = await generateTitles(keyword, searchContext, count, { ...apiConfig, contentType: resolvedContentType, keywordRequirements });
         titles = result.titles.slice(0, count);
 
         if (result.usage) {
@@ -143,6 +143,55 @@ router.post('/', async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Cập nhật một tiêu đề trong từ khóa (xóa topic/tag nếu user tự sửa)
+router.patch('/:id/title', async (req, res) => {
+  try {
+    const user = req.user || { id: 'admin', role: 'root' };
+    const { id } = req.params;
+    const { titleIndex, newTitle } = req.body;
+
+    if (typeof titleIndex !== 'number' || !newTitle?.trim()) {
+      return res.status(400).json({ error: 'Thiếu titleIndex hoặc newTitle.' });
+    }
+
+    const kwResult = await db.execute({ sql: 'SELECT * FROM keywords WHERE id = ?', args: [id] });
+    if (!kwResult.rows[0]) return res.status(404).json({ error: 'Không tìm thấy từ khóa.' });
+    const kw = kwResult.rows[0];
+
+    if (!isRoot(user) && kw.createdBy !== user.id) {
+      if (canManageUsers(user)) {
+        const visibleIds = await getVisibleUserIds(user.id, user.role);
+        if (visibleIds && !visibleIds.includes(kw.createdBy)) {
+          return res.status(403).json({ error: 'Bạn không có quyền chỉnh sửa từ khóa này.' });
+        }
+      } else {
+        return res.status(403).json({ error: 'Bạn không có quyền chỉnh sửa từ khóa này.' });
+      }
+    }
+
+    let titles = [];
+    try { titles = JSON.parse(kw.titles || '[]'); } catch {}
+    titles = titles.map(t => typeof t === 'string' ? { title: t, topic: '' } : t);
+
+    if (titleIndex < 0 || titleIndex >= titles.length) {
+      return res.status(400).json({ error: 'titleIndex không hợp lệ.' });
+    }
+
+    // Cập nhật title, xóa topic (tag chỉ có khi AI sinh ra)
+    titles[titleIndex] = { title: newTitle.trim(), topic: '' };
+
+    await db.execute({
+      sql: 'UPDATE keywords SET titles = ? WHERE id = ?',
+      args: [JSON.stringify(titles), id],
+    });
+
+    res.json({ success: true, titles });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Lỗi server khi cập nhật tiêu đề.' });
   }
 });
 
